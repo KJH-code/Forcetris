@@ -145,14 +145,11 @@ class Core:
 	def hold_shape (self):
 		# Holds a tetrimino in storage until retrieved.
 		if self.storedshape.form > 6:
-			# Holding must never buy extra time, so the piece pulled out of the queue
-			# inherits whatever is left of the current piece's forced drop timer.
-			elapsed = self.piece_elapsed
+			# The piece pulled out of the queue goes through set_shape, which starts
+			# its forced drop timer from scratch on its own.
 			self.storedshape = Shape(
 				self.newshape.form if self.entry_flag else self.nextshapes[0].form, 0)
 			self.next_shape()
-			if elapsed is not None and self.piece_elapsed is not None:
-				self.piece_elapsed = elapsed
 		else:
 			# If storage already has a tetrimino, swap with current active one.
 			if not self.hold_lock and self.storedshape.form != self.freeshape.form:
@@ -161,6 +158,9 @@ class Core:
 					# You can only swap once per piece and can't swap if it's the same shape as the active piece.
 					self.freeshape, self.storedshape = Shape(self.storedshape.form), Shape(self.freeshape.form)
 					self.newshape = self.freeshape.copy()
+					# A swap bypasses set_shape, so restart the forced drop timer here.
+					# The per-piece hold lock is what keeps this from stalling forever.
+					self.piece_elapsed = 0.
 				else:
 					# Allow pieces to be swapped during spawn delay.
 					self.nextshapes[0], self.storedshape = self.storedshape, self.nextshapes[0]

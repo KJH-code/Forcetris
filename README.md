@@ -48,10 +48,10 @@ over the last quarter of the budget.
 
 ## How the timer behaves
 
-The timer is deliberately strict, because a lenient one defeats the training:
-
 - **It starts when a piece spawns**, not when it becomes movable.
-- **Holding does not reset it.** A swapped-in piece inherits whatever time was left.
+- **Holding restarts it.** The swapped-in piece gets a full budget. Since the base game
+  only allows one hold per piece, this caps out at two budgets per piece — hold is an
+  escape hatch for a placement you can't read in time, not an indefinite stall.
 - **Soft dropping does not reset it.**
 - **Wall kicks do not reset it.** They still reset the gravity counter, as in the base
   game — the drop timer is a separate clock.

@@ -148,13 +148,13 @@ check(
     '{} locks, none forced'.format(len([e for e in log if e[0] == 'lock']))
 )
 
-# --- Holding does not buy the player more time. -----------------------------
+# --- Holding hands the incoming piece a fresh timer. ------------------------
 core, clock, log = build(1.0)
 spin(core, clock, 30)  # let a piece spawn and age
 before = core.piece_elapsed
 core.hold_shape()  # first hold ever: pulls a fresh piece out of the queue
 check(
-    'first hold keeps the timer running', abs(core.piece_elapsed - before) < 1e-9,
+    'first hold restarts the timer', before > 0. and core.piece_elapsed == 0.,
     'elapsed {:.3f}s before, {:.3f}s after'.format(before, core.piece_elapsed)
 )
 core, clock, log = build(60.0)  # long enough that no drop interferes
@@ -165,9 +165,32 @@ core.hold_lock = False
 before = core.piece_elapsed
 core.hold_shape()  # a real swap
 check(
-    'hold swap keeps the timer running', abs(core.piece_elapsed - before) < 1e-9,
+    'hold swap restarts the timer', before > 0. and core.piece_elapsed == 0.,
     'elapsed {:.3f}s before, {:.3f}s after'.format(before, core.piece_elapsed)
 )
+# The per-piece hold lock is the only thing stopping a player from stalling
+# forever, so a refused hold must leave the timer alone.
+core, clock, log = build(60.0)
+spin(core, clock, 30)
+core.hold_shape()  # seed storage, which spawns a piece with a fresh hold allowance
+spin(core, clock, 40)
+core.hold_shape()  # spends that allowance and sets the hold lock
+locked = core.hold_lock
+spin(core, clock, 20)
+before = core.piece_elapsed
+core.hold_shape()  # refused, the lock is still set
+check(
+    'a refused hold does not restart the timer',
+    locked and before > 0. and core.piece_elapsed == before,
+    'lock {}, elapsed {:.3f}s before, {:.3f}s after'.format(locked, before, core.piece_elapsed)
+)
+# Holding during the spawn delay reorders the queue but must not start a timer
+# for a piece that is not in play yet.
+core, clock, log = build(60.0)
+spin(core, clock, 30)
+core.hard_drop()  # into the spawn delay, no active piece
+core.hold_shape()
+check('holding between pieces starts no timer', core.piece_elapsed is None)
 
 # --- Soft drop does not stop the clock either. ------------------------------
 core, clock, log = build(1.0)
