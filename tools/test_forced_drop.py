@@ -10,14 +10,16 @@ Run with: python tools/test_forced_drop.py
 """
 import os
 import sys
+import tempfile
 from argparse import Namespace
 
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['SDL_AUDIODRIVER'] = 'dummy'
-# Run from the repository root, where the textures and music live.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-os.chdir(ROOT)
 sys.path.insert(0, ROOT)
+# Deliberately run from somewhere unrelated: the game resolves its textures, music
+# and save data against its own folder, and regressing that breaks IDE run buttons.
+os.chdir(tempfile.mkdtemp())
 
 import pygame as pg
 import engine.game as G
@@ -243,6 +245,18 @@ for mode in ('arcade', 'timed'):
         len(timed) >= 3 and all(0.5 <= t <= 0.5 + 2 * FRAME for t in timed),
         '{} of {} pieces dropped by the timer'.format(len(timed), len(lives))
     )
+
+# --- The game does not care where it was started from. ----------------------
+# Reaching this point at all proves the textures and music loaded from a foreign
+# working directory; this covers the save file, which is written much later.
+import engine.filehandler as fh
+with fh.SFH() as sfh:
+    tables = sfh.decode()
+check(
+    'save data goes next to the game, not into the working directory',
+    len(tables) == 3 and not os.listdir(os.getcwd()),
+    'cwd left with {} entries'.format(len(os.listdir(os.getcwd())))
+)
 
 print()
 if FAILED:

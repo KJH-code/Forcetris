@@ -9,6 +9,10 @@ except ImportError:
 	print("A module must've shat itself:")
 	raise
 
+# Same anchor as engine.environment.ROOT, recomputed here rather than imported so
+# that reading save data doesn't drag in pygame and a display surface.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 class ContextMan:
 	"""
 	Generic file manager.
@@ -17,27 +21,30 @@ class ContextMan:
 	__slots__ = ('sfile', 'bckup', 'eflag')
 
 	def __init__ (self, name):
-		fname = os.path.join('data', name)
-		bname = os.path.join('data', os.path.join('back', name[:-3] + 'bak'))
+		# Anchored to the game folder rather than the working directory, and created
+		# up front, so that saving a score doesn't depend on where the game was started.
+		fname = os.path.join(ROOT, 'data', name)
+		bname = os.path.join(ROOT, 'data', 'back', name[:-3] + 'bak')
+		os.makedirs(os.path.dirname(bname), exist_ok=True)
 		# The backup file is there to ensure that the data is preserved in some cases of fucketry.
 		# Note: Does not work if the backup file itself is fucked with.
 		try:
 			self.bckup = open(bname, 'rb+')
 			# Since the backup exists, check if the data exists too.
 			try:
-				self.sfile = open(name, 'rb+')
+				self.sfile = open(fname, 'rb+')
 			except IOError:
 				# If the scorefile data is missing, but the backup still exists, use the backup to restore it.
-				self.sfile = open(name, 'wb+')
+				self.sfile = open(fname, 'wb+')
 				self.load()
 		except IOError:
 			self.bckup = open(bname, 'wb+')
 			# If the backup is missing, check if the original data exists.
 			try:
-				self.sfile = open(name, 'rb+')
+				self.sfile = open(fname, 'rb+')
 				self.backup()
 			except IOError:
-				self.sfile = open(name, 'wb+')
+				self.sfile = open(fname, 'wb+')
 				self.reset()
 		self.bckup.seek(0)
 		self.sfile.seek(0)

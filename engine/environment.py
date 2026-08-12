@@ -11,6 +11,15 @@ except ImportError:
 	print("A module must've shat itself:")
 	raise
 
+# Assets and save data are resolved against the folder holding the game rather
+# than against the working directory, so the game runs from anywhere - which
+# includes an IDE's run button, since those tend to use the workspace folder.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def datapath (*parts):
+	# Absolute path to a file that ships with the game, or is written next to it.
+	return os.path.join(ROOT, *parts)
+
 pg.init()
 pg.mixer.init(buffer=1024)
 screen = pg.display.set_mode((800, 600), pg.HWSURFACE | pg.DOUBLEBUF)
@@ -66,7 +75,7 @@ def get_cos (p1, p2):
 def load_image (name, alpha=None, colorkey=None):
 	# Load an image file into memory. Try not to keep too many of these in memory.
 	try:
-		image = pg.image.load(os.path.join('textures', name))
+		image = pg.image.load(datapath('textures', name))
 	except pg.error:
 		print("Image could not be loaded: ")
 		raise
@@ -84,7 +93,8 @@ def save_image (surf, name, path='.'):
 
 def screenshot ():
 	# Take a screenshot with the current date and time as the filename.
-	save_image(screen, str(datetime.datetime.now())+'.png', 'screenshots')
+	os.makedirs(datapath('screenshots'), exist_ok=True)
+	save_image(screen, str(datetime.datetime.now()).replace(':', '-')+'.png', datapath('screenshots'))
 
 def convert_hexcolor (hexcolor):
 	# Avoids an annoying bug where the 24-bit hexcolor is mapped to GGBBAA instead of RRGGBB.
@@ -105,7 +115,7 @@ def render_text (obj=None, text='', color=0, surf=screen, **anchors):
 
 def load_music(name):
 	# Loads a music file into the stream.
-	return pg.mixer.music.load(os.path.join('music', name))
+	return pg.mixer.music.load(datapath('music', name))
 
 def restart_music():
 	# Restarts the current music in the stream in one statement.
