@@ -1,0 +1,6 @@
+# Normalise line endings in the repository, check out native on the working tree.
+* text=auto
+
+*.png binary
+*.ogg binary
+*.msi binary

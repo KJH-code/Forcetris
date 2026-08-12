@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+
+# Score data and its backup, written next to the game at runtime.
+hiscore.dat
+data/*.dat
+data/back/*.bak
+
+# Crash dumps and screenshots.
+crashdump.log
+screenshots/*.png
+
+# cx_Freeze output.
+build/
+dist/
