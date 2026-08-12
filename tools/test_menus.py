@@ -21,7 +21,7 @@ import pygame as pg
 import engine.game as G
 import engine.environment as env
 
-tetris = G.init(Namespace(debug=False, forced_delay=1.0))
+tetris = G.init(Namespace(debug=False, forced_delay=1.0, volume=100.))
 user = tetris.user
 
 FAILED = []
@@ -227,6 +227,17 @@ for delay in (1.0, 0.):
     except Exception as err:
         ok, detail = False, repr(err)
     check('help renders with the timer at {}'.format(delay or 'off'), ok, detail)
+
+# --- The command line agrees with what the settings menu shows. -------------
+# Volume is a percentage on the command line and a fraction internally, so the
+# conversion is the one place a 60 could silently become a 6000%.
+for given, expected in ((100., 1.0), (60., 0.6), (0., 0.0), (-5., 0.0), (400., 1.0)):
+    user.eval_argv(Namespace(debug=False, forced_delay=1.0, volume=given))
+    check(
+        '--volume {:g} becomes {:.0%}'.format(given, expected),
+        abs(user.volume - expected) < 1e-9,
+        'got {:.2f}'.format(user.volume)
+    )
 
 print()
 if FAILED:

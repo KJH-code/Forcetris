@@ -46,7 +46,7 @@ def build(forced_delay, gametype='free'):
     """Return (game core, clock, spawn/lock event log)."""
     clock = Clock()
     G.time.perf_counter = clock
-    tetris = G.init(Namespace(debug=False, forced_delay=forced_delay))
+    tetris = G.init(Namespace(debug=False, forced_delay=forced_delay, volume=100.))
     core = tetris.game
     core.user.state = 'game'
     core.user.gametype = gametype

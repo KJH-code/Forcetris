@@ -26,11 +26,14 @@ python main.py                      # 1.0s per piece (the default)
 python main.py --forced-delay 0.8   # 0.8s per piece
 python main.py -f 0.5               # short form
 python main.py --forced-delay 0     # timer off, plain Tetris
+python main.py -f 0.8 --volume 30   # quieter music
+python main.py -v 0                 # no music
 ```
 
-`--forced-delay` takes seconds as a float, so `0.45` is fine. Negative values are
-clamped to 0. It sets the starting value; **Game Settings** can retune it without
-restarting.
+`--forced-delay` takes seconds as a float, so `0.45` is fine. `--volume` takes a
+percentage from 0 to 100, matching what the settings menu shows. Both clamp rather than
+complain, and both only set the starting value — **Game Settings** retunes either one
+without restarting.
 
 The HUD shows the time the active piece has left under **Forced Drop**, and turns red
 over the last quarter of the budget.
@@ -67,8 +70,8 @@ row, Left and Right change it, and holding the key repeats.
 
 Changes apply immediately, including to the piece already falling and to the music
 playing behind the pause menu, so you can pause mid-run, shave 0.05s off, and feel it on
-the very next piece. They last for the session only — use `--forced-delay` for a value
-you want every time.
+the very next piece. They last for the session only — use `--forced-delay` and
+`--volume` for values you want every time.
 
 Music is the only audio the base game has; there are no sound effects to balance
 against it.

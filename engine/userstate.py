@@ -4,6 +4,10 @@
 # A value of 0 turns the forced drop off and leaves plain Tetris behind.
 DEFAULT_FORCED_DELAY = 1.0
 
+# Music volume as a 0.0 to 1.0 fraction. The command line takes it as a percentage,
+# to match the way the settings menu shows it.
+DEFAULT_VOLUME = 1.0
+
 class User:
 	"""
 	The User class tracks global game state values, such as
@@ -41,7 +45,6 @@ class User:
 		self.enablekicks = True # Determines if wall kicks are allowed.
 		self.showghost = True # Determines if the ghost tetrimino will be shown.
 		self.linktiles = True # Determines if the blocks will use connected textures.
-		self.volume = 1.0 # Music volume, from 0.0 to 1.0.
 
 		self.hard_flag = False # True if the piece was hard-dropped.
 		self.twist_flag = False # True if the tetrimino twisted into place.
@@ -72,9 +75,12 @@ class User:
 			self.debug = argv.debug # Debug mode: cheats on!
 			# Seconds a piece is allowed to stay in play before it is dropped for the player.
 			self.forced_delay = max(0., argv.forced_delay)
+			# Taken as a percentage on the command line, kept as a fraction here.
+			self.volume = min(1., max(0., argv.volume / 100.))
 		else:
 			self.debug = False
 			self.forced_delay = DEFAULT_FORCED_DELAY
+			self.volume = DEFAULT_VOLUME
 
 	def reset (self):
 		# Reset data when starting a new game.
