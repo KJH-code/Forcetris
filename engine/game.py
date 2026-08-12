@@ -104,11 +104,10 @@ class Core:
 		self.grav_frame = 0 # The gravity frame counter.
 		self.grav_delay = self.fall_delay # Currently used gravity delay.
 
-		# Forced hard drop timer. Kept in seconds of real time rather than in
-		# frames so that the training pressure stays the same no matter what the
-		# frame rate does. Copied out of the user settings so that a game can ramp
-		# its own delay without clobbering the value the player asked for.
-		self.forced_delay = self.user.forced_delay # Seconds a piece may stay in play. 0 disables.
+		# Forced hard drop timer. Kept in seconds of real time rather than in frames
+		# so that the training pressure stays the same no matter what the frame rate
+		# does. The delay itself lives on the user, so the settings menu can retune it
+		# mid-game and have the piece in play feel it immediately.
 		self.piece_elapsed = None # Seconds the active piece has been in play, None if there is none.
 		self.forced_tick = None # perf_counter reading taken at the previous frame.
 		self.frame_delta = 0. # Clamped real time elapsed since the previous frame.
@@ -193,10 +192,10 @@ class Core:
 	def eval_forced_drop (self):
 		# Age the active piece by one frame and hard drop it once its time is up.
 		# Returns True if the piece was locked by the timer this frame.
-		if self.forced_delay <= 0. or self.piece_elapsed is None:
+		if self.user.forced_delay <= 0. or self.piece_elapsed is None:
 			return False
 		self.piece_elapsed += self.frame_delta
-		if self.piece_elapsed < self.forced_delay:
+		if self.piece_elapsed < self.user.forced_delay:
 			return False
 		return self.hard_drop()
 
@@ -560,10 +559,11 @@ class Core:
 				0xFFFFFF, topright=(ralign, talign + spacing*7)
 			)
 		# Display the time the active piece has left before it is dropped for the player.
-		if self.forced_delay > 0.:
-			left = self.forced_delay if self.piece_elapsed is None else max(0., self.forced_delay - self.piece_elapsed)
+		if self.user.forced_delay > 0.:
+			delay = self.user.forced_delay
+			left = delay if self.piece_elapsed is None else max(0., delay - self.piece_elapsed)
 			# Redden the readout over the last quarter of the piece's life.
-			color = 0xFFFFFF if left > self.forced_delay * 0.25 else 0xFF5555
+			color = 0xFFFFFF if left > delay * 0.25 else 0xFF5555
 			self.render_text('Forced Drop:', 0xFFFFFF, topleft=(lalign, talign + spacing * 8))
 			self.render_text('{:.2f}s'.format(left), color, topright=(ralign, talign + spacing * 9))
 
@@ -680,10 +680,12 @@ def init (argv):
 		user.eval_argv(argv)
 		play_menu = menu.PlayMenu(user)
 		score_menu = menu.HiScoreMenu(user)
-		pause_menu = menu.PauseMenu(user)
+		help_menu = menu.HelpMenu(user)
+		settings_menu = menu.SettingsMenu(user)
+		pause_menu = menu.PauseMenu(user, settings_menu)
 		save_menu = menu.SaveMenu(user)
-		loss_menu = menu.LossMenu(user)
-		main_menu = menu.MainMenu(user, score_menu)
+		loss_menu = menu.LossMenu(user, settings_menu)
+		main_menu = menu.MainMenu(user, score_menu, help_menu, settings_menu)
 		game = Core(user, pause_menu, save_menu, loss_menu)
 
 		def __str__(self):

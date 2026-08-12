@@ -29,12 +29,16 @@ python main.py --forced-delay 0     # timer off, plain Tetris
 ```
 
 `--forced-delay` takes seconds as a float, so `0.45` is fine. Negative values are
-clamped to 0.
+clamped to 0. It sets the starting value; **Game Settings** can retune it without
+restarting.
 
 The HUD shows the time the active piece has left under **Forced Drop**, and turns red
 over the last quarter of the budget.
 
 ## Controls
+
+Menus are keyboard only: arrow keys to move, `Z` or `Enter` to confirm, `X` or `Esc` to
+go back.
 
 | Key | Action |
 | --- | --- |
@@ -45,6 +49,24 @@ over the last quarter of the budget.
 | Space | Hard drop |
 | Left Shift | Hold |
 | Escape | Pause |
+
+## Game Settings
+
+**Game Settings** on the main menu — also reachable from the pause menu and the game
+over screen — adjusts the forced delay and the base game's options. Up and Down pick a
+row, Left and Right change it, and holding the key repeats.
+
+| Setting | Range |
+| --- | --- |
+| Forced Drop | Off, then 0.05s to 5.00s in 0.05s steps |
+| Ghost Piece | On / Off |
+| Wall Kicks | On / Off |
+| Linked Tiles | On / Off |
+| Line Clears | Naive / Sticky Cascade / Linked Cascade |
+
+Changes apply immediately, including to the piece already falling, so you can pause
+mid-run, shave 0.05s off, and feel it on the very next piece. They last for the session
+only — use `--forced-delay` for a value you want every time.
 
 ## How the timer behaves
 
@@ -68,11 +90,11 @@ per-piece lock, ghost piece, T-spin detection, and the free / arcade / timed mod
 
 ## Tests
 
-`tools/test_forced_drop.py` drives the game loop headlessly against a fake clock and
-checks each of the rules above. It needs no display or sound card.
+Both suites run headlessly — no display or sound card needed.
 
 ```bash
-python tools/test_forced_drop.py
+python tools/test_forced_drop.py   # the timer rules above, against a fake clock
+python tools/test_menus.py         # every menu button, driven by posted key events
 ```
 
 ## Credits and licence

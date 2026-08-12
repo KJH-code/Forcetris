@@ -15,11 +15,13 @@ class MainMenu (env.Menu):
 	changing the options.
 	"""
 
-	def __init__ (self, user, score_menu):
+	def __init__ (self, user, score_menu, help_menu, settings_menu):
 		bg = pg.Surface((210, 300))
 		bg.fill(0x00FF00)
 		super().__init__(user, bg, midtop=(env.screct.width / 2, 250))
 		self.score_menu = score_menu
+		self.help_menu = help_menu
+		self.settings_menu = settings_menu
 
 		hmargin = 15 # horizontal margin in pixels
 		tmargin = 20 # top margin in pixels
@@ -40,14 +42,16 @@ class MainMenu (env.Menu):
 				if self.selected.action == 'play':
 					self.user.state = 'play_menu'
 				elif self.selected.action == 'help':
-					pass
+					self.help_menu.return_state = 'main_menu'
+					self.user.state = 'help_menu'
 				elif self.selected.action == 'hiscore':
 					self.user.state = 'score_menu'
 					# Load the scores into the score menu every time it is selected so the scores are up to date.
 					with fh.SFH() as sfh:
 						self.score_menu.scorelist = sfh.decode()
-				elif self.selected.action == 'options':
-					pass
+				elif self.selected.action == 'settings':
+					self.settings_menu.return_state = 'main_menu'
+					self.user.state = 'settings_menu'
 				elif self.selected.action == 'quit':
 					self.user.state = 'quit'
 
@@ -114,15 +118,66 @@ class PlayMenu (env.Menu):
 
 class HelpMenu (env.Menu):
 	"""
-	LEFT and RIGHT arrow keys to shift tetrimino left and right.
-	DOWN arrow key to speed up falling tetrimino.
-	Z or LCTRL keys to rotate tetrimino counter-clockwise.
-	X or UP keys to rotate tetrimino clockwise.
-	SPACE key to drop tetrimino, and LSHIFT to hold tetrimino.
-	ESCAPE key to pause.
+	The Help Menu lists the controls and explains what the forced drop timer does,
+	since that part isn't in any Tetris the player has met before.
+
+	It has one selection, which returns to whichever menu opened it.
 	"""
-	def __init__(self, user):
-		pass		
+	controls = [
+		('LEFT / RIGHT', 'Shift the piece sideways'),
+		('DOWN', 'Soft drop'),
+		('Z or LCTRL', 'Rotate counter-clockwise'),
+		('X or UP', 'Rotate clockwise'),
+		('SPACE', 'Hard drop'),
+		('LSHIFT', 'Hold'),
+		('ESCAPE', 'Pause'),
+	]
+
+	def __init__ (self, user):
+		bg = pg.Surface((620, 440))
+		bg.fill(0x2F6F8F)
+		super().__init__(user, bg, center=env.screct.center)
+		self.return_state = 'main_menu'
+
+		self.selections = [[env.MenuOption(self, 'back', 'Back', (self.rect.w / 2 - 90, 380), (180, 40))]]
+
+	def eval_input (self):
+		event = super().eval_input()
+		if event.type == pg.KEYDOWN:
+			if (event.key == pg.K_z or event.key == pg.K_RETURN
+				or event.key == pg.K_x or event.key == pg.K_ESCAPE):
+				self.user.state = self.return_state
+				self.reset()
+
+	@env.Menu.render
+	def display_help (self, surf):
+		self.render_text('How to Play', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 20))
+		for i, (key, action) in enumerate(self.controls):
+			self.render_text(key, 0xFFE080, surf, topright=(230, 60 + i * 28))
+			self.render_text(action, 0xFFFFFF, surf, topleft=(255, 60 + i * 28))
+		# The part that isn't standard Tetris.
+		self.render_text('Forced Drop', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 265))
+		if self.user.forced_delay > 0.:
+			lines = [
+				'Every piece is hard dropped for you {:.2f}s after it spawns.'.format(self.user.forced_delay),
+				'Holding gives the incoming piece a fresh {:.2f}s, once per piece.'.format(self.user.forced_delay),
+				'Soft dropping and wall kicks do not stop the clock.',
+				'Change the time under Game Settings.',
+			]
+		else:
+			lines = [
+				'Currently off, so this is plain Tetris.',
+				'Turn it on under Game Settings to train placement speed.',
+			]
+		for i, line in enumerate(lines):
+			self.render_text(line, 0xFFFFFF, surf, midtop=(self.rect.w / 2, 295 + i * 22))
+
+	def run (self):
+		self.menu_bg.draw(env.screen)
+		self.draw(env.screen)
+		super().run()
+		self.display_help()
+		pg.display.flip()
 
 class HiScoreMenu (env.Menu):
 	"""
@@ -175,9 +230,113 @@ class SettingsMenu (env.Menu):
 	The Settings Menu allows the user to edit game settings for more convenient play.
 
 	The selections of this menu are special, and change the states of global variables.
+	Up and Down pick a setting, Left and Right change it. Everything here is read live
+	by the game, so a setting changed from the pause menu applies to the piece in play.
 	"""
-	def __init__(self, user):
-		pass
+	# Bounds on the forced drop delay, in seconds. The step is what one keypress moves.
+	delay_step = 0.05
+	delay_max = 5.0
+
+	clear_names = ('Naive', 'Sticky Cascade', 'Linked Cascade')
+
+	def __init__ (self, user):
+		# Tall enough for six rows under the title plus the hint line beneath them.
+		bg = pg.Surface((460, 386))
+		bg.fill(0x00A060)
+		super().__init__(user, bg, center=env.screct.center)
+		self.return_state = 'main_menu'
+
+		hmargin = 20
+		tmargin = 50
+		spacing = 6
+		height = 44
+		width = self.rect.w - 2 * hmargin
+
+		self.selections = [[
+			env.MenuOption(self, action, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
+			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'back'))]]
+		self.set_labels()
+
+	def label (self, action):
+		# The text drawn on a row, value included.
+		if action == 'delay':
+			return 'Forced Drop:  ' + (
+				'{:.2f}s'.format(self.user.forced_delay) if self.user.forced_delay > 0. else 'Off')
+		elif action == 'ghost':
+			return 'Ghost Piece:  ' + ('On' if self.user.showghost else 'Off')
+		elif action == 'kicks':
+			return 'Wall Kicks:  ' + ('On' if self.user.enablekicks else 'Off')
+		elif action == 'tiles':
+			return 'Linked Tiles:  ' + ('On' if self.user.linktiles else 'Off')
+		elif action == 'clears':
+			return 'Line Clears:  ' + self.clear_names[self.user.cleartype]
+		return 'Back'
+
+	def set_labels (self):
+		# Re-render every row, since changing one setting can only be seen by redrawing it.
+		for option in self.selections[0]:
+			option.text = self.font.render(self.label(option.action), 0, pg.Color(255, 255, 255))
+			option.text_rect = option.text.get_rect(center=option.rect.center)
+
+	def adjust (self, movedir):
+		# Apply one step of change to the highlighted setting.
+		action = self.selected.action
+		if action == 'delay':
+			# Rounded because repeatedly adding 0.05 drifts off the step grid.
+			delay = round(self.user.forced_delay + movedir * self.delay_step, 2)
+			self.user.forced_delay = min(self.delay_max, max(0., delay))
+		elif action == 'ghost':
+			self.user.showghost = not self.user.showghost
+		elif action == 'kicks':
+			self.user.enablekicks = not self.user.enablekicks
+		elif action == 'tiles':
+			self.user.linktiles = not self.user.linktiles
+		elif action == 'clears':
+			self.user.cleartype = (self.user.cleartype + movedir) % len(self.clear_names)
+		else:
+			return
+		self.set_labels()
+
+	def eval_move (self, coord, movedir):
+		# Horizontal movement edits the highlighted setting rather than moving the
+		# cursor, which reuses the auto-repeat timing the base class already runs.
+		if coord == 0:
+			if not self.moved:
+				self.adjust(movedir)
+				self.moved = True
+			else:
+				self.movetime -= 1
+				if self.movetime < 1:
+					self.adjust(movedir)
+					self.movetime = self.shortime
+		else:
+			super().eval_move(coord, movedir)
+
+	def eval_input (self):
+		event = super().eval_input()
+		if event.type == pg.KEYDOWN:
+			if event.key == pg.K_z or event.key == pg.K_RETURN:
+				if self.selected.action == 'back':
+					self.user.state = self.return_state
+					self.reset()
+				else:
+					# Confirming a toggle flips it, which is what pressing it looks like it should do.
+					self.adjust(1)
+			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
+				self.user.state = self.return_state
+				self.reset()
+
+	@env.Menu.render
+	def display_hint (self, surf):
+		self.render_text('Game Settings', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 15))
+		self.render_text('LEFT / RIGHT to change, X to go back', 0xE0FFE0, surf, midbottom=(self.rect.w / 2, self.rect.h - 12))
+
+	def run (self):
+		self.menu_bg.draw(env.screen)
+		self.draw(env.screen)
+		super().run()
+		self.display_hint()
+		pg.display.flip()
 
 class PauseMenu (env.Menu):
 	"""
@@ -185,11 +344,12 @@ class PauseMenu (env.Menu):
 	The timer doesn't run while paused.
 	"""
 
-	def __init__(self, user):
+	def __init__(self, user, settings_menu):
 		self.pause_bg = pg.Surface(env.screct.size)
 		bg = pg.Surface((250, 300))
 		bg.fill(0x00FF00)
 		super().__init__(user, bg, center=env.screct.center)
+		self.settings_menu = settings_menu
 		
 		tmargin = 20
 		hmargin = 15
@@ -221,7 +381,8 @@ class PauseMenu (env.Menu):
 					env.restart_music()
 					self.reset()
 				elif self.selected.action == 'options':
-					pass
+					self.settings_menu.return_state = 'pause_menu'
+					self.user.state = 'settings_menu'
 				elif self.selected.action == 'quit':
 					self.user.state = 'main_menu'
 					self.user.reset()
@@ -317,11 +478,12 @@ class LossMenu (env.Menu):
 	"""
 	When you lose the game, this menu pops up to show your score and let you try for a higher one.
 	"""
-	def __init__ (self, user):
+	def __init__ (self, user, settings_menu):
 		self.loss_bg = pg.Surface(env.screct.size)
 		bg = pg.Surface((250, 300))
 		bg.fill(0x7F7F00)
 		super().__init__(user, bg, center=env.screct.center)
+		self.settings_menu = settings_menu
 
 		tmargin = 20
 		hmargin = 15
@@ -349,7 +511,8 @@ class LossMenu (env.Menu):
 					env.restart_music()
 					self.reset()
 				elif self.selected.action == 'settings':
-					pass
+					self.settings_menu.return_state = 'loss_menu'
+					self.user.state = 'settings_menu'
 				elif self.selected.action == 'quit':
 					self.user.state = 'main_menu'
 					self.user.reset()
