@@ -105,7 +105,7 @@ class PlayMenu (env.Menu):
 
 				self.user.state = 'game'
 				self.user.resetgame = True
-				pg.mixer.music.play()
+				env.restart_music()
 				self.reset()
 			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
 				self.user.state = 'main_menu'
@@ -236,12 +236,14 @@ class SettingsMenu (env.Menu):
 	# Bounds on the forced drop delay, in seconds. The step is what one keypress moves.
 	delay_step = 0.05
 	delay_max = 5.0
+	# Music volume runs 0.0 to 1.0, moved in twentieths so a full sweep is 20 presses.
+	volume_step = 0.05
 
 	clear_names = ('Naive', 'Sticky Cascade', 'Linked Cascade')
 
 	def __init__ (self, user):
-		# Tall enough for six rows under the title plus the hint line beneath them.
-		bg = pg.Surface((460, 386))
+		# Tall enough for seven rows under the title plus the hint line beneath them.
+		bg = pg.Surface((460, 436))
 		bg.fill(0x00A060)
 		super().__init__(user, bg, center=env.screct.center)
 		self.return_state = 'main_menu'
@@ -254,7 +256,7 @@ class SettingsMenu (env.Menu):
 
 		self.selections = [[
 			env.MenuOption(self, action, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
-			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'back'))]]
+			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'music', 'back'))]]
 		self.set_labels()
 
 	def label (self, action):
@@ -270,6 +272,8 @@ class SettingsMenu (env.Menu):
 			return 'Linked Tiles:  ' + ('On' if self.user.linktiles else 'Off')
 		elif action == 'clears':
 			return 'Line Clears:  ' + self.clear_names[self.user.cleartype]
+		elif action == 'music':
+			return 'Music:  ' + ('{:.0%}'.format(self.user.volume) if self.user.volume > 0. else 'Off')
 		return 'Back'
 
 	def set_labels (self):
@@ -293,6 +297,12 @@ class SettingsMenu (env.Menu):
 			self.user.linktiles = not self.user.linktiles
 		elif action == 'clears':
 			self.user.cleartype = (self.user.cleartype + movedir) % len(self.clear_names)
+		elif action == 'music':
+			volume = round(self.user.volume + movedir * self.volume_step, 2)
+			self.user.volume = min(1., max(0., volume))
+			# Straight to the stream, so the player hears the level they picked
+			# while the track is still playing behind the pause menu.
+			env.set_volume(self.user.volume)
 		else:
 			return
 		self.set_labels()

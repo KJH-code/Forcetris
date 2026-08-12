@@ -63,10 +63,15 @@ row, Left and Right change it, and holding the key repeats.
 | Wall Kicks | On / Off |
 | Linked Tiles | On / Off |
 | Line Clears | Naive / Sticky Cascade / Linked Cascade |
+| Music | Off, then 5% to 100% in 5% steps |
 
-Changes apply immediately, including to the piece already falling, so you can pause
-mid-run, shave 0.05s off, and feel it on the very next piece. They last for the session
-only — use `--forced-delay` for a value you want every time.
+Changes apply immediately, including to the piece already falling and to the music
+playing behind the pause menu, so you can pause mid-run, shave 0.05s off, and feel it on
+the very next piece. They last for the session only — use `--forced-delay` for a value
+you want every time.
+
+Music is the only audio the base game has; there are no sound effects to balance
+against it.
 
 ## How the timer behaves
 

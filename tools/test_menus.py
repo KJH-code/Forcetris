@@ -19,6 +19,7 @@ os.chdir(tempfile.mkdtemp())
 
 import pygame as pg
 import engine.game as G
+import engine.environment as env
 
 tetris = G.init(Namespace(debug=False, forced_delay=1.0))
 user = tetris.user
@@ -133,9 +134,43 @@ check(
     '{} -> {}'.format(before, user.cleartype)
 )
 
-# Back is the last row and has to leave the menu.
+# --- Music volume, which has to reach the mixer and not just the user. ------
 settings.reset()
 press(settings, pg.K_DOWN, 5)
+check('the music row is where it should be', settings.selected.action == 'music', settings.selected.action)
+before = user.volume
+press(settings, pg.K_LEFT, 4)
+check(
+    'left lowers the volume',
+    abs(user.volume - (before - 4 * settings.volume_step)) < 1e-9,
+    '{:.0%} -> {:.0%}'.format(before, user.volume)
+)
+check(
+    'the volume reaches the music stream',
+    abs(pg.mixer.music.get_volume() - user.volume) < 0.02,
+    'user {:.2f}, mixer {:.2f}'.format(user.volume, pg.mixer.music.get_volume())
+)
+check('the row label shows the volume', '80%' in settings.label('music'), settings.label('music'))
+press(settings, pg.K_LEFT, 40)
+check(
+    'the volume bottoms out at Off',
+    user.volume == 0. and settings.label('music').endswith('Off'),
+    settings.label('music')
+)
+press(settings, pg.K_RIGHT, 60)
+check('the volume tops out at 100%', user.volume == 1., '{:.0%}'.format(user.volume))
+# Fading the music out on a loss must not leave the next game silent.
+pg.mixer.music.fadeout(1)
+env.restart_music()
+check(
+    'restarting the music restores the chosen volume',
+    abs(pg.mixer.music.get_volume() - user.volume) < 0.02,
+    'mixer at {:.2f}'.format(pg.mixer.music.get_volume())
+)
+
+# Back is the last row and has to leave the menu.
+settings.reset()
+press(settings, pg.K_DOWN, 6)
 press(settings, pg.K_RETURN)
 check('the Back row leaves the menu', user.state == 'main_menu', user.state)
 

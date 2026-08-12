@@ -117,8 +117,16 @@ def load_music(name):
 	# Loads a music file into the stream.
 	return pg.mixer.music.load(datapath('music', name))
 
+def set_volume (volume):
+	# Music volume, as a fraction from 0.0 to 1.0. Takes effect on the stream at once,
+	# so it can be called while the music is playing or paused.
+	pg.mixer.music.set_volume(volume)
+
 def restart_music():
 	# Restarts the current music in the stream in one statement.
+	# Volume is reapplied here because fading the music out on a loss leaves the
+	# stream quiet, and every restart goes through this function.
+	set_volume(user.volume)
 	pg.mixer.music.rewind()
 	pg.mixer.music.play()
 

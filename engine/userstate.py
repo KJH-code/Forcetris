@@ -12,7 +12,7 @@ class User:
 	In this case, it tracks tetris difficulty values and handles score data.
 	"""
 	__slots__ = (
-		'state', 'gametype', 'resetgame', 'debug', 'forced_delay',
+		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume',
 		'cleartype', 'enablekicks', 'showghost', 'linktiles',
 		'hard_flag', 'twist_flag', 'tspin_flag',
 		'score', 'last_score', 'lines_cleared', 'level', 'timer',
@@ -41,6 +41,7 @@ class User:
 		self.enablekicks = True # Determines if wall kicks are allowed.
 		self.showghost = True # Determines if the ghost tetrimino will be shown.
 		self.linktiles = True # Determines if the blocks will use connected textures.
+		self.volume = 1.0 # Music volume, from 0.0 to 1.0.
 
 		self.hard_flag = False # True if the piece was hard-dropped.
 		self.twist_flag = False # True if the tetrimino twisted into place.
@@ -57,7 +58,8 @@ class User:
 			"Wall Kicks: "+('Enabled' if self.enablekicks else 'Disabled')+"; "
 			"Ghost Piece: "+('Enabled' if self.showghost else 'Disabled')+"; "
 			"Linked Tile Textures: "+('Enabled' if self.linktiles else 'Disabled')+"\n"
-			"Forced Drop: "+("{:.3f}s".format(self.forced_delay) if self.forced_delay > 0 else 'Disabled')+"\n\n"
+			"Forced Drop: "+("{:.3f}s".format(self.forced_delay) if self.forced_delay > 0 else 'Disabled')+"; "
+			"Music Volume: "+"{:.0%}".format(self.volume)+"\n\n"
 			"Scoring Values:\n"
 			"Score: "+str(self.score)+"; Last Clear: "+str(self.last_score)+" Clearing Chain: "+str(self.line_list[:-1])+"\n"
 			"Level: "+str(self.level)+"; Timer: "+"{}:{:02d}:{:02d}".format(self.timer // 60000, self.timer//1000 % 60, self.timer%1000 // 10)+"\n"
