@@ -16,6 +16,10 @@ except ImportError:
 # includes an IDE's run button, since those tend to use the workspace folder.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# True under pygbag's WebAssembly build, where the page owns the event loop and
+# there is no process to exit out of.
+WEB = sys.platform == 'emscripten'
+
 def datapath (*parts):
 	# Absolute path to a file that ships with the game, or is written next to it.
 	return os.path.join(ROOT, *parts)
@@ -164,7 +168,9 @@ def restart_music():
 def quit (exit=0):
 	# Alias to cleanup functions.
 	pg.quit()
-	sys.exit(exit)
+	if not WEB:
+		# Exiting the interpreter would take the whole page down with it.
+		sys.exit(exit)
 
 class FreeSprite (pg.sprite.Sprite):
 	"""

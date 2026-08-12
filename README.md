@@ -115,16 +115,61 @@ The timer is driven by `time.perf_counter()`, so it does not drift with the fram
 It is still only checked once per frame, so a drop lands on the first frame at or after
 the deadline — up to 20 ms late at the game's 50 fps.
 
+The program loop is a coroutine that yields once per frame. On the desktop that costs
+nothing; in a browser tab it is the only reason the page stays responsive.
+
 Everything else is the base game: 7-bag randomiser, SRS with Arika I kicks, hold with a
 per-piece lock, ghost piece, T-spin detection, and the free / arcade / timed modes.
 
+## Running on Android
+
+The game builds to WebAssembly with [pygbag](https://pypi.org/project/pygbag/) and runs
+in a mobile browser, which is the shortest path onto a phone. A connected keyboard works
+as it does on the desktop; the on-screen keyboard does not, since the game reads real key
+events.
+
+```bash
+pip install pygbag
+python -m pygbag --build --disable-sound-format-error main.py
+```
+
+That writes `build/web/`. Serve it over HTTP — opening `index.html` from the filesystem
+will not work, browsers refuse WebAssembly from `file://`:
+
+```bash
+python -m pygbag main.py     # builds, then serves on http://localhost:8000
+```
+
+Point the phone at that address on the same network, or push `build/web/` to any static
+host (GitHub Pages will do).
+
+`--disable-sound-format-error` is there because pygbag prefers OGG for audio. The effects
+are WAV, which browsers play fine and which totals well under a megabyte, so the warning
+does not apply here.
+
+Two things differ in the browser:
+
+- **There is no command line.** The build runs on the defaults, so set the delay and the
+  volumes in **Game Settings** instead.
+- **High scores do not survive a reload.** The page gets an in-memory filesystem, so the
+  score file is written and then thrown away when the tab closes.
+
+Audio will not start until you have pressed a key, which browsers require. Since the
+music starts when you pick a mode, this happens on its own.
+
+### Native instead of the browser
+
+Termux with an X11 server can in principle run the desktop version unchanged, but getting
+pygame's SDL2 built there is its own project. The browser build is the supported path.
+
 ## Tests
 
-Both suites run headlessly — no display or sound card needed.
+All three suites run headlessly — no display, sound card, or browser needed.
 
 ```bash
 python tools/test_forced_drop.py   # the timer rules above, against a fake clock
 python tools/test_menus.py         # every menu button, driven by posted key events
+python tools/test_web.py           # the properties the browser build depends on
 ```
 
 ## Credits and licence

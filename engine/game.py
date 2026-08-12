@@ -2,6 +2,7 @@
 try:
 	import sys
 	import time
+	import asyncio
 	import random
 	from traceback import print_exception
 	import pygame as pg
@@ -722,10 +723,12 @@ def init (argv):
 				""+str(eval('self.'+self.user.state))
 			)
 
-		def run (self):
+		async def run (self):
 			# Run the program loop.
 			# User state system allows menu changing to be as simple as running an eval()
 			# as long as the state name matches a menu variable name.
+			# Coroutine rather than a plain loop because the browser build runs on the
+			# page's event loop: a loop that never yields freezes the tab outright.
 			while self.user.state != 'quit':
 				env.clock.tick(50)
 				try:
@@ -736,10 +739,17 @@ def init (argv):
 					if self.user.debug:
 						# Echo to command line if debug mode is on.
 						print(self)
-					with open('crashdump.log', 'w') as dump:
-						dump.write(str(self))
-						print_exception(*sys.exc_info(), file=dump)
+					try:
+						with open(env.datapath('crashdump.log'), 'w') as dump:
+							dump.write(str(self))
+							print_exception(*sys.exc_info(), file=dump)
+					except IOError:
+						# A read-only filesystem is no reason to swallow the real traceback.
+						pass
 					raise
+				# Hand the frame back to whoever owns the event loop. A no-op on the
+				# desktop, and the only reason the browser stays responsive.
+				await asyncio.sleep(0)
 			# Clean up when the program ends.
 			env.quit()
 	return Game()

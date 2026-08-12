@@ -25,9 +25,15 @@ if __name__ == '__main__':
 		'-s', '--sfx-volume', type=float, default=DEFAULT_SFX_VOLUME * 100, metavar='PERCENT',
 		help="sound effect volume from 0 to 100 (default %(default)g, 0 mutes)"
 	)
-	args = parser.parse_args()
+	# The browser build has no command line, so it runs on the defaults. Everything
+	# these flags set can also be changed in the game's own settings menu. Unknown
+	# arguments are ignored there rather than exiting, since a usage error would take
+	# the whole page down instead of printing to a terminal nobody is watching.
+	import sys
+	args = parser.parse_known_args()[0] if sys.platform == 'emscripten' else parser.parse_args()
 	# Imported after parsing so that --help doesn't need a display or a sound card.
+	import asyncio
 	import engine.game
-	# Run the game.
-	tetris = engine.game.init(args)
-	tetris.run()
+	# Run the game. The loop is a coroutine so that the same entry point works both
+	# as a desktop process and inside a browser tab, which owns its own event loop.
+	asyncio.run(engine.game.init(args).run())
