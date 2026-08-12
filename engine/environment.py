@@ -22,6 +22,8 @@ def datapath (*parts):
 
 pg.init()
 pg.mixer.init(buffer=1024)
+# Headroom so a drop, a clear and a lock landing together don't cut each other off.
+pg.mixer.set_num_channels(16)
 screen = pg.display.set_mode((800, 600), pg.HWSURFACE | pg.DOUBLEBUF)
 screct = screen.get_rect()
 clock = pg.time.Clock()
@@ -116,6 +118,35 @@ def render_text (obj=None, text='', color=0, surf=screen, **anchors):
 def load_music(name):
 	# Loads a music file into the stream.
 	return pg.mixer.music.load(datapath('music', name))
+
+# Every cue the game can fire. Names match the files in sound/.
+SFX_NAMES = (
+	'move', 'rotate', 'hold', 'lock', 'drop',
+	'forced', 'clear', 'tetris', 'tspin', 'gameover',
+)
+sounds = {}
+
+def load_sounds ():
+	# Load every effect once and hold it. A cue whose file is missing or unreadable
+	# is simply left out, so a broken install plays silently instead of crashing.
+	for name in SFX_NAMES:
+		try:
+			sounds[name] = pg.mixer.Sound(datapath('sound', name + '.wav'))
+		except (pg.error, IOError):
+			pass
+	set_sfx_volume(user.sfx_volume)
+
+def set_sfx_volume (volume):
+	# Sound effect volume, as a fraction from 0.0 to 1.0.
+	for sound in sounds.values():
+		sound.set_volume(volume)
+
+def play_sound (name):
+	# Fire a cue, if it exists and effects aren't muted.
+	if user.sfx_volume > 0.:
+		sound = sounds.get(name)
+		if sound is not None:
+			sound.play()
 
 def set_volume (volume):
 	# Music volume, as a fraction from 0.0 to 1.0. Takes effect on the stream at once,

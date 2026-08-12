@@ -8,6 +8,9 @@ DEFAULT_FORCED_DELAY = 1.0
 # to match the way the settings menu shows it.
 DEFAULT_VOLUME = 1.0
 
+# Sound effect volume, same 0.0 to 1.0 fraction and same percentage on the command line.
+DEFAULT_SFX_VOLUME = 1.0
+
 class User:
 	"""
 	The User class tracks global game state values, such as
@@ -16,7 +19,7 @@ class User:
 	In this case, it tracks tetris difficulty values and handles score data.
 	"""
 	__slots__ = (
-		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume',
+		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume', 'sfx_volume',
 		'cleartype', 'enablekicks', 'showghost', 'linktiles',
 		'hard_flag', 'twist_flag', 'tspin_flag',
 		'score', 'last_score', 'lines_cleared', 'level', 'timer',
@@ -62,7 +65,8 @@ class User:
 			"Ghost Piece: "+('Enabled' if self.showghost else 'Disabled')+"; "
 			"Linked Tile Textures: "+('Enabled' if self.linktiles else 'Disabled')+"\n"
 			"Forced Drop: "+("{:.3f}s".format(self.forced_delay) if self.forced_delay > 0 else 'Disabled')+"; "
-			"Music Volume: "+"{:.0%}".format(self.volume)+"\n\n"
+			"Music Volume: "+"{:.0%}".format(self.volume)+"; "
+			"Sound Volume: "+"{:.0%}".format(self.sfx_volume)+"\n\n"
 			"Scoring Values:\n"
 			"Score: "+str(self.score)+"; Last Clear: "+str(self.last_score)+" Clearing Chain: "+str(self.line_list[:-1])+"\n"
 			"Level: "+str(self.level)+"; Timer: "+"{}:{:02d}:{:02d}".format(self.timer // 60000, self.timer//1000 % 60, self.timer%1000 // 10)+"\n"
@@ -77,10 +81,12 @@ class User:
 			self.forced_delay = max(0., argv.forced_delay)
 			# Taken as a percentage on the command line, kept as a fraction here.
 			self.volume = min(1., max(0., argv.volume / 100.))
+			self.sfx_volume = min(1., max(0., argv.sfx_volume / 100.))
 		else:
 			self.debug = False
 			self.forced_delay = DEFAULT_FORCED_DELAY
 			self.volume = DEFAULT_VOLUME
+			self.sfx_volume = DEFAULT_SFX_VOLUME
 
 	def reset (self):
 		# Reset data when starting a new game.

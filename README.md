@@ -27,10 +27,10 @@ python main.py --forced-delay 0.8   # 0.8s per piece
 python main.py -f 0.5               # short form
 python main.py --forced-delay 0     # timer off, plain Tetris
 python main.py -f 0.8 --volume 30   # quieter music
-python main.py -v 0                 # no music
+python main.py -v 0 -s 60           # no music, effects at 60%
 ```
 
-`--forced-delay` takes seconds as a float, so `0.45` is fine. `--volume` takes a
+`--forced-delay` takes seconds as a float, so `0.45` is fine. `--volume` and `--sfx-volume` take a
 percentage from 0 to 100, matching what the settings menu shows. Both clamp rather than
 complain, and both only set the starting value — **Game Settings** retunes either one
 without restarting.
@@ -67,14 +67,36 @@ row, Left and Right change it, and holding the key repeats.
 | Linked Tiles | On / Off |
 | Line Clears | Naive / Sticky Cascade / Linked Cascade |
 | Music | Off, then 5% to 100% in 5% steps |
+| Sound | Off, then 5% to 100% in 5% steps |
 
 Changes apply immediately, including to the piece already falling and to the music
 playing behind the pause menu, so you can pause mid-run, shave 0.05s off, and feel it on
-the very next piece. They last for the session only — use `--forced-delay` and
-`--volume` for values you want every time.
+the very next piece. They last for the session only — use `--forced-delay`, `--volume`
+and `--sfx-volume` for values you want every time.
 
-Music is the only audio the base game has; there are no sound effects to balance
-against it.
+## Sound
+
+| Cue | When |
+| --- | --- |
+| move / rotate / hold | Shifting, rotating, swapping. Shifting speaks on the initial press only, not on every auto-shift step |
+| lock | The piece settles under gravity |
+| drop | You hard dropped it yourself |
+| **forced** | The timer took the placement away from you |
+| clear / tetris | One to three lines, or four |
+| tspin | A T-spin landed |
+| gameover | The stack topped out |
+
+`drop` and `forced` are deliberately unalike — a low sawtooth buzz against the hard
+drop's thud — because the whole point is hearing, without looking, that you ran out of
+time rather than chose to place.
+
+The effects are synthesised, not sampled, so the repository carries no third-party
+audio. `tools/make_sounds.py` regenerates every file from the parameters at the bottom
+of that script, so retuning a cue means changing a number and re-running it:
+
+```bash
+python tools/make_sounds.py
+```
 
 ## How the timer behaves
 
@@ -109,6 +131,6 @@ python tools/test_menus.py         # every menu button, driven by posted key eve
 
 Built on [virtuNat/pyTetris](https://github.com/virtuNat/pyTetris), which is licensed
 under the GNU General Public License v3. Forcetris is a derivative work and is therefore
-distributed under the same licence — see [LICENSE](LICENSE). The forced drop timer and
-the CLI option around it are the changes made here; the engine, art, and music are
-virtuNat's.
+distributed under the same licence — see [LICENSE](LICENSE). The forced drop timer, the
+menus around it, and the synthesised sound effects are the changes made here; the engine,
+art, and background music are virtuNat's.

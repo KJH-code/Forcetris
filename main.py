@@ -9,7 +9,7 @@ __basedon__ = "pyTetris 1.1.9"
 if __name__ == '__main__':
 	import argparse
 	# Safe to import ahead of parsing: userstate pulls in nothing, unlike engine.game.
-	from engine.userstate import DEFAULT_FORCED_DELAY, DEFAULT_VOLUME
+	from engine.userstate import DEFAULT_FORCED_DELAY, DEFAULT_VOLUME, DEFAULT_SFX_VOLUME
 	# Parse the optional arguments for the command line interface.
 	parser = argparse.ArgumentParser(description="Tetris clone with a forced hard drop timer, implemented using Pygame.")
 	parser.add_argument('-d', '--debug', action='store_true', help="enables debug mode")
@@ -20,6 +20,10 @@ if __name__ == '__main__':
 	parser.add_argument(
 		'-v', '--volume', type=float, default=DEFAULT_VOLUME * 100, metavar='PERCENT',
 		help="music volume from 0 to 100 (default %(default)g, 0 mutes)"
+	)
+	parser.add_argument(
+		'-s', '--sfx-volume', type=float, default=DEFAULT_SFX_VOLUME * 100, metavar='PERCENT',
+		help="sound effect volume from 0 to 100 (default %(default)g, 0 mutes)"
 	)
 	args = parser.parse_args()
 	# Imported after parsing so that --help doesn't need a display or a sound card.

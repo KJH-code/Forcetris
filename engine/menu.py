@@ -242,7 +242,7 @@ class SettingsMenu (env.Menu):
 	clear_names = ('Naive', 'Sticky Cascade', 'Linked Cascade')
 
 	def __init__ (self, user):
-		# Tall enough for seven rows under the title plus the hint line beneath them.
+		# Tall enough for eight rows under the title plus the hint line beneath them.
 		bg = pg.Surface((460, 436))
 		bg.fill(0x00A060)
 		super().__init__(user, bg, center=env.screct.center)
@@ -251,12 +251,12 @@ class SettingsMenu (env.Menu):
 		hmargin = 20
 		tmargin = 50
 		spacing = 6
-		height = 44
+		height = 38
 		width = self.rect.w - 2 * hmargin
 
 		self.selections = [[
 			env.MenuOption(self, action, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
-			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'music', 'back'))]]
+			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'music', 'sound', 'back'))]]
 		self.set_labels()
 
 	def label (self, action):
@@ -274,6 +274,8 @@ class SettingsMenu (env.Menu):
 			return 'Line Clears:  ' + self.clear_names[self.user.cleartype]
 		elif action == 'music':
 			return 'Music:  ' + ('{:.0%}'.format(self.user.volume) if self.user.volume > 0. else 'Off')
+		elif action == 'sound':
+			return 'Sound:  ' + ('{:.0%}'.format(self.user.sfx_volume) if self.user.sfx_volume > 0. else 'Off')
 		return 'Back'
 
 	def set_labels (self):
@@ -303,6 +305,12 @@ class SettingsMenu (env.Menu):
 			# Straight to the stream, so the player hears the level they picked
 			# while the track is still playing behind the pause menu.
 			env.set_volume(self.user.volume)
+		elif action == 'sound':
+			volume = round(self.user.sfx_volume + movedir * self.volume_step, 2)
+			self.user.sfx_volume = min(1., max(0., volume))
+			env.set_sfx_volume(self.user.sfx_volume)
+			# Play a cue at the new level, so the number can be set by ear.
+			env.play_sound('rotate')
 		else:
 			return
 		self.set_labels()

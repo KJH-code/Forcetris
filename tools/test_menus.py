@@ -21,7 +21,12 @@ import pygame as pg
 import engine.game as G
 import engine.environment as env
 
-tetris = G.init(Namespace(debug=False, forced_delay=1.0, volume=100.))
+# The dummy video driver never reports keyboard focus, which the game reads as a
+# lost window and turns into a pause on every single frame. Nothing here is
+# simulating an alt-tab, so pretend the window is focused.
+pg.key.get_focused = lambda: True
+
+tetris = G.init(Namespace(debug=False, forced_delay=1.0, volume=100., sfx_volume=100.))
 user = tetris.user
 
 FAILED = []
@@ -169,8 +174,46 @@ check(
 )
 
 # Back is the last row and has to leave the menu.
+# --- Sound effect volume, which lives on the Sound objects themselves. ------
 settings.reset()
 press(settings, pg.K_DOWN, 6)
+check('the sound row is where it should be', settings.selected.action == 'sound', settings.selected.action)
+press(settings, pg.K_LEFT, 5)
+check(
+    'left lowers the sound volume',
+    abs(user.sfx_volume - 0.75) < 1e-9,
+    '{:.0%}'.format(user.sfx_volume)
+)
+check(
+    'the level reaches every loaded effect',
+    env.sounds and all(abs(s.get_volume() - user.sfx_volume) < 0.02 for s in env.sounds.values()),
+    '{} effects loaded'.format(len(env.sounds))
+)
+press(settings, pg.K_LEFT, 40)
+check(
+    'the sound volume bottoms out at Off',
+    user.sfx_volume == 0. and settings.label('sound').endswith('Off'),
+    settings.label('sound')
+)
+press(settings, pg.K_RIGHT, 60)
+check('the sound volume tops out at 100%', user.sfx_volume == 1., '{:.0%}'.format(user.sfx_volume))
+
+# --- Every cue the code fires has to exist. ---------------------------------
+missing = [name for name in env.SFX_NAMES if name not in env.sounds]
+check('every effect loaded', not missing, 'missing {}'.format(missing) if missing else '{} loaded'.format(len(env.sounds)))
+fired = set()
+for line in open(os.path.join(ROOT, 'engine', 'game.py')):
+    if 'play_sound(' in line and 'def ' not in line:
+        fired.update(part.split("'")[0] for part in line.split("play_sound(")[1].split("'")[1::2])
+unknown = sorted(name for name in fired if name not in env.SFX_NAMES)
+check(
+    'every cue the game fires is a real effect',
+    not unknown, 'unknown {}'.format(unknown) if unknown else 'fires {}'.format(sorted(fired))
+)
+
+# Back is the last row and has to leave the menu.
+settings.reset()
+press(settings, pg.K_DOWN, 7)
 press(settings, pg.K_RETURN)
 check('the Back row leaves the menu', user.state == 'main_menu', user.state)
 
@@ -232,7 +275,7 @@ for delay in (1.0, 0.):
 # Volume is a percentage on the command line and a fraction internally, so the
 # conversion is the one place a 60 could silently become a 6000%.
 for given, expected in ((100., 1.0), (60., 0.6), (0., 0.0), (-5., 0.0), (400., 1.0)):
-    user.eval_argv(Namespace(debug=False, forced_delay=1.0, volume=given))
+    user.eval_argv(Namespace(debug=False, forced_delay=1.0, volume=given, sfx_volume=given))
     check(
         '--volume {:g} becomes {:.0%}'.format(given, expected),
         abs(user.volume - expected) < 1e-9,

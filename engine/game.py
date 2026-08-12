@@ -41,6 +41,7 @@ class Core:
 
 		self.font = pg.font.SysFont(None, 25)
 		self.theme = env.load_music('tetris.ogg')
+		env.load_sounds()
 
 		self.grid = Grid(user)
 		self.set_data()
@@ -143,12 +144,15 @@ class Core:
 
 	def hold_shape (self):
 		# Holds a tetrimino in storage until retrieved.
+		# Returns True when a hold actually happened, so the caller knows whether
+		# there is anything to announce.
 		if self.storedshape.form > 6:
 			# The piece pulled out of the queue goes through set_shape, which starts
 			# its forced drop timer from scratch on its own.
 			self.storedshape = Shape(
 				self.newshape.form if self.entry_flag else self.nextshapes[0].form, 0)
 			self.next_shape()
+			return True
 		else:
 			# If storage already has a tetrimino, swap with current active one.
 			if not self.hold_lock and self.storedshape.form != self.freeshape.form:
@@ -163,6 +167,8 @@ class Core:
 				else:
 					# Allow pieces to be swapped during spawn delay.
 					self.nextshapes[0], self.storedshape = self.storedshape, self.nextshapes[0]
+				return True
+		return False
 
 	def check_collision (self, shape):
 		# Check if the shape to be evaluated is intersecting with any other blocks on the grid.
@@ -178,14 +184,16 @@ class Core:
 				return True
 		else: return False
 
-	def hard_drop (self):
+	def hard_drop (self, forced=False):
 		# Slam the active piece onto its ghost position and lock it there.
-		# Shared by the player's hard drop key and by the forced drop timer.
+		# Shared by the player's hard drop key and by the forced drop timer, which is
+		# why the cue it fires has to say which of the two just took the placement.
 		if not self.entry_flag or self.clearing:
 			return False
 		self.user.hard_flag = True
 		posdif = self.ghostshape.pos[1] - self.freeshape.pos[1]
 		self.freeshape.pos = self.ghostshape.pos[:]
+		env.play_sound('forced' if forced else 'drop')
 		self.eval_fallen(posdif)
 		return True
 
@@ -197,7 +205,7 @@ class Core:
 		self.piece_elapsed += self.frame_delta
 		if self.piece_elapsed < self.user.forced_delay:
 			return False
-		return self.hard_drop()
+		return self.hard_drop(True)
 
 	def eval_input (self):
 		# Evaluates player input.
@@ -216,24 +224,31 @@ class Core:
 				self.shift_frame = self.shift_delay
 				if self.entry_flag:
 					self.newshape.translate((-1, 0))
+					# Only the initial press is heard. Auto-shift steps run every couple
+					# of frames and would turn the cue into a machine gun.
+					env.play_sound('move')
 			elif event.key == pg.K_RIGHT: # Shift right
 				self.shift_dir = 'r'
 				self.shift_frame = self.shift_delay
 				if self.entry_flag:
 					self.newshape.translate(( 1, 0))
+					env.play_sound('move')
 			elif event.key == pg.K_DOWN: # Toggle soft drop
 				self.soft_drop = True
 				self.soft_pos = self.newshape.pos[1]
 			elif event.key == pg.K_LSHIFT: # Hold tetrimino to storage
-				self.hold_shape()
+				if self.hold_shape():
+					env.play_sound('hold')
 
 			elif self.entry_flag:
 				if event.key == pg.K_z or event.key == pg.K_LCTRL: # Rotate CCW
 					self.newshape.rotate(False)
 					self.wall_kick()
+					env.play_sound('rotate')
 				elif event.key == pg.K_x or event.key == pg.K_UP: # Rotate CW
 					self.newshape.rotate(True)
 					self.wall_kick()
+					env.play_sound('rotate')
 
 				elif event.key == pg.K_SPACE: # Hard drop
 					self.hard_drop()
@@ -428,6 +443,9 @@ class Core:
 		self.clearing = True
 		self.line_clearer = self.grid.clear_lines()
 		self.grid.update()
+		# A T-spin is worth hearing, and the flag is cleared on the next line.
+		if self.user.tspin_flag:
+			env.play_sound('tspin')
 		# Reset flags pertaining to dropped state of the tetrimino.
 		self.user.twist_flag = False
 		self.user.tspin_flag = False
@@ -494,6 +512,7 @@ class Core:
 			self.save_menu.loss_bg.blit(env.screen, (0, 0))
 			self.loss_menu.render_loss(env.screen)
 			pg.mixer.music.fadeout(2500)
+			env.play_sound('gameover')
 
 	def ramp_arcade (self):
 		# Manages the difficulty of arcade mode.
@@ -629,6 +648,7 @@ class Core:
 						else:
 							# Evaluate dropped piece.
 							self.grav_frame = 0
+							env.play_sound('lock')
 							self.eval_fallen(self.ghostshape.pos[1] - self.soft_pos if self.soft_drop else 0)
 
 					else: # If there won't be gravity collision:
@@ -666,6 +686,10 @@ class Core:
 				self.grid.animate_clears()
 			else:
 				self.clearing = next(self.line_clearer)
+				# Reaching here means no clear sprites were pending, so any that exist
+				# now belong to a cascade the generator has just resolved.
+				if self.grid.csprts:
+					env.play_sound('tetris' if self.user.line_list[-1] > 3 else 'clear')
 		# Refresh screen. There is not enough fast rendering to justify using update()
 		pg.display.flip()
 
