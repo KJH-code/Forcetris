@@ -38,10 +38,10 @@ without restarting.
 The HUD shows the time the active piece has left under **Forced Drop**, and turns red
 over the last quarter of the budget.
 
-## Controls
+## Default keys
 
-Menus are keyboard only: arrow keys to move, `Z` or `Enter` to confirm, `X` or `Esc` to
-go back.
+All of these are reboundable under **Game Settings → Controls**. Menu navigation is not:
+arrow keys to move, `Z` or `Enter` to confirm, `X` or `Esc` to go back, always.
 
 | Key | Action |
 | --- | --- |
@@ -68,11 +68,42 @@ row, Left and Right change it, and holding the key repeats.
 | Line Clears | Naive / Sticky Cascade / Linked Cascade |
 | Music | Off, then 5% to 100% in 5% steps |
 | Sound | Off, then 5% to 100% in 5% steps |
+| Controls... | Rebind the gameplay keys |
+| Handling... | DAS, ARR, DCD and SDF |
 
 Changes apply immediately, including to the piece already falling and to the music
 playing behind the pause menu, so you can pause mid-run, shave 0.05s off, and feel it on
 the very next piece. They last for the session only — use `--forced-delay`, `--volume`
 and `--sfx-volume` for values you want every time.
+
+## Controls and handling
+
+**Controls** rebinds the gameplay keys: pick a row, press the key you want. Taking a key
+that another action holds removes it from that action rather than leaving one key firing
+two things; an action left with nothing reads as *Unbound* until you give it a key.
+
+Menu navigation is deliberately not in that list. The arrow keys, `Z`, `X`, `Enter` and
+`Escape` always drive the menus, so no set of bindings can strand you outside the screen
+that would undo them. That is also why `Escape` cancels the *press a key* prompt and so
+cannot itself be bound — **Reset to Defaults** is how Pause gets it back.
+
+**Handling** carries the TETR.IO knobs:
+
+| Setting | Range | Meaning |
+| --- | --- | --- |
+| DAS | 0–500ms | How long a held direction waits before it repeats |
+| ARR | 0–200ms | Time between repeats. `0` slides to the wall in one frame |
+| DCD | 0–200ms | A charged auto-shift is cut back to this on spawn and on rotation. `0` leaves it alone |
+| SDF | 5–40x | Soft drop as a multiple of gravity. `40` drops to the floor at once, without locking |
+
+The millisecond settings land on a 20ms grid, because the game runs at a fixed 50 frames
+per second and auto-shift can only act on a frame boundary. Arcade mode's difficulty ramp
+no longer touches auto-shift or soft drop — handling is yours, and only gravity climbs
+with the level.
+
+Unlike the other settings, controls and handling **persist**, in `data/controls.json`.
+Rebinding that reset on every launch would not be worth having. A missing, corrupt or
+unwritable file falls back to the defaults, which is also what the browser build gets.
 
 ## Sound
 
@@ -164,12 +195,14 @@ pygame's SDL2 built there is its own project. The browser build is the supported
 
 ## Tests
 
-All three suites run headlessly — no display, sound card, or browser needed.
+All five suites run headlessly — no display, sound card, or browser needed.
 
 ```bash
 python tools/test_forced_drop.py   # the timer rules above, against a fake clock
 python tools/test_menus.py         # every menu button, driven by posted key events
 python tools/test_web.py           # the properties the browser build depends on
+python tools/test_controls.py      # rebinding, including that the game obeys the new key
+python tools/test_handling.py      # DAS, ARR, DCD and SDF, measured in cells travelled
 ```
 
 ## Credits and licence

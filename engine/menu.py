@@ -233,23 +233,24 @@ class SettingsMenu (env.Menu):
 
 	clear_names = ('Naive', 'Sticky Cascade', 'Linked Cascade')
 
-	def __init__ (self, user, controls_menu):
-		# Tall enough for nine rows under the title plus the hint line beneath them.
-		bg = pg.Surface((460, 474))
+	def __init__ (self, user, controls_menu, handling_menu):
+		# Tall enough for ten rows under the title plus the hint line beneath them.
+		bg = pg.Surface((460, 476))
 		bg.fill(0x00A060)
 		super().__init__(user, bg, center=env.screct.center)
 		self.return_state = 'main_menu'
 		self.controls_menu = controls_menu
+		self.handling_menu = handling_menu
 
 		hmargin = 20
 		tmargin = 50
-		spacing = 6
-		height = 38
+		spacing = 5
+		height = 34
 		width = self.rect.w - 2 * hmargin
 
 		self.selections = [[
 			env.MenuOption(self, action, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
-			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'music', 'sound', 'controls', 'back'))]]
+			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'music', 'sound', 'controls', 'handling', 'back'))]]
 		self.set_labels()
 
 	def label (self, action):
@@ -271,6 +272,8 @@ class SettingsMenu (env.Menu):
 			return 'Sound:  ' + ('{:.0%}'.format(self.user.sfx_volume) if self.user.sfx_volume > 0. else 'Off')
 		elif action == 'controls':
 			return 'Controls...'
+		elif action == 'handling':
+			return 'Handling...'
 		return 'Back'
 
 	def set_labels (self):
@@ -335,6 +338,9 @@ class SettingsMenu (env.Menu):
 				elif self.selected.action == 'controls':
 					self.controls_menu.return_state = 'settings_menu'
 					self.user.state = 'controls_menu'
+				elif self.selected.action == 'handling':
+					self.handling_menu.return_state = 'settings_menu'
+					self.user.state = 'handling_menu'
 				else:
 					# Confirming a toggle flips it, which is what pressing it looks like it should do.
 					self.adjust(1)
@@ -440,6 +446,98 @@ class ControlsMenu (env.Menu):
 		hint = ('Press the key to bind, or Escape to cancel' if self.listening is not None
 			else 'Z to rebind, X to go back')
 		self.render_text(hint, 0xD0FFFF, surf, midbottom=(self.rect.w / 2, self.rect.h - 12))
+
+	def run (self):
+		self.menu_bg.draw(env.screen)
+		self.draw(env.screen)
+		super().run()
+		self.display_hint()
+		pg.display.flip()
+
+class HandlingMenu (env.Menu):
+	"""
+	TETR.IO's handling knobs: DAS, ARR, DCD and the soft drop factor.
+
+	Left and Right change the highlighted value, exactly as in the settings menu.
+	The millisecond settings land on a 20ms grid because the game runs at a fixed
+	50 frames per second and auto-shift can only act on a frame boundary.
+	"""
+	def __init__ (self, user):
+		# Six rows: four settings, plus Reset and Back.
+		bg = pg.Surface((470, 340))
+		bg.fill(0x1F5F9F)
+		super().__init__(user, bg, center=env.screct.center)
+		self.return_state = 'settings_menu'
+
+		hmargin = 20
+		tmargin = 50
+		spacing = 6
+		height = 36
+		width = self.rect.w - 2 * hmargin
+		rows = [name for name, label, unit, low, high, step in ctl.HANDLING] + ['reset', 'back']
+
+		self.selections = [[
+			env.MenuOption(self, name, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
+			for i, name in enumerate(rows)]]
+		self.set_labels()
+
+	def label (self, name):
+		if name == 'reset':
+			return 'Reset to Defaults'
+		elif name == 'back':
+			return 'Back'
+		title = dict((n, l) for n, l, u, lo, hi, st in ctl.HANDLING)[name]
+		return '{}:  {}'.format(title, ctl.describe_handling(self.user, name))
+
+	def set_labels (self):
+		for option in self.selections[0]:
+			option.text = self.font.render(self.label(option.action), 0, pg.Color(255, 255, 255))
+			option.text_rect = option.text.get_rect(center=option.rect.center)
+
+	def adjust (self, movedir):
+		name = self.selected.action
+		for key, title, unit, low, high, step in ctl.HANDLING:
+			if key == name:
+				ctl.set_handling(self.user, name, getattr(self.user, name) + movedir * step)
+				self.set_labels()
+				return
+
+	def eval_move (self, coord, movedir):
+		# Horizontal movement edits the highlighted value rather than moving the
+		# cursor, reusing the auto-repeat timing the base class already runs.
+		if coord == 0:
+			if not self.moved:
+				self.adjust(movedir)
+				self.moved = True
+			else:
+				self.movetime -= 1
+				if self.movetime < 1:
+					self.adjust(movedir)
+					self.movetime = self.shortime
+		else:
+			super().eval_move(coord, movedir)
+
+	def eval_input (self):
+		event = super().eval_input()
+		if event.type == pg.KEYDOWN:
+			if event.key == pg.K_z or event.key == pg.K_RETURN:
+				if self.selected.action == 'back':
+					self.user.state = self.return_state
+					self.reset()
+				elif self.selected.action == 'reset':
+					for name, value in ctl.HANDLING_DEFAULTS.items():
+						ctl.set_handling(self.user, name, value)
+					self.set_labels()
+				else:
+					self.adjust(1)
+			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
+				self.user.state = self.return_state
+				self.reset()
+
+	@env.Menu.render
+	def display_hint (self, surf):
+		self.render_text('Handling', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 15))
+		self.render_text('LEFT / RIGHT to change, X to go back', 0xD0E8FF, surf, midbottom=(self.rect.w / 2, self.rect.h - 12))
 
 	def run (self):
 		self.menu_bg.draw(env.screen)

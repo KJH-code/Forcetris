@@ -34,6 +34,9 @@ class Core:
 	# to the forced drop timer. Pausing, alt-tabbing or a stalled frame would
 	# otherwise burn the whole timer in one go and instantly slam the piece down.
 	max_frame_delta = 0.1
+	# One frame at the loop's fixed 50fps. Handling values arrive in milliseconds
+	# and can only take effect on frame boundaries, so this is their resolution.
+	frame_ms = 20
 
 	def __init__ (self, user, pause_menu, save_menu, loss_menu):
 		self.user = user
@@ -103,9 +106,14 @@ class Core:
 
 		self.shift_dir = '0' # The current direction the tetrimino is shifting.
 		self.shift_frame = 0 # The frame counter for auto-shifting.
+		self.das_charged = False # True once the auto-shift delay has elapsed.
 
 		self.grav_frame = 0 # The gravity frame counter.
 		self.grav_delay = self.fall_delay # Currently used gravity delay.
+		# Auto-shift and soft drop speeds come from the player's handling, not the mode.
+		self.dcd_frames = 0 # Frames a charged auto-shift is cut back to.
+		self.soft_instant = False # True when soft drop slams instead of accelerating.
+		self.apply_handling()
 
 		# Forced hard drop timer. Kept in seconds of real time rather than in frames
 		# so that the training pressure stays the same no matter what the frame rate
@@ -114,6 +122,26 @@ class Core:
 		self.piece_elapsed = None # Seconds the active piece has been in play, None if there is none.
 		self.forced_tick = None # perf_counter reading taken at the previous frame.
 		self.frame_delta = 0. # Clamped real time elapsed since the previous frame.
+
+	def apply_handling (self):
+		# Translate the player's handling into the frame counters the loop runs on.
+		# Re-derived every frame so the settings menu takes effect immediately, and
+		# so arcade's rising gravity keeps dragging soft drop along with it.
+		self.shift_delay = int(round(self.user.das / self.frame_ms))
+		self.shift_fdelay = int(round(self.user.arr / self.frame_ms))
+		self.dcd_frames = int(round(self.user.dcd / self.frame_ms))
+		# Soft drop is a multiple of gravity, as it is in TETR.IO, so it stays
+		# proportionate as arcade mode speeds the fall up.
+		self.soft_instant = self.user.sdf >= ctl.SDF_INSTANT
+		self.soft_delay = max(1, int(round(self.fall_delay / float(self.user.sdf))))
+
+	def cut_das (self):
+		# DAS cut delay: an auto-shift that has finished charging is knocked back to
+		# dcd_frames when the piece spawns or rotates, so a held direction doesn't
+		# fling the new piece across the board. A DCD of 0 leaves the charge alone.
+		if self.dcd_frames > 0 and self.das_charged:
+			self.shift_frame = self.dcd_frames + 1
+			self.das_charged = False
 
 	def gen_shapelist (self):
 		# Generate a 'bag' of one of each tetrimino shape in random order.
@@ -134,6 +162,8 @@ class Core:
 		self.eval_ghost()
 		# Test for obstructions. If they exist, the player lost.
 		self.eval_block()
+		# A held direction must not carry its full charge into the new piece.
+		self.cut_das()
 		# Start this piece's forced drop timer, unless that spawn just ended the game.
 		self.piece_elapsed = None if self.user.state == 'loss_menu' else 0.
 
@@ -223,7 +253,8 @@ class Core:
 		elif event.type == pg.KEYDOWN:
 			if ctl.matches(self.user, 'left', event.key): # Shift left
 				self.shift_dir = 'l'
-				self.shift_frame = self.shift_delay
+				self.das_charged = False
+				self.shift_frame = self.shift_delay + 1
 				if self.entry_flag:
 					self.newshape.translate((-1, 0))
 					# Only the initial press is heard. Auto-shift steps run every couple
@@ -231,7 +262,8 @@ class Core:
 					env.play_sound('move')
 			elif ctl.matches(self.user, 'right', event.key): # Shift right
 				self.shift_dir = 'r'
-				self.shift_frame = self.shift_delay
+				self.das_charged = False
+				self.shift_frame = self.shift_delay + 1
 				if self.entry_flag:
 					self.newshape.translate(( 1, 0))
 					env.play_sound('move')
@@ -246,10 +278,12 @@ class Core:
 				if ctl.matches(self.user, 'rotate_ccw', event.key): # Rotate CCW
 					self.newshape.rotate(False)
 					self.wall_kick()
+					self.cut_das()
 					env.play_sound('rotate')
 				elif ctl.matches(self.user, 'rotate_cw', event.key): # Rotate CW
 					self.newshape.rotate(True)
 					self.wall_kick()
+					self.cut_das()
 					env.play_sound('rotate')
 
 				elif ctl.matches(self.user, 'harddrop', event.key): # Hard drop
@@ -301,10 +335,17 @@ class Core:
 			self.shift_frame -= 1
 		elif (self.shift_dir == 'l' or self.shift_dir == 'r') and self.entry_flag:
 			self.shift_frame = self.shift_fdelay
-			if self.shift_dir == 'l':
-				self.newshape.translate((-1, 0))
-			elif self.shift_dir == 'r':
-				self.newshape.translate(( 1, 0))
+			self.das_charged = True
+			step = -1 if self.shift_dir == 'l' else 1
+			if self.shift_fdelay < 1:
+				# ARR 0: cover the whole distance to the wall in this one frame.
+				while True:
+					self.newshape.translate((step, 0))
+					if self.check_collision(self.newshape):
+						self.newshape.translate((-step, 0))
+						break
+			else:
+				self.newshape.translate((step, 0))
 		# Prevent active tetrimino from sliding into gridblocks.
 		if self.check_collision(self.newshape):
 			self.newshape.pos = self.freeshape.pos[:]
@@ -437,7 +478,7 @@ class Core:
 		# Evaluates what happens to a tetrimino when it has just fallen.
 		# Reset DAS if the user has not let go of the key yet.
 		if self.shift_frame == 0 and self.shift_dir != '0':
-			self.shift_frame = self.shift_delay
+			self.shift_frame = self.shift_delay + 1
 		# Evaluate drop score and cut piece to the matrix.
 		self.user.eval_drop_score(posdif)
 		self.grid.paste_shape(self.freeshape)
@@ -522,10 +563,9 @@ class Core:
 		self.user.eval_level()
 		# Responsible for making the Arcade mode more faster-paced over time.
 		self.fall_delay = 45 - (40*self.user.level//180) if self.user.level < 180 else 5
-		self.soft_delay = 6 - (5*self.user.level//90) if self.user.level < 90 else 1
 		self.entry_delay = 30 - (20*self.user.level//150) if self.user.level < 150 else 10
-		self.shift_delay = 25 - (17*self.user.level//120) if self.user.level < 120 else 8
-		self.shift_fdelay = 4 - (3*self.user.level//60) if self.user.level < 60 else 1
+		# Auto-shift and soft drop are deliberately left out of the ramp: handling is
+		# the player's setting, and only gravity gets to climb with the level.
 		# Start periodically spawning garbage lines at level 64.
 		if self.user.level >= 64:
 			if self.line_frame == 0:
@@ -623,6 +663,7 @@ class Core:
 		# Measure how much real time this frame is worth to the forced drop timer.
 		# The reading is clamped because the game loop stops calling this method
 		# while a menu is up, so the first frame back would otherwise be huge.
+		self.apply_handling()
 		now = time.perf_counter()
 		self.frame_delta = 0. if self.forced_tick is None else min(now - self.forced_tick, self.max_frame_delta)
 		self.forced_tick = now
@@ -658,8 +699,14 @@ class Core:
 							self.grav_frame += 1
 						else: # Move shape down.
 							self.grav_frame = 0
-							self.freeshape.translate(( 0, 1))
-							self.newshape.translate(( 0, 1))
+							if self.soft_drop and self.soft_instant:
+								# SDF at its maximum: fall to the floor now, without locking, so
+								# the piece can still be slid or spun once it is down there.
+								self.freeshape.pos = self.ghostshape.pos[:]
+								self.newshape.pos = self.ghostshape.pos[:]
+							else:
+								self.freeshape.translate(( 0, 1))
+								self.newshape.translate(( 0, 1))
 			# If it is, count down the number of frames until it's time to deactivate it.
 			elif self.entry_frame > 1:
 				self.entry_frame -= 1
@@ -708,7 +755,8 @@ def init (argv):
 		score_menu = menu.HiScoreMenu(user)
 		help_menu = menu.HelpMenu(user)
 		controls_menu = menu.ControlsMenu(user)
-		settings_menu = menu.SettingsMenu(user, controls_menu)
+		handling_menu = menu.HandlingMenu(user)
+		settings_menu = menu.SettingsMenu(user, controls_menu, handling_menu)
 		pause_menu = menu.PauseMenu(user, settings_menu)
 		save_menu = menu.SaveMenu(user)
 		loss_menu = menu.LossMenu(user, settings_menu)

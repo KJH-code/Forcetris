@@ -55,6 +55,41 @@ KEY_NAMES = {
 	pg.K_DOWN: 'Down Arrow',
 }
 
+# TETR.IO's handling knobs, in the units that game shows them in. The engine runs
+# at 50 frames per second, so anything in milliseconds lands on a 20ms grid.
+HANDLING = (
+	('das', 'DAS', 'ms', 0, 500, 20),
+	('arr', 'ARR', 'ms', 0, 200, 20),
+	('dcd', 'DCD', 'ms', 0, 200, 20),
+	('sdf', 'SDF', 'x', 5, 40, 1),
+)
+
+HANDLING_DEFAULTS = {'das': 140, 'arr': 40, 'dcd': 0, 'sdf': 6}
+
+# Above this, soft drop stops being a speed and becomes a slam to the floor.
+SDF_INSTANT = 40
+
+def handling_defaults ():
+	return dict(HANDLING_DEFAULTS)
+
+def describe_handling (user, name):
+	# The value as the player set it, or the word the extreme end of the range means.
+	value = getattr(user, name)
+	if name == 'arr' and value <= 0:
+		return 'Instant'
+	if name == 'dcd' and value <= 0:
+		return 'Off'
+	if name == 'sdf' and value >= SDF_INSTANT:
+		return 'Instant'
+	return '{}{}'.format(int(value), 'ms' if name != 'sdf' else 'x')
+
+def set_handling (user, name, value):
+	for key, label, unit, low, high, step in HANDLING:
+		if key == name:
+			setattr(user, name, min(high, max(low, value)))
+			save(user)
+			return
+
 def key_name (code):
 	# A label for one key code, as close to what is printed on the key as we can get.
 	if code in KEY_NAMES:
@@ -80,6 +115,8 @@ def defaults ():
 
 def reset (user):
 	user.keys = defaults()
+	for name, value in HANDLING_DEFAULTS.items():
+		setattr(user, name, value)
 	save(user)
 
 def bind (user, action, code):
@@ -97,6 +134,8 @@ def load (user):
 	# unreadable. Bindings are worth persisting even though the other settings
 	# are not: nobody wants to redo them on every launch.
 	user.keys = defaults()
+	for name, value in HANDLING_DEFAULTS.items():
+		setattr(user, name, value)
 	try:
 		with open(CONFIG, 'r') as config:
 			saved = json.load(config)
@@ -107,6 +146,9 @@ def load (user):
 	for action, codes in (saved.get('keys') or {}).items():
 		if action in DEFAULTS and isinstance(codes, list):
 			user.keys[action] = tuple(code for code in codes if isinstance(code, int))
+	for name, value in (saved.get('handling') or {}).items():
+		if name in HANDLING_DEFAULTS and isinstance(value, (int, float)):
+			set_handling(user, name, value)
 
 def save (user):
 	# Best effort. The browser build has no writable filesystem worth the name,
@@ -114,6 +156,9 @@ def save (user):
 	try:
 		os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
 		with open(CONFIG, 'w') as config:
-			json.dump({'keys': {action: list(codes) for action, codes in user.keys.items()}}, config, indent=1)
+			json.dump({
+				'keys': {action: list(codes) for action, codes in user.keys.items()},
+				'handling': {name: getattr(user, name) for name in HANDLING_DEFAULTS},
+			}, config, indent=1)
 	except (IOError, OSError):
 		pass
