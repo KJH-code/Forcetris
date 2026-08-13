@@ -31,6 +31,7 @@ ACTIONS = (
 	('harddrop', 'Hard Drop'),
 	('rotate_ccw', 'Rotate CCW'),
 	('rotate_cw', 'Rotate CW'),
+	('rotate_180', 'Rotate 180'),
 	('hold', 'Hold'),
 	('pause', 'Pause'),
 )
@@ -42,6 +43,7 @@ DEFAULTS = {
 	'harddrop': (pg.K_SPACE,),
 	'rotate_ccw': (pg.K_z, pg.K_LCTRL),
 	'rotate_cw': (pg.K_x, pg.K_UP),
+	'rotate_180': (pg.K_a,),
 	'hold': (pg.K_LSHIFT,),
 	'pause': (pg.K_ESCAPE,),
 }

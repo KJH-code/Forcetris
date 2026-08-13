@@ -285,6 +285,14 @@ class Core:
 					self.wall_kick()
 					self.cut_das()
 					env.play_sound('rotate')
+				elif ctl.matches(self.user, 'rotate_180', event.key): # Rotate 180
+					# Two clockwise steps, so the rotation maths stays in one place. The
+					# kick table is picked from the start and end states, not the route.
+					self.newshape.rotate(True)
+					self.newshape.rotate(True)
+					self.wall_kick()
+					self.cut_das()
+					env.play_sound('rotate')
 
 				elif ctl.matches(self.user, 'harddrop', event.key): # Hard drop
 					self.hard_drop()
@@ -406,7 +414,10 @@ class Core:
 
 	def wall_kick (self):
 		# Arika Implementation of wall kicks for I-symmetricity about the y-axis.
-		# All else is SRS.
+		# All else is SRS. SRS says nothing about 180 rotations, so those use the
+		# SRS+ table modern guideline games settled on, converted to this engine's
+		# downward y axis. Without them a 180 would fall through every branch below
+		# and get committed on top of the stack it collided with.
 		# The O piece cannot rotate, and therefore cannot be kicked.
 		if self.freeshape.form != 1:
 			# Check if the inital rotation caused a collision.
@@ -425,6 +436,11 @@ class Core:
 							self.test_kicks([(-1, 0), (-1,-1), ( 0, 2), (-1, 2)])
 						else: # I
 							self.test_kicks([(-2, 0), ( 1, 0), ( 1,-2), (-2, 1)])
+					elif self.newshape.state == 2: # Rotation from spawn to 180
+						if self.newshape.form > 1: # J, L, S, T, Z
+							self.test_kicks([( 0,-1), ( 1,-1), (-1,-1), ( 1, 0), (-1, 0)])
+						else: # I
+							self.test_kicks([(-1, 0), (-2, 0), ( 1, 0), ( 2, 0), ( 0, 1)])
 				elif self.freeshape.state == 1:
 					if self.newshape.state == 0: # Rotation from CW to spawn
 						if self.newshape.form > 1: # J, L, S, T, Z
@@ -436,6 +452,11 @@ class Core:
 							self.test_kicks([( 1, 0), ( 1, 1), ( 0,-2), ( 1,-2)])
 						else: # I
 							self.test_kicks([(-1, 0), ( 2, 0), (-1,-2), ( 2, 1)])
+					elif self.newshape.state == 3: # Rotation from CW to CCW
+						if self.newshape.form > 1: # J, L, S, T, Z
+							self.test_kicks([( 1, 0), ( 1,-2), ( 1,-1), ( 0,-2), ( 0,-1)])
+						else: # I
+							self.test_kicks([( 0, 1), ( 0, 2), ( 0,-1), ( 0,-2), (-1, 0)])
 				elif self.freeshape.state == 2:
 					if self.newshape.state == 1: # Rotation from 180 to CW
 						if self.newshape.form > 1: # J, L, S, T, Z
@@ -447,6 +468,11 @@ class Core:
 							self.test_kicks([( 1, 0), ( 1,-1), ( 0, 2), ( 1, 2)])
 						else: # I
 							self.test_kicks([( 2, 0), (-1, 0), ( 2,-1), (-1, 1)])
+					elif self.newshape.state == 0: # Rotation from 180 to spawn
+						if self.newshape.form > 1: # J, L, S, T, Z
+							self.test_kicks([( 0, 1), (-1, 1), ( 1, 1), (-1, 0), ( 1, 0)])
+						else: # I
+							self.test_kicks([( 1, 0), ( 2, 0), (-1, 0), (-2, 0), ( 0,-1)])
 				elif self.freeshape.state == 3:
 					if self.newshape.state == 2: # Rotation from CCW to 180
 						if self.newshape.form > 1: # J, L, S, T, Z
@@ -458,6 +484,11 @@ class Core:
 							self.test_kicks([(-1, 0), (-1, 1), ( 0,-2), (-1,-2)])
 						else: # I
 							self.test_kicks([(-2, 0), ( 1, 0), (-2,-1), ( 1, 2)])
+					elif self.newshape.state == 1: # Rotation from CCW to CW
+						if self.newshape.form > 1: # J, L, S, T, Z
+							self.test_kicks([(-1, 0), (-1,-2), (-1,-1), ( 0,-2), ( 0,-1)])
+						else: # I
+							self.test_kicks([( 0, 1), ( 0, 2), ( 0,-1), ( 0,-2), ( 1, 0)])
 				if self.user.twist_flag:
 					# Wall kicks reset the gravity timer.
 					self.grav_frame = 0

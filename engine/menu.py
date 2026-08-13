@@ -124,13 +124,23 @@ class HelpMenu (env.Menu):
 
 	It has one selection, which returns to whichever menu opened it.
 	"""
+	# Laid out from the number of actions rather than from measured pixels, so that
+	# binding a new one pushes the rest down instead of landing on top of them.
+	row_top = 60
+	row_step = 25
+	note_lines = 4
+	note_step = 22
+
 	def __init__ (self, user):
-		bg = pg.Surface((620, 440))
+		self.rows_end = self.row_top + len(ctl.ACTIONS) * self.row_step
+		self.notes_top = self.rows_end + 40
+		back_top = self.notes_top + self.note_lines * self.note_step + 16
+		bg = pg.Surface((620, back_top + 60))
 		bg.fill(0x2F6F8F)
 		super().__init__(user, bg, center=env.screct.center)
 		self.return_state = 'main_menu'
 
-		self.selections = [[env.MenuOption(self, 'back', 'Back', (self.rect.w / 2 - 90, 380), (180, 40))]]
+		self.selections = [[env.MenuOption(self, 'back', 'Back', (self.rect.w / 2 - 90, back_top), (180, 40))]]
 
 	def eval_input (self):
 		event = super().eval_input()
@@ -145,10 +155,11 @@ class HelpMenu (env.Menu):
 		self.render_text('How to Play', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 20))
 		# Read from the live bindings, so a rebound key is reflected here.
 		for i, (action, name) in enumerate(ctl.ACTIONS):
-			self.render_text(ctl.describe(self.user, action), 0xFFE080, surf, topright=(250, 60 + i * 25))
-			self.render_text(name, 0xFFFFFF, surf, topleft=(275, 60 + i * 25))
+			top = self.row_top + i * self.row_step
+			self.render_text(ctl.describe(self.user, action), 0xFFE080, surf, topright=(250, top))
+			self.render_text(name, 0xFFFFFF, surf, topleft=(275, top))
 		# The part that isn't standard Tetris.
-		self.render_text('Forced Drop', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 265))
+		self.render_text('Forced Drop', 0xFFFFFF, surf, midtop=(self.rect.w / 2, self.rows_end + 10))
 		if self.user.forced_delay > 0.:
 			lines = [
 				'Every piece is hard dropped for you {:.2f}s after it spawns.'.format(self.user.forced_delay),
@@ -162,7 +173,7 @@ class HelpMenu (env.Menu):
 				'Turn it on under Game Settings to train placement speed.',
 			]
 		for i, line in enumerate(lines):
-			self.render_text(line, 0xFFFFFF, surf, midtop=(self.rect.w / 2, 295 + i * 22))
+			self.render_text(line, 0xFFFFFF, surf, midtop=(self.rect.w / 2, self.notes_top + i * self.note_step))
 
 	def run (self):
 		self.menu_bg.draw(env.screen)
@@ -372,8 +383,8 @@ class ControlsMenu (env.Menu):
 	why Escape itself cannot be bound - Reset to Defaults puts it back on Pause.
 	"""
 	def __init__ (self, user):
-		# Ten rows: one per action, plus Reset and Back.
-		bg = pg.Surface((470, 478))
+		# One row per action, plus Reset and Back, and room for the hint underneath.
+		bg = pg.Surface((470, 516))
 		bg.fill(0x0E7C7B)
 		super().__init__(user, bg, center=env.screct.center)
 		self.return_state = 'settings_menu'

@@ -49,6 +49,7 @@ arrow keys to move, `Z` or `Enter` to confirm, `X` or `Esc` to go back, always.
 | Down | Soft drop |
 | Z or Left Ctrl | Rotate counter-clockwise |
 | X or Up | Rotate clockwise |
+| A | Rotate 180 |
 | Space | Hard drop |
 | Left Shift | Hold |
 | Escape | Pause |
@@ -95,6 +96,10 @@ cannot itself be bound — **Reset to Defaults** is how Pause gets it back.
 | ARR | 0–200ms | Time between repeats. `0` slides to the wall in one frame |
 | DCD | 0–200ms | A charged auto-shift is cut back to this on spawn and on rotation. `0` leaves it alone |
 | SDF | 5–40x | Soft drop as a multiple of gravity. `40` drops to the floor at once, without locking |
+
+180 rotation gets its own binding, defaulting to `A`. SRS defines no kicks for a 180,
+so it uses the SRS+ table modern guideline games settled on; where that finds nothing,
+the rotation is refused rather than forced through.
 
 The millisecond settings land on a 20ms grid, because the game runs at a fixed 50 frames
 per second and auto-shift can only act on a frame boundary. Arcade mode's difficulty ramp
@@ -151,6 +156,7 @@ nothing; in a browser tab it is the only reason the page stays responsive.
 
 Everything else is the base game: 7-bag randomiser, SRS with Arika I kicks, hold with a
 per-piece lock, ghost piece, T-spin detection, and the free / arcade / timed modes.
+180 rotation is the one addition to the piece mechanics.
 
 ## Running on Android
 
@@ -195,7 +201,7 @@ pygame's SDL2 built there is its own project. The browser build is the supported
 
 ## Tests
 
-All five suites run headlessly — no display, sound card, or browser needed.
+All six suites run headlessly — no display, sound card, or browser needed.
 
 ```bash
 python tools/test_forced_drop.py   # the timer rules above, against a fake clock
@@ -203,6 +209,7 @@ python tools/test_menus.py         # every menu button, driven by posted key eve
 python tools/test_web.py           # the properties the browser build depends on
 python tools/test_controls.py      # rebinding, including that the game obeys the new key
 python tools/test_handling.py      # DAS, ARR, DCD and SDF, measured in cells travelled
+python tools/test_rotation.py      # 180 rotation, swept over every piece and position
 ```
 
 ## Credits and licence

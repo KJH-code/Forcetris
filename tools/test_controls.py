@@ -141,9 +141,9 @@ check(
 )
 check('cancelling does not leave the screen', user.state == 'controls_menu', user.state)
 
-# Reset is the row above Back.
+# Reset is the row above Back, below one row per action.
 controls.reset()
-press(controls, pg.K_DOWN, 8)
+press(controls, pg.K_DOWN, len(ctl.ACTIONS))
 press(controls, pg.K_RETURN)
 check(
     'reset restores every default',
@@ -151,7 +151,7 @@ check(
     ctl.describe(user, 'left')
 )
 controls.reset()
-press(controls, pg.K_DOWN, 9)
+press(controls, pg.K_DOWN, len(ctl.ACTIONS) + 1)
 press(controls, pg.K_RETURN)
 check('back returns to settings', user.state == 'settings_menu', user.state)
 

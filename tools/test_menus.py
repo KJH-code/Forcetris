@@ -282,6 +282,26 @@ for given, expected in ((100., 1.0), (60., 0.6), (0., 0.0), (-5., 0.0), (400., 1
         'got {:.2f}'.format(user.volume)
     )
 
+# --- Nothing may be laid out past the panel it belongs to. ------------------
+# Adding a row is easy; noticing that it pushed the hint line on top of the last
+# one is not, and no behavioural check would catch it.
+for name in ('settings_menu', 'controls_menu', 'handling_menu', 'help_menu', 'main_menu', 'pause_menu'):
+    menu = getattr(tetris, name)
+    rows = [option for column in menu.selections for option in column]
+    # Menus that print a hint along the bottom need that strip left clear. Asked of
+    # the class, not the instance: Menu.__getattr__ answers None for any name it
+    # does not know, so hasattr on an instance is true for everything.
+    reserved = 24 if hasattr(type(menu), 'display_hint') else 0
+    overflow = [
+        o.action for o in rows
+        if not menu.rect.contains(o.rect) or o.rect.bottom > menu.rect.bottom - reserved
+    ]
+    check(
+        '{} lays its rows out inside the panel'.format(name),
+        not overflow,
+        'rows past the edge or under the hint line: {}'.format(overflow)
+    )
+
 print()
 if FAILED:
     print('{} check(s) failed: {}'.format(len(FAILED), ', '.join(FAILED)))
