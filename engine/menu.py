@@ -3,6 +3,7 @@ try:
 	import pygame as pg
 	import engine.environment as env
 	import engine.filehandler as fh
+	import engine.controls as ctl
 except ImportError:
 	print("Something fucking jammed in here:")
 	raise
@@ -123,16 +124,6 @@ class HelpMenu (env.Menu):
 
 	It has one selection, which returns to whichever menu opened it.
 	"""
-	controls = [
-		('LEFT / RIGHT', 'Shift the piece sideways'),
-		('DOWN', 'Soft drop'),
-		('Z or LCTRL', 'Rotate counter-clockwise'),
-		('X or UP', 'Rotate clockwise'),
-		('SPACE', 'Hard drop'),
-		('LSHIFT', 'Hold'),
-		('ESCAPE', 'Pause'),
-	]
-
 	def __init__ (self, user):
 		bg = pg.Surface((620, 440))
 		bg.fill(0x2F6F8F)
@@ -152,9 +143,10 @@ class HelpMenu (env.Menu):
 	@env.Menu.render
 	def display_help (self, surf):
 		self.render_text('How to Play', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 20))
-		for i, (key, action) in enumerate(self.controls):
-			self.render_text(key, 0xFFE080, surf, topright=(230, 60 + i * 28))
-			self.render_text(action, 0xFFFFFF, surf, topleft=(255, 60 + i * 28))
+		# Read from the live bindings, so a rebound key is reflected here.
+		for i, (action, name) in enumerate(ctl.ACTIONS):
+			self.render_text(ctl.describe(self.user, action), 0xFFE080, surf, topright=(250, 60 + i * 25))
+			self.render_text(name, 0xFFFFFF, surf, topleft=(275, 60 + i * 25))
 		# The part that isn't standard Tetris.
 		self.render_text('Forced Drop', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 265))
 		if self.user.forced_delay > 0.:
@@ -241,12 +233,13 @@ class SettingsMenu (env.Menu):
 
 	clear_names = ('Naive', 'Sticky Cascade', 'Linked Cascade')
 
-	def __init__ (self, user):
-		# Tall enough for eight rows under the title plus the hint line beneath them.
-		bg = pg.Surface((460, 436))
+	def __init__ (self, user, controls_menu):
+		# Tall enough for nine rows under the title plus the hint line beneath them.
+		bg = pg.Surface((460, 474))
 		bg.fill(0x00A060)
 		super().__init__(user, bg, center=env.screct.center)
 		self.return_state = 'main_menu'
+		self.controls_menu = controls_menu
 
 		hmargin = 20
 		tmargin = 50
@@ -256,7 +249,7 @@ class SettingsMenu (env.Menu):
 
 		self.selections = [[
 			env.MenuOption(self, action, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
-			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'music', 'sound', 'back'))]]
+			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'music', 'sound', 'controls', 'back'))]]
 		self.set_labels()
 
 	def label (self, action):
@@ -276,6 +269,8 @@ class SettingsMenu (env.Menu):
 			return 'Music:  ' + ('{:.0%}'.format(self.user.volume) if self.user.volume > 0. else 'Off')
 		elif action == 'sound':
 			return 'Sound:  ' + ('{:.0%}'.format(self.user.sfx_volume) if self.user.sfx_volume > 0. else 'Off')
+		elif action == 'controls':
+			return 'Controls...'
 		return 'Back'
 
 	def set_labels (self):
@@ -337,6 +332,9 @@ class SettingsMenu (env.Menu):
 				if self.selected.action == 'back':
 					self.user.state = self.return_state
 					self.reset()
+				elif self.selected.action == 'controls':
+					self.controls_menu.return_state = 'settings_menu'
+					self.user.state = 'controls_menu'
 				else:
 					# Confirming a toggle flips it, which is what pressing it looks like it should do.
 					self.adjust(1)
@@ -348,6 +346,100 @@ class SettingsMenu (env.Menu):
 	def display_hint (self, surf):
 		self.render_text('Game Settings', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 15))
 		self.render_text('LEFT / RIGHT to change, X to go back', 0xE0FFE0, surf, midbottom=(self.rect.w / 2, self.rect.h - 12))
+
+	def run (self):
+		self.menu_bg.draw(env.screen)
+		self.draw(env.screen)
+		super().run()
+		self.display_hint()
+		pg.display.flip()
+
+class ControlsMenu (env.Menu):
+	"""
+	Rebinds the gameplay keys.
+
+	Menu navigation is deliberately absent from this list. The arrow keys, Z, X,
+	Enter and Escape always drive the menus, so there is no combination of bindings
+	that can strand a player outside the screen that would undo them.
+
+	Selecting a row waits for the next key press. Escape cancels that wait, which is
+	why Escape itself cannot be bound - Reset to Defaults puts it back on Pause.
+	"""
+	def __init__ (self, user):
+		# Ten rows: one per action, plus Reset and Back.
+		bg = pg.Surface((470, 478))
+		bg.fill(0x0E7C7B)
+		super().__init__(user, bg, center=env.screct.center)
+		self.return_state = 'settings_menu'
+		# The action currently waiting for a key press, or None.
+		self.listening = None
+
+		hmargin = 20
+		tmargin = 50
+		spacing = 5
+		height = 34
+		width = self.rect.w - 2 * hmargin
+		rows = [action for action, label in ctl.ACTIONS] + ['reset', 'back']
+
+		self.selections = [[
+			env.MenuOption(self, action, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
+			for i, action in enumerate(rows)]]
+		self.set_labels()
+
+	def label (self, action):
+		# The text drawn on a row, current binding included.
+		if action == 'reset':
+			return 'Reset to Defaults'
+		elif action == 'back':
+			return 'Back'
+		name = dict(ctl.ACTIONS)[action]
+		if self.listening == action:
+			return name + ':  Press a key...'
+		return name + ':  ' + ctl.describe(self.user, action)
+
+	def set_labels (self):
+		for option in self.selections[0]:
+			option.text = self.font.render(self.label(option.action), 0, pg.Color(255, 255, 255))
+			option.text_rect = option.text.get_rect(center=option.rect.center)
+
+	def eval_input (self):
+		if self.listening is not None:
+			# Swallow input while waiting for a key, so that arrows and Enter can be
+			# bound rather than moving the cursor or re-triggering the row.
+			event = pg.event.poll()
+			if event.type == pg.QUIT:
+				self.user.state = 'quit'
+			elif event.type == pg.KEYDOWN:
+				if event.key != pg.K_ESCAPE:
+					ctl.bind(self.user, self.listening, event.key)
+				self.listening = None
+				self.set_labels()
+			return event
+
+		event = super().eval_input()
+		if event.type == pg.KEYDOWN:
+			if event.key == pg.K_z or event.key == pg.K_RETURN:
+				if self.selected.action == 'back':
+					self.user.state = self.return_state
+					self.reset()
+				elif self.selected.action == 'reset':
+					ctl.reset(self.user)
+					self.set_labels()
+				else:
+					# Stop the cursor drifting on the key that opened the prompt.
+					self.setdir()
+					self.listening = self.selected.action
+					self.set_labels()
+			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
+				self.user.state = self.return_state
+				self.reset()
+
+	@env.Menu.render
+	def display_hint (self, surf):
+		self.render_text('Controls', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 15))
+		hint = ('Press the key to bind, or Escape to cancel' if self.listening is not None
+			else 'Z to rebind, X to go back')
+		self.render_text(hint, 0xD0FFFF, surf, midbottom=(self.rect.w / 2, self.rect.h - 12))
 
 	def run (self):
 		self.menu_bg.draw(env.screen)

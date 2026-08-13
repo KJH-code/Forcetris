@@ -19,7 +19,7 @@ class User:
 	In this case, it tracks tetris difficulty values and handles score data.
 	"""
 	__slots__ = (
-		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume', 'sfx_volume',
+		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume', 'sfx_volume', 'keys',
 		'cleartype', 'enablekicks', 'showghost', 'linktiles',
 		'hard_flag', 'twist_flag', 'tspin_flag',
 		'score', 'last_score', 'lines_cleared', 'level', 'timer',
@@ -48,6 +48,8 @@ class User:
 		self.enablekicks = True # Determines if wall kicks are allowed.
 		self.showghost = True # Determines if the ghost tetrimino will be shown.
 		self.linktiles = True # Determines if the blocks will use connected textures.
+		# Gameplay key bindings, filled in by engine.controls once pygame is up.
+		self.keys = {}
 
 		self.hard_flag = False # True if the piece was hard-dropped.
 		self.twist_flag = False # True if the tetrimino twisted into place.

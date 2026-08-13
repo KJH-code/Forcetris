@@ -7,6 +7,7 @@ try:
 	import datetime
 	import pygame as pg
 	from engine.userstate import User
+	import engine.controls as controls
 except ImportError:
 	print("A module must've shat itself:")
 	raise
@@ -32,6 +33,9 @@ screen = pg.display.set_mode((800, 600), pg.HWSURFACE | pg.DOUBLEBUF)
 screct = screen.get_rect()
 clock = pg.time.Clock()
 user = User()
+# Key bindings need pygame's key codes, so they are loaded here rather than in
+# the User constructor.
+controls.load(user)
 
 def cond_all (iterator, condition=bool):
 	"Conditional all function. Return False if at least one element fails the conditional expression."

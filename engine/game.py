@@ -9,6 +9,7 @@ try:
 	import engine.environment as env
 	import engine.filehandler as fh
 	import engine.menu as menu
+	import engine.controls as ctl
 	from engine.shapes import (Shape, Grid)
 	from engine.sortedcollections import SortedCollection as SC
 except ImportError:
@@ -211,7 +212,7 @@ class Core:
 	def eval_input (self):
 		# Evaluates player input.
 		event = pg.event.poll()
-		if ((event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE)
+		if ((event.type == pg.KEYDOWN and ctl.matches(self.user, 'pause', event.key))
 			or not pg.key.get_focused()):
 			# Pause game when the user presses the pause key, or when the window loses focus.
 			pg.mixer.music.pause()
@@ -220,7 +221,7 @@ class Core:
 		if event.type == pg.QUIT: # Exits the game.
 			self.user.state = 'quit'
 		elif event.type == pg.KEYDOWN:
-			if event.key == pg.K_LEFT: # Shift left
+			if ctl.matches(self.user, 'left', event.key): # Shift left
 				self.shift_dir = 'l'
 				self.shift_frame = self.shift_delay
 				if self.entry_flag:
@@ -228,30 +229,30 @@ class Core:
 					# Only the initial press is heard. Auto-shift steps run every couple
 					# of frames and would turn the cue into a machine gun.
 					env.play_sound('move')
-			elif event.key == pg.K_RIGHT: # Shift right
+			elif ctl.matches(self.user, 'right', event.key): # Shift right
 				self.shift_dir = 'r'
 				self.shift_frame = self.shift_delay
 				if self.entry_flag:
 					self.newshape.translate(( 1, 0))
 					env.play_sound('move')
-			elif event.key == pg.K_DOWN: # Toggle soft drop
+			elif ctl.matches(self.user, 'softdrop', event.key): # Toggle soft drop
 				self.soft_drop = True
 				self.soft_pos = self.newshape.pos[1]
-			elif event.key == pg.K_LSHIFT: # Hold tetrimino to storage
+			elif ctl.matches(self.user, 'hold', event.key): # Hold tetrimino to storage
 				if self.hold_shape():
 					env.play_sound('hold')
 
 			elif self.entry_flag:
-				if event.key == pg.K_z or event.key == pg.K_LCTRL: # Rotate CCW
+				if ctl.matches(self.user, 'rotate_ccw', event.key): # Rotate CCW
 					self.newshape.rotate(False)
 					self.wall_kick()
 					env.play_sound('rotate')
-				elif event.key == pg.K_x or event.key == pg.K_UP: # Rotate CW
+				elif ctl.matches(self.user, 'rotate_cw', event.key): # Rotate CW
 					self.newshape.rotate(True)
 					self.wall_kick()
 					env.play_sound('rotate')
 
-				elif event.key == pg.K_SPACE: # Hard drop
+				elif ctl.matches(self.user, 'harddrop', event.key): # Hard drop
 					self.hard_drop()
 
 			if self.user.debug:
@@ -288,10 +289,10 @@ class Core:
 						self.set_shape(6) # L
 
 		elif event.type == pg.KEYUP:
-			if event.key == pg.K_DOWN:
+			if ctl.matches(self.user, 'softdrop', event.key):
 				self.soft_drop = False
-			elif ((event.key == pg.K_LEFT and self.shift_dir == 'l')
-				or (event.key == pg.K_RIGHT and self.shift_dir == 'r')):
+			elif ((ctl.matches(self.user, 'left', event.key) and self.shift_dir == 'l')
+				or (ctl.matches(self.user, 'right', event.key) and self.shift_dir == 'r')):
 				self.shift_dir = '0'
 
 	def eval_shift (self):
@@ -706,7 +707,8 @@ def init (argv):
 		play_menu = menu.PlayMenu(user)
 		score_menu = menu.HiScoreMenu(user)
 		help_menu = menu.HelpMenu(user)
-		settings_menu = menu.SettingsMenu(user)
+		controls_menu = menu.ControlsMenu(user)
+		settings_menu = menu.SettingsMenu(user, controls_menu)
 		pause_menu = menu.PauseMenu(user, settings_menu)
 		save_menu = menu.SaveMenu(user)
 		loss_menu = menu.LossMenu(user, settings_menu)

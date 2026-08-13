@@ -1,8 +1,9 @@
 __pycache__/
 *.py[cod]
 
-# Score data and its backup, written next to the game at runtime.
+# Save data written next to the game at runtime: scores, and the player's controls.
 data/*.dat
+data/*.json
 data/back/*.bak
 
 # Crash dumps and screenshots.

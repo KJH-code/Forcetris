@@ -213,7 +213,7 @@ check(
 
 # Back is the last row and has to leave the menu.
 settings.reset()
-press(settings, pg.K_DOWN, 7)
+press(settings, pg.K_DOWN, 8)
 press(settings, pg.K_RETURN)
 check('the Back row leaves the menu', user.state == 'main_menu', user.state)
 
