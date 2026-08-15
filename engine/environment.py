@@ -130,7 +130,7 @@ def load_music(name):
 # Every cue the game can fire. Names match the files in sound/.
 SFX_NAMES = (
 	'move', 'rotate', 'hold', 'lock', 'drop',
-	'forced', 'clear', 'tetris', 'tspin', 'gameover',
+	'forced', 'clear', 'tetris', 'tspin', 'perfect', 'gameover',
 )
 sounds = {}
 

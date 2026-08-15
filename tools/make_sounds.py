@@ -121,6 +121,18 @@ SOUNDS = {
             tone(1568, 0.22, 0.16, 'sine', release=0.3),
         ),
     ),
+    # Rarer and better than a tetris, so it rings higher and longer.
+    'perfect': lambda: chain(
+        tone(659, 0.07, 0.4, 'sine', release=0.4),
+        tone(880, 0.07, 0.4, 'sine', release=0.4),
+        tone(1047, 0.07, 0.4, 'sine', release=0.4),
+        tone(1319, 0.07, 0.4, 'sine', release=0.4),
+        mix(
+            tone(1760, 0.30, 0.36, 'sine', release=0.25),
+            tone(2637, 0.30, 0.14, 'sine', release=0.25),
+            tone(1319, 0.30, 0.22, 'sine', release=0.25),
+        ),
+    ),
     'tspin': lambda: mix(
         tone(784, 0.28, 0.3, 'sine', release=0.25),
         tone(1175, 0.28, 0.2, 'sine', release=0.2),

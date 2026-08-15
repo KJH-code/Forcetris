@@ -201,7 +201,11 @@ check('the banner times out', core.spin_frames == 0, '{} frames left'.format(cor
 core.spin_frames = 0
 core.spin_count = ''
 core.announce_clear(4)
-check('a plain clear raises nothing', core.spin_frames == 0 and not core.spin_count)
+check(
+    'a plain clear puts no banner up',
+    core.spin_frames == 0,
+    'the count is held as {} in case a perfect clear a moment later wants it'.format(core.spin_count)
+)
 
 # A mini reads as one.
 sspin_board()
@@ -241,6 +245,72 @@ check('and the spin scored something', user.score > 0, 'score {}'.format(user.sc
 # Spawning is what clears the flags now.
 core.set_shape(0)
 check('spawning clears the spin flags', not user.tspin_flag and not user.twist_flag)
+
+# --- Perfect clears. --------------------------------------------------------
+# One row, one gap, and an I laid flat into it: the board ends up empty.
+def perfect_board():
+    blank_board()
+    fill([(x, 21) for x in range(10) if x not in (3, 4, 5, 6)])
+
+perfect_board()
+check('the board is not empty with a row down', not core.board_empty())
+place(0, 1, 5, 20)      # I stood up, so the row does not complete
+check('a placement that leaves blocks is no perfect clear', not core.board_empty())
+
+blank_board()
+check('an untouched board reads as empty', core.board_empty())
+
+# The floor row underneath the playing field must not be mistaken for a block.
+check(
+    'the fixed floor does not count against it',
+    core.board_empty() and any(core.grid[len(core.grid) - 1]),
+    'the last row is full, and is the floor rather than play area'
+)
+
+# Played for real: fill a row bar four cells, drop an I into the gap, and let the
+# clearer run to the end.
+perfect_board()
+user.spinrule = us.SPIN_OFF
+place(0, 0, 4, 21)
+core.rotated_last = False
+core.eval_fallen(0)
+for _ in range(200):
+    core.run()
+    if not core.clearing:
+        break
+check('the clear resolved', not core.clearing)
+check('the board really is empty', core.board_empty(), 'grid still holds blocks')
+check(
+    'a perfect clear raises its own banner',
+    core.spin_perfect and core.spin_frames > 0,
+    'perfect {}, {} frames'.format(core.spin_perfect, core.spin_frames)
+)
+check('and names what cleared alongside it', core.spin_count == 'SINGLE', core.spin_count)
+
+# A clear that leaves the board occupied says nothing. Same placement as above,
+# with one block parked where the clear cannot reach it.
+perfect_board()
+fill([(9, 15)])
+place(0, 0, 4, 21)
+core.rotated_last = False
+core.eval_fallen(0)
+for _ in range(200):
+    core.run()
+    if not core.clearing:
+        break
+check(
+    'an ordinary clear raises no banner',
+    not core.spin_perfect and core.spin_frames == 0,
+    'perfect {}, {} frames'.format(core.spin_perfect, core.spin_frames)
+)
+
+# It has to fit the panel, like the other two lines.
+check(
+    'the perfect clear line fits the side panel',
+    core.bannerfont.size('PERFECT CLEAR')[0] <= 140,
+    '{}px'.format(core.bannerfont.size('PERFECT CLEAR')[0])
+)
+check('the cue exists', 'perfect' in G.env.sounds, '{} effects loaded'.format(len(G.env.sounds)))
 
 # --- Back to back, and the combo counter beside it. -------------------------
 def clear_event(lines, spin=False):

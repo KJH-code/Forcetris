@@ -132,7 +132,9 @@ unwritable file falls back to the defaults, which is also what the browser build
 
 A spin puts its name up to the left of the board for a couple of seconds — `T-SPIN`,
 `MINI S-SPIN` — and the line count joins it underneath once the clear resolves, so a spin
-and what it earned read as one event.
+and what it earned read as one event. **PERFECT CLEAR** joins them on a third line when
+the placement empties the board, and raises the banner on its own when nothing else did,
+which is the usual case.
 
 To the right of the board, under the queue, **B2B** and **COMBO** count the runs. Back to
 back holds through a quad or any clear that came out of a spin, and breaks on a smaller
@@ -162,7 +164,8 @@ filled for both rules — a wall wedges a piece as well as a block does.
 | drop | You hard dropped it yourself |
 | **forced** | The timer took the placement away from you |
 | clear / tetris | One to three lines, or four |
-| tspin | A T-spin landed |
+| tspin | A spin landed |
+| perfect | The placement emptied the board |
 | gameover | The stack topped out |
 
 `drop` and `forced` are deliberately unalike — a low sawtooth buzz against the hard

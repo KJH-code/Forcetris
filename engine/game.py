@@ -122,6 +122,7 @@ class Core:
 		self.spin_label = '' # Banner naming the spin just made, if any.
 		self.spin_count = '' # The line count that spin went on to clear.
 		self.spin_frames = 0 # Frames the banner has left on screen.
+		self.spin_perfect = False # True if the placement emptied the board outright.
 
 		self.grav_frame = 0 # The gravity frame counter.
 		self.grav_delay = self.fall_delay # Currently used gravity delay.
@@ -578,6 +579,32 @@ class Core:
 		# that fitted without needing a kick is the lesser one.
 		return (name, rule == us.SPIN_ALL or self.user.twist_flag)
 
+	def board_empty (self):
+		# A perfect clear. The base game tested the bottom row alone, which holds
+		# under cascade clearing but not under naive, where the clear can leave
+		# blocks floating above an empty floor. The last row is the fixed floor.
+		for row in range(len(self.grid) - 1):
+			if any(self.grid[row]):
+				return False
+		return True
+
+	def begin_banner (self):
+		# Each placement starts its own banner from nothing. Whatever it turns out to
+		# be worth is added as it becomes known, and the banner only appears if any of
+		# it happened - a plain clear says nothing.
+		self.spin_label = ''
+		self.spin_count = ''
+		self.spin_perfect = False
+		self.spin_frames = 0
+
+	def announce_perfect (self):
+		# Outranks everything else the placement did, and raises the banner even when
+		# nothing else would have - which is the usual case, since most perfect clears
+		# are ordinary line clears that happened to empty the board.
+		self.spin_perfect = True
+		self.spin_frames = self.banner_frames
+		env.play_sound('perfect')
+
 	def announce_spin (self):
 		# Put the spin on screen and mark it for the scorer. Called before eval_fallen
 		# hands the board over to the line clearer.
@@ -592,10 +619,10 @@ class Core:
 		env.play_sound('tspin')
 
 	def announce_clear (self, lines):
-		# Fold the line count into a banner that is still up, so a spin that cleared
-		# reads as one event rather than two.
+		# Recorded either way. If a spin put a banner up this joins it; if not, it sits
+		# there unshown in case a perfect clear a moment later wants to name it.
+		self.spin_count = CLEAR_NAMES.get(lines, '{} LINES'.format(lines))
 		if self.spin_frames > 0:
-			self.spin_count = CLEAR_NAMES.get(lines, '{} LINES'.format(lines))
 			self.spin_frames = self.banner_frames
 
 	def eval_gravity (self):
@@ -616,6 +643,7 @@ class Core:
 		# spin flags are deliberately not cleared here: eval_clear_score reads them
 		# from inside the line clearer, which runs frames later, so clearing them at
 		# lock meant the spin bonus never once applied. They are cleared on spawn.
+		self.begin_banner()
 		self.announce_spin()
 		self.grid.paste_shape(self.freeshape)
 		# Check if lines were cleared, and add the number of lines cleared to the total if any.
@@ -766,11 +794,16 @@ class Core:
 		# Display the spin just made, and what it went on to clear.
 		if self.spin_frames > 0:
 			middle = (lalign + ralign) // 2
-			banner = self.bannerfont.render(self.spin_label, 0, env.convert_hexcolor(0xFFD24A))
-			env.screen.blit(banner, banner.get_rect(midtop=(middle, talign + spacing * 10)))
+			lines = []
+			if self.spin_label:
+				lines.append((self.spin_label, 0xFFD24A))
 			if self.spin_count:
-				count = self.bannerfont.render(self.spin_count, 0, env.convert_hexcolor(0xFFFFFF))
-				env.screen.blit(count, count.get_rect(midtop=(middle, talign + spacing * 10 + 24)))
+				lines.append((self.spin_count, 0xFFFFFF))
+			if self.spin_perfect:
+				lines.append(('PERFECT CLEAR', 0x7CFF8A))
+			for i, (text, colour) in enumerate(lines):
+				line = self.bannerfont.render(text, 0, env.convert_hexcolor(colour))
+				env.screen.blit(line, line.get_rect(midtop=(middle, talign + spacing * 10 + i * 24)))
 
 		# Display ghost piece.
 		if self.user.showghost:
@@ -886,6 +919,10 @@ class Core:
 				if self.grid.csprts:
 					env.play_sound('tetris' if self.user.line_list[-1] > 3 else 'clear')
 					self.announce_clear(self.user.line_list[-1])
+				elif not self.clearing and self.board_empty():
+					# The clearer has finished and left nothing behind. A placement that
+					# cleared no lines cannot get here, since it put a piece on the board.
+					self.announce_perfect()
 		# Refresh screen. There is not enough fast rendering to justify using update()
 		pg.display.flip()
 
