@@ -390,12 +390,16 @@ class ControlsMenu (env.Menu):
 		self.return_state = 'settings_menu'
 		# The action currently waiting for a key press, or None.
 		self.listening = None
+		# Whether that key will replace the binding or join it.
+		self.listening_adds = False
 
 		hmargin = 20
 		tmargin = 50
 		spacing = 5
 		height = 34
 		width = self.rect.w - 2 * hmargin
+		# The two trailing rows are commands, not actions, so they take no keys.
+		self.bindable = frozenset(action for action, label in ctl.ACTIONS)
 		rows = [action for action, label in ctl.ACTIONS] + ['reset', 'back']
 
 		self.selections = [[
@@ -411,13 +415,45 @@ class ControlsMenu (env.Menu):
 			return 'Back'
 		name = dict(ctl.ACTIONS)[action]
 		if self.listening == action:
-			return name + ':  Press a key...'
+			return name + (':  Press a key to add...' if self.listening_adds else ':  Press a key...')
 		return name + ':  ' + ctl.describe(self.user, action)
+
+	def fit (self, action, width):
+		# The cap on keys per action bounds how many names a row carries, but not how
+		# long they are: four of the wordier ones overrun the row. Drop names off the
+		# end until it fits, and say how many went.
+		text = self.label(action)
+		if action not in self.bindable or self.listening == action:
+			return text
+		codes = list(self.user.keys.get(action, ()))
+		if not codes:
+			return text
+		name = dict(ctl.ACTIONS)[action]
+		for shown in range(len(codes), 0, -1):
+			keys = ', '.join(ctl.key_name(code) for code in codes[:shown])
+			if shown < len(codes):
+				keys += ' +{}'.format(len(codes) - shown)
+			text = '{}:  {}'.format(name, keys)
+			if self.font.size(text)[0] <= width:
+				break
+		return text
 
 	def set_labels (self):
 		for option in self.selections[0]:
-			option.text = self.font.render(self.label(option.action), 0, pg.Color(255, 255, 255))
+			text = self.fit(option.action, option.rect.w - 12)
+			option.text = self.font.render(text, 0, pg.Color(255, 255, 255))
 			option.text_rect = option.text.get_rect(center=option.rect.center)
+
+	def listen (self, adds):
+		# Wait for the next key press. Adding is refused once the action is full,
+		# rather than opening a prompt that would quietly discard the key.
+		# setdir stops the cursor drifting on the key that opened the prompt.
+		self.setdir()
+		if adds and len(self.user.keys.get(self.selected.action, ())) >= ctl.MAX_KEYS:
+			return
+		self.listening = self.selected.action
+		self.listening_adds = adds
+		self.set_labels()
 
 	def eval_input (self):
 		if self.listening is not None:
@@ -428,7 +464,7 @@ class ControlsMenu (env.Menu):
 				self.user.state = 'quit'
 			elif event.type == pg.KEYDOWN:
 				if event.key != pg.K_ESCAPE:
-					ctl.bind(self.user, self.listening, event.key)
+					ctl.bind(self.user, self.listening, event.key, not self.listening_adds)
 				self.listening = None
 				self.set_labels()
 			return event
@@ -443,10 +479,15 @@ class ControlsMenu (env.Menu):
 					ctl.reset(self.user)
 					self.set_labels()
 				else:
-					# Stop the cursor drifting on the key that opened the prompt.
-					self.setdir()
-					self.listening = self.selected.action
-					self.set_labels()
+					self.listen(False)
+			elif event.key == pg.K_RIGHT and self.selected.action in self.bindable:
+				# Left and Right move nothing on a single-column menu, so they are free
+				# to grow and trim the binding instead.
+				self.listen(True)
+			elif event.key == pg.K_LEFT and self.selected.action in self.bindable:
+				ctl.unbind_last(self.user, self.selected.action)
+				self.setdir()
+				self.set_labels()
 			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
 				self.user.state = self.return_state
 				self.reset()
@@ -454,8 +495,13 @@ class ControlsMenu (env.Menu):
 	@env.Menu.render
 	def display_hint (self, surf):
 		self.render_text('Controls', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 15))
-		hint = ('Press the key to bind, or Escape to cancel' if self.listening is not None
-			else 'Z to rebind, X to go back')
+		if self.listening is not None:
+			hint = 'Press the key to bind, or Escape to cancel'
+		elif (self.selected.action in self.bindable
+			and len(self.user.keys.get(self.selected.action, ())) >= ctl.MAX_KEYS):
+			hint = 'Full at {} keys - LEFT removes one, Z starts over'.format(ctl.MAX_KEYS)
+		else:
+			hint = 'Z rebind, RIGHT add a key, LEFT remove one, X back'
 		self.render_text(hint, 0xD0FFFF, surf, midbottom=(self.rect.w / 2, self.rect.h - 12))
 
 	def run (self):

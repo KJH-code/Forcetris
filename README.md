@@ -79,9 +79,21 @@ and `--sfx-volume` for values you want every time.
 
 ## Controls and handling
 
-**Controls** rebinds the gameplay keys: pick a row, press the key you want. Taking a key
-that another action holds removes it from that action rather than leaving one key firing
-two things; an action left with nothing reads as *Unbound* until you give it a key.
+**Controls** rebinds the gameplay keys.
+
+| On a row | Does |
+| --- | --- |
+| `Z` / `Enter` | Replace the binding with the next key pressed |
+| `→` | Add another key, so one action answers to several |
+| `←` | Remove the key added most recently |
+
+So binding counter-clockwise rotation to both `A` and the up arrow is `Z` `A`, then `→`
+`↑`. The defaults already ship that way — rotation sits on `Z` and `Left Ctrl`.
+
+Taking a key that another action holds removes it from that action rather than leaving
+one key firing two things, so the up arrow above stops turning clockwise. An action left
+with nothing reads as *Unbound* until you give it a key. Four keys per action is the
+limit, and a row too long for the panel is shortened to `Z, Left Ctrl +2`.
 
 Menu navigation is deliberately not in that list. The arrow keys, `Z`, `X`, `Enter` and
 `Escape` always drive the menus, so no set of bindings can strand you outside the screen

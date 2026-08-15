@@ -57,6 +57,10 @@ KEY_NAMES = {
 	pg.K_DOWN: 'Down Arrow',
 }
 
+# How many keys one action will hold. Four already fills the width of a row on
+# the rebinding screen, and nobody needs a fifth.
+MAX_KEYS = 4
+
 # TETR.IO's handling knobs, in the units that game shows them in. The engine runs
 # at 50 frames per second, so anything in milliseconds lands on a 20ms grid.
 HANDLING = (
@@ -121,15 +125,35 @@ def reset (user):
 		setattr(user, name, value)
 	save(user)
 
-def bind (user, action, code):
+def bind (user, action, code, replace=True):
 	# Give a key to one action, taking it off any other that held it. An action
 	# stripped of its last key reads as Unbound and simply stops responding,
 	# which is recoverable from the same screen.
+	#
+	# With replace off the key joins whatever the action already answers to, so one
+	# action can be driven from several keys - which is how the defaults ship
+	# rotation on both Z and Left Ctrl.
+	if not replace and len(user.keys.get(action, ())) >= MAX_KEYS:
+		return False
 	for other, codes in user.keys.items():
 		if other != action and code in codes:
 			user.keys[other] = tuple(c for c in codes if c != code)
-	user.keys[action] = (code,)
+	if replace:
+		user.keys[action] = (code,)
+	elif code not in user.keys.get(action, ()):
+		user.keys[action] = tuple(user.keys.get(action, ())) + (code,)
 	save(user)
+	return True
+
+def unbind_last (user, action):
+	# Drop the most recently added key, so a mistaken addition is undoable without
+	# retyping the whole binding.
+	codes = user.keys.get(action, ())
+	if not codes:
+		return False
+	user.keys[action] = codes[:-1]
+	save(user)
+	return True
 
 def load (user):
 	# Read saved bindings, falling back to the defaults for anything missing or

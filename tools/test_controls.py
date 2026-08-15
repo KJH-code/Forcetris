@@ -86,6 +86,54 @@ check(
     ctl.describe(user, 'rotate_ccw')
 )
 
+# --- One action, several keys. ----------------------------------------------
+# The case that prompted this: A and the up arrow both turning counter-clockwise.
+ctl.reset(user)
+ctl.bind(user, 'rotate_ccw', pg.K_a)
+ctl.bind(user, 'rotate_ccw', pg.K_UP, replace=False)
+check(
+    'a second key joins the binding instead of replacing it',
+    ctl.matches(user, 'rotate_ccw', pg.K_a) and ctl.matches(user, 'rotate_ccw', pg.K_UP),
+    ctl.describe(user, 'rotate_ccw')
+)
+check(
+    'the up arrow is taken off the action that had it',
+    not ctl.matches(user, 'rotate_cw', pg.K_UP),
+    'rotate_cw is now {}'.format(ctl.describe(user, 'rotate_cw'))
+)
+check('both keys are listed on the row', ctl.describe(user, 'rotate_ccw') == 'A, Up Arrow', ctl.describe(user, 'rotate_ccw'))
+
+# Adding the same key twice must not double it up.
+ctl.bind(user, 'rotate_ccw', pg.K_UP, replace=False)
+check('a key already bound is not added twice', len(user.keys['rotate_ccw']) == 2, ctl.describe(user, 'rotate_ccw'))
+
+# The cap exists so a row cannot grow past the width of the panel.
+for code in (pg.K_q, pg.K_w, pg.K_e, pg.K_r):
+    ctl.bind(user, 'rotate_ccw', code, replace=False)
+check(
+    'an action stops accepting keys at the cap',
+    len(user.keys['rotate_ccw']) == ctl.MAX_KEYS,
+    '{} keys: {}'.format(len(user.keys['rotate_ccw']), ctl.describe(user, 'rotate_ccw'))
+)
+
+# Removing takes the most recent one, so a mistake is undoable.
+was = user.keys['rotate_ccw']
+ctl.unbind_last(user, 'rotate_ccw')
+check(
+    'removing drops the key added last',
+    user.keys['rotate_ccw'] == was[:-1], ctl.describe(user, 'rotate_ccw')
+)
+while ctl.unbind_last(user, 'rotate_ccw'):
+    pass
+check('removing every key leaves it Unbound', ctl.describe(user, 'rotate_ccw') == 'Unbound')
+check('and removing from an empty action is harmless', not ctl.unbind_last(user, 'rotate_ccw'))
+
+# Replacing still replaces, so the old behaviour is intact.
+ctl.reset(user)
+ctl.bind(user, 'rotate_ccw', pg.K_a)
+check('replacing collapses the binding to one key', user.keys['rotate_ccw'] == (pg.K_a,), ctl.describe(user, 'rotate_ccw'))
+ctl.reset(user)
+
 # --- Bindings survive a restart. --------------------------------------------
 ctl.reset(user)
 ctl.bind(user, 'harddrop', pg.K_w)
@@ -155,6 +203,36 @@ press(controls, pg.K_DOWN, len(ctl.ACTIONS) + 1)
 press(controls, pg.K_RETURN)
 check('back returns to settings', user.state == 'settings_menu', user.state)
 
+# Right adds a key to the highlighted row, left takes one away.
+ctl.reset(user)
+controls.reset()
+press(controls, pg.K_DOWN, 4)          # rotate_ccw
+check('the cursor is on the right row', controls.selected.action == 'rotate_ccw', controls.selected.action)
+press(controls, pg.K_RIGHT)
+check('right opens an adding prompt', controls.listening == 'rotate_ccw' and controls.listening_adds)
+check('the row says it is adding', controls.label('rotate_ccw').endswith('to add...'), controls.label('rotate_ccw'))
+press(controls, pg.K_UP)
+check(
+    'the added key joins the two defaults',
+    ctl.describe(user, 'rotate_ccw') == 'Z, Left Ctrl, Up Arrow',
+    ctl.describe(user, 'rotate_ccw')
+)
+press(controls, pg.K_LEFT)
+check(
+    'left removes the key that was just added',
+    ctl.describe(user, 'rotate_ccw') == 'Z, Left Ctrl',
+    ctl.describe(user, 'rotate_ccw')
+)
+# A full row must refuse rather than open a prompt that discards the key.
+ctl.reset(user)
+for code in (pg.K_q, pg.K_w):
+    ctl.bind(user, 'rotate_ccw', code, replace=False)
+controls.set_labels()
+press(controls, pg.K_RIGHT)
+check('a full row does not open an adding prompt', controls.listening is None, str(controls.listening))
+ctl.reset(user)
+controls.set_labels()
+
 # --- The game obeys the rebound key. ----------------------------------------
 # Everything above is scaffolding if this does not hold.
 ctl.reset(user)
@@ -196,6 +274,45 @@ pg.event.clear()
 pg.event.post(pg.event.Event(pg.KEYDOWN, key=pg.K_p))
 core.run()
 check('the rebound pause key pauses', user.state == 'pause_menu', user.state)
+
+# --- A full row still fits the panel it is drawn in. ------------------------
+# The cap exists for this reason, so it is worth checking against the widest
+# key names rather than trusting the number.
+ctl.reset(user)
+ctl.bind(user, 'rotate_ccw', pg.K_LCTRL)
+for code in (pg.K_RSHIFT, pg.K_BACKSPACE, pg.K_RIGHT):
+    ctl.bind(user, 'rotate_ccw', code, replace=False)
+controls.set_labels()
+row = next(o for o in controls.selections[0] if o.action == 'rotate_ccw')
+check(
+    'a row filled with long key names stays inside its box',
+    row.text.get_width() <= row.rect.w - 8,
+    '"{}" renders {}px into a {}px row'.format(controls.label('rotate_ccw'), row.text.get_width(), row.rect.w)
+)
+ctl.reset(user)
+controls.set_labels()
+
+# Both keys of a two-key binding have to work in the game, not just in the menu.
+ctl.reset(user)
+ctl.bind(user, 'rotate_ccw', pg.K_a)
+ctl.bind(user, 'rotate_ccw', pg.K_UP, replace=False)
+user.state = 'game'
+user.gametype = 'free'
+user.reset()
+core.set_data()
+for _ in range(30):
+    core.run()
+for key, name in ((pg.K_a, 'A'), (pg.K_UP, 'the up arrow')):
+    core.set_shape(2)
+    before = core.freeshape.state
+    pg.event.clear()
+    pg.event.post(pg.event.Event(pg.KEYDOWN, key=key))
+    core.run()
+    check(
+        '{} turns the piece counter-clockwise'.format(name),
+        core.freeshape.state == (before - 1) % 4,
+        'state {} -> {}'.format(before, core.freeshape.state)
+    )
 
 ctl.reset(user)
 
