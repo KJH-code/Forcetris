@@ -109,6 +109,7 @@ cannot itself be bound — **Reset to Defaults** is how Pause gets it back.
 | ARR | 0–200ms | Time between repeats. `0` slides to the wall in one frame |
 | DCD | 0–200ms | A charged auto-shift is cut back to this on spawn and on rotation. `0` leaves it alone |
 | SDF | 5–40x | Soft drop as a multiple of gravity. `40` drops to the floor at once, without locking |
+| ARE | 0–500ms | The pause between one piece locking and the next appearing. Defaults to none |
 
 180 rotation gets its own binding, defaulting to `A`. SRS defines no kicks for a 180,
 so it uses the SRS+ table modern guideline games settled on; where that finds nothing,
@@ -116,8 +117,12 @@ the rotation is refused rather than forced through.
 
 The millisecond settings land on a 20ms grid, because the game runs at a fixed 50 frames
 per second and auto-shift can only act on a frame boundary. Arcade mode's difficulty ramp
-no longer touches auto-shift or soft drop — handling is yours, and only gravity climbs
-with the level.
+no longer touches auto-shift, soft drop or the spawn pause — handling is yours, and only
+gravity climbs with the level.
+
+ARE is the pause between one piece locking and the next appearing. The base game held the
+board for 400ms there, which is dead time in a trainer built on reaction speed, so it
+defaults to none.
 
 Unlike the other settings, controls and handling **persist**, in `data/controls.json`.
 Rebinding that reset on every launch would not be worth having. A missing, corrupt or
@@ -125,9 +130,14 @@ unwritable file falls back to the defaults, which is also what the browser build
 
 ## Spins
 
-A spin puts its name up beside the board for a couple of seconds — `T-SPIN`, `MINI
-S-SPIN` — and the line count joins it underneath once the clear resolves, so a spin and
-what it earned read as one event.
+A spin puts its name up to the left of the board for a couple of seconds — `T-SPIN`,
+`MINI S-SPIN` — and the line count joins it underneath once the clear resolves, so a spin
+and what it earned read as one event.
+
+To the right of the board, under the queue, **B2B** and **COMBO** count the runs. Back to
+back holds through a quad or any clear that came out of a spin, and breaks on a smaller
+one; a placement that clears nothing leaves it alone. The combo is the base game's, and
+counts consecutive clears. Neither is drawn until it means something.
 
 Nothing counts unless the last thing you did to the piece was rotate it; shifting or
 auto-shifting disarms it, falling does not. **Spins** in Game Settings picks how
