@@ -242,6 +242,52 @@ check('and the spin scored something', user.score > 0, 'score {}'.format(user.sc
 core.set_shape(0)
 check('spawning clears the spin flags', not user.tspin_flag and not user.twist_flag)
 
+# --- Back to back, and the combo counter beside it. -------------------------
+def clear_event(lines, spin=False):
+    """Run one placement's worth of clear through the real scorer."""
+    user.line_list = [lines]
+    user.tspin_flag = spin
+    user.eval_clear_score(False)
+
+
+user.reset()
+check('a fresh game has no chain', user.b2b == 0 and user.combo_ctr == 0)
+
+clear_event(4)
+check('a quad opens the chain', user.b2b == 1, 'b2b {}'.format(user.b2b))
+clear_event(4)
+check('a second quad carries it', user.b2b == 2, 'b2b {}'.format(user.b2b))
+clear_event(2, spin=True)
+check('a spin clear carries it too', user.b2b == 3, 'b2b {}'.format(user.b2b))
+clear_event(2)
+check('a plain double breaks it', user.b2b == 0, 'b2b {}'.format(user.b2b))
+
+# A placement that clears nothing leaves the chain where it was - it only ends
+# when a clear that is not difficult actually happens.
+clear_event(4)
+before = user.b2b
+clear_event(0)
+check('a placement with no clear leaves the chain alone', user.b2b == before, 'b2b {}'.format(user.b2b))
+
+# The combo counter is the base game's, and counts consecutive clears.
+user.reset()
+for expected in (1, 2, 3):
+    clear_event(1)
+    check('clear {} runs the combo to {}'.format(expected, expected), user.combo_ctr == expected, str(user.combo_ctr))
+clear_event(0)
+check('a placement with no clear breaks the combo', user.combo_ctr == 0, str(user.combo_ctr))
+
+# Both are drawn beside the queue, and only once they mean something.
+user.reset()
+blank_board()
+user.b2b = 3
+user.combo_ctr = 4
+core.display()
+user.b2b = 1
+user.combo_ctr = 1
+core.display()
+check('the counters draw without complaint at either end of their range', True)
+
 # --- The settings row. ------------------------------------------------------
 user.state = 'settings_menu'
 settings.reset()

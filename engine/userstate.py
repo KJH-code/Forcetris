@@ -29,11 +29,11 @@ class User:
 	In this case, it tracks tetris difficulty values and handles score data.
 	"""
 	__slots__ = (
-		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume', 'sfx_volume', 'keys', 'das', 'arr', 'dcd', 'sdf', 'spinrule',
+		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume', 'sfx_volume', 'keys', 'das', 'arr', 'dcd', 'sdf', 'are', 'spinrule',
 		'cleartype', 'enablekicks', 'showghost', 'linktiles',
 		'hard_flag', 'twist_flag', 'tspin_flag',
 		'score', 'last_score', 'lines_cleared', 'level', 'timer',
-		'line_list', 'combo_ctr', 'current_combo'
+		'line_list', 'combo_ctr', 'current_combo', 'b2b'
 	)
 	# Score data.
 	drop_score = 1. # The base score added when a block lands.
@@ -65,6 +65,7 @@ class User:
 		self.arr = 0 # Milliseconds between auto-shift steps. 0 slides to the wall at once.
 		self.dcd = 0 # Milliseconds a charged auto-shift is cut back to on spawn or rotation.
 		self.sdf = 0 # Soft drop speed as a multiple of gravity.
+		self.are = 0 # Milliseconds the board waits between one piece locking and the next.
 
 		self.hard_flag = False # True if the piece was hard-dropped.
 		self.twist_flag = False # True if the tetrimino twisted into place.
@@ -115,6 +116,7 @@ class User:
 		self.level = 1 # Current level in arcade mode.
 		self.timer = 0 # How long the game has been playing.
 
+		self.b2b = 0 # Consecutive difficult clears: quads, and anything out of a spin.
 		self.combo_ctr = 0 # Current combo number.
 		self.current_combo = 1. # The current combo multiplier.
 
@@ -157,8 +159,13 @@ class User:
 	def eval_clear_score (self, clearflag):
 		# Evaluates the score gain from the last line clear.
 		if len(self.line_list) > 1 or self.line_list[0] > 0:
+			# Back to back: a quad, or any clear that came out of a spin, carries the
+			# chain on. A smaller clear ends it. A placement that clears nothing at all
+			# leaves it alone, which is why this sits inside the cleared-something branch.
+			total = sum(self.line_list)
+			self.b2b = self.b2b + 1 if (self.tspin_flag or total >= 4) else 0
 			# Add the clear line score.
-			self.lines_cleared += sum(self.line_list)
+			self.lines_cleared += total
 			self.last_score = self.predict_score(clearflag)
 			self.score += self.last_score
 			# Increment combo counter.

@@ -525,8 +525,8 @@ class HandlingMenu (env.Menu):
 	50 frames per second and auto-shift can only act on a frame boundary.
 	"""
 	def __init__ (self, user):
-		# Six rows: four settings, plus Reset and Back.
-		bg = pg.Surface((470, 340))
+		# One row per handling setting, plus Reset and Back, and room for the hint.
+		bg = pg.Surface((470, 382))
 		bg.fill(0x1F5F9F)
 		super().__init__(user, bg, center=env.screct.center)
 		self.return_state = 'settings_menu'

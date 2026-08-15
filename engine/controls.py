@@ -68,9 +68,12 @@ HANDLING = (
 	('arr', 'ARR', 'ms', 0, 200, 20),
 	('dcd', 'DCD', 'ms', 0, 200, 20),
 	('sdf', 'SDF', 'x', 5, 40, 1),
+	('are', 'ARE', 'ms', 0, 500, 20),
 )
 
-HANDLING_DEFAULTS = {'das': 140, 'arr': 40, 'dcd': 0, 'sdf': 6}
+# ARE defaults to nothing: the base game held the board for 400ms after every
+# placement, which is dead time in a trainer built around reaction speed.
+HANDLING_DEFAULTS = {'das': 140, 'arr': 40, 'dcd': 0, 'sdf': 6, 'are': 0}
 
 # Above this, soft drop stops being a speed and becomes a slam to the floor.
 SDF_INSTANT = 40
@@ -87,6 +90,8 @@ def describe_handling (user, name):
 		return 'Off'
 	if name == 'sdf' and value >= SDF_INSTANT:
 		return 'Instant'
+	if name == 'are' and value <= 0:
+		return 'None'
 	return '{}{}'.format(int(value), 'ms' if name != 'sdf' else 'x')
 
 def set_handling (user, name, value):

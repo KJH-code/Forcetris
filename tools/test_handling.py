@@ -231,6 +231,33 @@ check(
 check('the slam does not lock the piece', core.entry_flag, 'the piece is still in play')
 release()
 
+# --- ARE: the pause between one piece locking and the next appearing. -------
+def frames_between_pieces():
+    """Lock a piece and count frames until the next one is in play."""
+    fresh_piece()
+    core.hard_drop()
+    for waited in range(1, 200):
+        core.run()
+        if core.entry_flag:
+            return waited
+    return None
+
+ctl.reset(user)
+check('ARE defaults to nothing', user.are == 0, '{}ms'.format(user.are))
+instant = frames_between_pieces()
+check(
+    'with ARE at zero the next piece is there almost at once',
+    instant is not None and instant <= 3, '{} frames'.format(instant)
+)
+ctl.set_handling(user, 'are', 400)
+slow = frames_between_pieces()
+check(
+    'ARE 400ms holds the board for twenty frames',
+    slow is not None and 19 <= slow <= 23, '{} frames against {} with none'.format(slow, instant)
+)
+check('the pause is what ARE says it is', core.entry_delay == 20, '{} frames'.format(core.entry_delay))
+ctl.set_handling(user, 'are', 0)
+
 # --- Arcade's difficulty ramp must not overwrite the player's handling. -----
 ctl.reset(user)
 ctl.set_handling(user, 'das', 300)
@@ -250,6 +277,10 @@ check(
 check(
     'the arcade ramp still speeds gravity up',
     core.fall_delay < 45, 'fall delay {}'.format(core.fall_delay)
+)
+check(
+    'the arcade ramp leaves the spawn pause alone',
+    core.entry_delay == 0, '{} frames at level {}'.format(core.entry_delay, user.level)
 )
 user.gametype = 'free'
 

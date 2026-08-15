@@ -149,6 +149,9 @@ class Core:
 		# proportionate as arcade mode speeds the fall up.
 		self.soft_instant = self.user.sdf >= ctl.SDF_INSTANT
 		self.soft_delay = max(1, int(round(self.fall_delay / float(self.user.sdf))))
+		# The pause between one piece locking and the next appearing is the player's
+		# too, and defaults to none.
+		self.entry_delay = int(round(self.user.are / self.frame_ms))
 
 	def cut_das (self):
 		# DAS cut delay: an auto-shift that has finished charging is knocked back to
@@ -690,9 +693,8 @@ class Core:
 		self.user.eval_level()
 		# Responsible for making the Arcade mode more faster-paced over time.
 		self.fall_delay = 45 - (40*self.user.level//180) if self.user.level < 180 else 5
-		self.entry_delay = 30 - (20*self.user.level//150) if self.user.level < 150 else 10
-		# Auto-shift and soft drop are deliberately left out of the ramp: handling is
-		# the player's setting, and only gravity gets to climb with the level.
+		# Auto-shift, soft drop and the spawn pause are deliberately left out of the
+		# ramp: handling is the player's setting, and only gravity climbs with the level.
 		# Start periodically spawning garbage lines at level 64.
 		if self.user.level >= 64:
 			if self.line_frame == 0:
@@ -754,6 +756,12 @@ class Core:
 			color = 0xFFFFFF if left > delay * 0.25 else 0xFF5555
 			self.render_text('Forced Drop:', 0xFFFFFF, topleft=(lalign, talign + spacing * 8))
 			self.render_text('{:.2f}s'.format(left), color, topright=(ralign, talign + spacing * 9))
+
+		# Back to back and combo, kept beside the queue for as long as they run.
+		if self.user.b2b > 1:
+			self.render_text('B2B x{}'.format(self.user.b2b - 1), 0xFFC040, midtop=(637, self.grid.rect.y + 420))
+		if self.user.combo_ctr > 1:
+			self.render_text('{} COMBO'.format(self.user.combo_ctr - 1), 0xA0E0FF, midtop=(637, self.grid.rect.y + 450))
 
 		# Display the spin just made, and what it went on to clear.
 		if self.spin_frames > 0:
