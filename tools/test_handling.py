@@ -95,6 +95,20 @@ def press_menu(menu, key, times=1):
         menu.run()
 
 
+def goto_row(menu, action, limit=30):
+    """Move the cursor onto a named row.
+
+    Counting Down presses breaks every time a row is inserted above the one a
+    check cares about, which is a property of the test rather than the menu.
+    """
+    menu.reset()
+    for _ in range(limit):
+        if menu.selected.action == action:
+            return True
+        press_menu(menu, pg.K_DOWN)
+    return False
+
+
 # --- DAS: how long a held key waits before it repeats. ----------------------
 ctl.reset(user)
 ctl.set_handling(user, 'das', 200)   # 10 frames
@@ -243,8 +257,7 @@ user.gametype = 'free'
 ctl.reset(user)
 user.state = 'settings_menu'
 settings = tetris.settings_menu
-settings.reset()
-press_menu(settings, pg.K_DOWN, 8)
+goto_row(settings, 'handling')
 press_menu(settings, pg.K_RETURN)
 check(
     'settings opens the handling screen',
@@ -265,15 +278,13 @@ check('DAS bottoms out at zero', user.das == 0, '{}ms'.format(user.das))
 press_menu(handling, pg.K_RIGHT, 60)
 check('DAS tops out at its maximum', user.das == 500, '{}ms'.format(user.das))
 
-handling.reset()
-press_menu(handling, pg.K_DOWN, 1)
+goto_row(handling, 'arr')
 press_menu(handling, pg.K_LEFT, 40)
 check(
     'ARR reads Instant at zero',
     user.arr == 0 and handling.label('arr').endswith('Instant'), handling.label('arr')
 )
-handling.reset()
-press_menu(handling, pg.K_DOWN, 3)
+goto_row(handling, 'sdf')
 press_menu(handling, pg.K_RIGHT, 60)
 check(
     'SDF reads Instant at its maximum',
@@ -290,16 +301,14 @@ user.das = user.arr = user.dcd = user.sdf = 0
 ctl.load(user)
 check('handling is read back', user.sdf == ctl.SDF_INSTANT and user.arr == 0, 'sdf {}'.format(user.sdf))
 
-handling.reset()
-press_menu(handling, pg.K_DOWN, 4)
+goto_row(handling, 'reset')
 press_menu(handling, pg.K_RETURN)
 check(
     'reset restores the defaults',
     user.sdf == ctl.HANDLING_DEFAULTS['sdf'] and user.das == ctl.HANDLING_DEFAULTS['das'],
     'DAS {}ms SDF {}x'.format(user.das, user.sdf)
 )
-handling.reset()
-press_menu(handling, pg.K_DOWN, 5)
+goto_row(handling, 'back')
 press_menu(handling, pg.K_RETURN)
 check('back returns to settings', user.state == 'settings_menu', user.state)
 

@@ -11,6 +11,16 @@ DEFAULT_VOLUME = 1.0
 # Sound effect volume, same 0.0 to 1.0 fraction and same percentage on the command line.
 DEFAULT_SFX_VOLUME = 1.0
 
+# How generously a rotation counts as a spin.
+#   Off          nothing is a spin
+#   T-Spin       only T pieces, by the three corner rule every guideline game shares
+#   All-Spin     any piece that ends up wedged in, all of them scoring as full spins
+#   All-Spin + Mini  as above, but the weaker ones are called out as minis
+SPIN_RULES = ('Off', 'T-Spin', 'All-Spin', 'All-Spin + Mini')
+SPIN_OFF, SPIN_TSPIN, SPIN_ALL, SPIN_ALL_MINI = range(4)
+# This is a TETR.IO trainer and TETR.IO plays all-spin, so that is the default.
+DEFAULT_SPINRULE = SPIN_ALL
+
 class User:
 	"""
 	The User class tracks global game state values, such as
@@ -19,7 +29,7 @@ class User:
 	In this case, it tracks tetris difficulty values and handles score data.
 	"""
 	__slots__ = (
-		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume', 'sfx_volume', 'keys', 'das', 'arr', 'dcd', 'sdf',
+		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume', 'sfx_volume', 'keys', 'das', 'arr', 'dcd', 'sdf', 'spinrule',
 		'cleartype', 'enablekicks', 'showghost', 'linktiles',
 		'hard_flag', 'twist_flag', 'tspin_flag',
 		'score', 'last_score', 'lines_cleared', 'level', 'timer',
@@ -45,6 +55,7 @@ class User:
 		# Default settings are good for Modern Tetris.
 		# Retro Tetris would use cleartype 0, enablekicks, showghost, and linktiles False.
 		self.cleartype = 2 # Determines line clear type, refer to Grid.clear_lines().
+		self.spinrule = DEFAULT_SPINRULE # Which rotations count as spins.
 		self.enablekicks = True # Determines if wall kicks are allowed.
 		self.showghost = True # Determines if the ghost tetrimino will be shown.
 		self.linktiles = True # Determines if the blocks will use connected textures.
@@ -69,7 +80,8 @@ class User:
 			"Clear Type: "+(['Naive', 'Sticky Cascade', 'Linked Cascade'][self.cleartype])+"\n"
 			"Wall Kicks: "+('Enabled' if self.enablekicks else 'Disabled')+"; "
 			"Ghost Piece: "+('Enabled' if self.showghost else 'Disabled')+"; "
-			"Linked Tile Textures: "+('Enabled' if self.linktiles else 'Disabled')+"\n"
+			"Linked Tile Textures: "+('Enabled' if self.linktiles else 'Disabled')+"; "
+			"Spins: "+SPIN_RULES[self.spinrule]+"\n"
 			"Forced Drop: "+("{:.3f}s".format(self.forced_delay) if self.forced_delay > 0 else 'Disabled')+"; "
 			"Music Volume: "+"{:.0%}".format(self.volume)+"; "
 			"Sound Volume: "+"{:.0%}".format(self.sfx_volume)+"\n\n"

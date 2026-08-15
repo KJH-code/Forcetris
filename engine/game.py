@@ -10,6 +10,7 @@ try:
 	import engine.filehandler as fh
 	import engine.menu as menu
 	import engine.controls as ctl
+	import engine.userstate as us
 	from engine.shapes import (Shape, Grid)
 	from engine.sortedcollections import SortedCollection as SC
 except ImportError:
@@ -17,6 +18,11 @@ except ImportError:
 	raise
 
 pg.display.set_caption('Forcetris')
+
+# Letters the banner names a spin by, indexed by Shape.form.
+SHAPE_NAMES = ('I', 'O', 'T', 'S', 'Z', 'J', 'L')
+# What a clear of each size is called.
+CLEAR_NAMES = {1: 'SINGLE', 2: 'DOUBLE', 3: 'TRIPLE', 4: 'QUAD'}
 
 class Core:
 	"""
@@ -37,6 +43,8 @@ class Core:
 	# One frame at the loop's fixed 50fps. Handling values arrive in milliseconds
 	# and can only take effect on frame boundaries, so this is their resolution.
 	frame_ms = 20
+	# Frames the spin banner stays up, at 50fps.
+	banner_frames = 110
 
 	def __init__ (self, user, pause_menu, save_menu, loss_menu):
 		self.user = user
@@ -45,6 +53,8 @@ class Core:
 		self.loss_menu = loss_menu
 
 		self.font = pg.font.SysFont(None, 25)
+		# The side panel is only about 140px wide, so the banner gets its own size.
+		self.bannerfont = pg.font.SysFont(None, 23)
 		self.theme = env.load_music('tetris.ogg')
 		env.load_sounds()
 
@@ -107,6 +117,11 @@ class Core:
 		self.shift_dir = '0' # The current direction the tetrimino is shifting.
 		self.shift_frame = 0 # The frame counter for auto-shifting.
 		self.das_charged = False # True once the auto-shift delay has elapsed.
+		self.rotated_last = False # True if the last thing the player did to the piece was turn it.
+
+		self.spin_label = '' # Banner naming the spin just made, if any.
+		self.spin_count = '' # The line count that spin went on to clear.
+		self.spin_frames = 0 # Frames the banner has left on screen.
 
 		self.grav_frame = 0 # The gravity frame counter.
 		self.grav_delay = self.fall_delay # Currently used gravity delay.
@@ -153,6 +168,9 @@ class Core:
 		# Set the active shape and reset shape-associated flags.
 		self.floor_kick = True
 		self.hold_lock = False
+		self.rotated_last = False
+		self.user.twist_flag = False
+		self.user.tspin_flag = False
 		if isinstance(shape, Shape):
 			self.freeshape = shape
 		else:
@@ -259,6 +277,7 @@ class Core:
 					self.newshape.translate((-1, 0))
 					# Only the initial press is heard. Auto-shift steps run every couple
 					# of frames and would turn the cue into a machine gun.
+					self.rotated_last = False
 					env.play_sound('move')
 			elif ctl.matches(self.user, 'right', event.key): # Shift right
 				self.shift_dir = 'r'
@@ -266,6 +285,7 @@ class Core:
 				self.shift_frame = self.shift_delay + 1
 				if self.entry_flag:
 					self.newshape.translate(( 1, 0))
+					self.rotated_last = False
 					env.play_sound('move')
 			elif ctl.matches(self.user, 'softdrop', event.key): # Toggle soft drop
 				self.soft_drop = True
@@ -279,11 +299,13 @@ class Core:
 					self.newshape.rotate(False)
 					self.wall_kick()
 					self.cut_das()
+					self.rotated_last = True
 					env.play_sound('rotate')
 				elif ctl.matches(self.user, 'rotate_cw', event.key): # Rotate CW
 					self.newshape.rotate(True)
 					self.wall_kick()
 					self.cut_das()
+					self.rotated_last = True
 					env.play_sound('rotate')
 				elif ctl.matches(self.user, 'rotate_180', event.key): # Rotate 180
 					# Two clockwise steps, so the rotation maths stays in one place. The
@@ -292,6 +314,7 @@ class Core:
 					self.newshape.rotate(True)
 					self.wall_kick()
 					self.cut_das()
+					self.rotated_last = True
 					env.play_sound('rotate')
 
 				elif ctl.matches(self.user, 'harddrop', event.key): # Hard drop
@@ -344,6 +367,8 @@ class Core:
 		elif (self.shift_dir == 'l' or self.shift_dir == 'r') and self.entry_flag:
 			self.shift_frame = self.shift_fdelay
 			self.das_charged = True
+			# An auto-shift step is a move like any other, so it disarms the spin.
+			self.rotated_last = False
 			step = -1 if self.shift_dir == 'l' else 1
 			if self.shift_fdelay < 1:
 				# ARR 0: cover the whole distance to the wall in this one frame.
@@ -498,6 +523,78 @@ class Core:
 			# Update the active piece.
 			self.freeshape = self.newshape.copy()
 
+	def filled (self, x, y):
+		# Anything outside the matrix counts as filled: for wedging a piece in, a
+		# wall does the same job as a block. Spelled out because a negative index
+		# would otherwise quietly read a cell from the far side of the grid.
+		if x < 0 or x >= len(self.grid[0]) or y < 0 or y >= len(self.grid):
+			return True
+		return self.grid[y][x] is not None
+
+	def eval_corners (self):
+		# The three corner rule: how many diagonals around the T's centre are filled,
+		# and whether both of the two it faces are among them. A T with only one front
+		# corner is the classic mini.
+		x, y = self.freeshape.pos[0], self.freeshape.pos[1]
+		corners = {
+			'nw': self.filled(x - 1, y - 1), 'ne': self.filled(x + 1, y - 1),
+			'sw': self.filled(x - 1, y + 1), 'se': self.filled(x + 1, y + 1),
+		}
+		fronts = {0: ('nw', 'ne'), 1: ('ne', 'se'), 2: ('sw', 'se'), 3: ('nw', 'sw')}
+		facing = fronts[self.freeshape.state % 4]
+		return sum(corners.values()), all(corners[corner] for corner in facing)
+
+	def is_immobile (self):
+		# The test every all-spin rule turns on: a piece that cannot move up, left or
+		# right is wedged into the stack rather than resting on top of it.
+		for offset in ((0, -1), (-1, 0), (1, 0)):
+			probe = self.freeshape.copy()
+			probe.translate(offset)
+			if not self.check_collision(probe):
+				return False
+		return True
+
+	def eval_spin (self):
+		# Decide whether the placement just made counts as a spin under the rule the
+		# player picked. Called at lock, while the piece is still where it landed.
+		# Returns (piece letter, full rather than mini) or None.
+		rule = self.user.spinrule
+		if rule == us.SPIN_OFF or not self.rotated_last:
+			return None
+		name = SHAPE_NAMES[self.freeshape.form]
+		if self.freeshape.form == 2:
+			# T pieces go by the corner rule under every setting that detects anything,
+			# since that is the one definition all guideline games agree on.
+			count, fronts = self.eval_corners()
+			if count < 3:
+				return None
+			return (name, fronts or rule == us.SPIN_ALL)
+		if rule == us.SPIN_TSPIN or not self.is_immobile():
+			return None
+		# Plain all-spin scores every wedge as a full spin. With minis on, a rotation
+		# that fitted without needing a kick is the lesser one.
+		return (name, rule == us.SPIN_ALL or self.user.twist_flag)
+
+	def announce_spin (self):
+		# Put the spin on screen and mark it for the scorer. Called before eval_fallen
+		# hands the board over to the line clearer.
+		spin = self.eval_spin()
+		if spin is None:
+			return
+		name, full = spin
+		self.user.tspin_flag = True
+		self.spin_label = '{}{}-SPIN'.format('' if full else 'MINI ', name)
+		self.spin_count = ''
+		self.spin_frames = self.banner_frames
+		env.play_sound('tspin')
+
+	def announce_clear (self, lines):
+		# Fold the line count into a banner that is still up, so a spin that cleared
+		# reads as one event rather than two.
+		if self.spin_frames > 0:
+			self.spin_count = CLEAR_NAMES.get(lines, '{} LINES'.format(lines))
+			self.spin_frames = self.banner_frames
+
 	def eval_gravity (self):
 		# Test if the next gravity tick will cause a collision.
 		self.newshape.translate(( 0, 1))
@@ -512,17 +609,16 @@ class Core:
 			self.shift_frame = self.shift_delay + 1
 		# Evaluate drop score and cut piece to the matrix.
 		self.user.eval_drop_score(posdif)
+		# Decided before the piece is pasted, while it is still where it landed. The
+		# spin flags are deliberately not cleared here: eval_clear_score reads them
+		# from inside the line clearer, which runs frames later, so clearing them at
+		# lock meant the spin bonus never once applied. They are cleared on spawn.
+		self.announce_spin()
 		self.grid.paste_shape(self.freeshape)
 		# Check if lines were cleared, and add the number of lines cleared to the total if any.
 		self.clearing = True
 		self.line_clearer = self.grid.clear_lines()
 		self.grid.update()
-		# A T-spin is worth hearing, and the flag is cleared on the next line.
-		if self.user.tspin_flag:
-			env.play_sound('tspin')
-		# Reset flags pertaining to dropped state of the tetrimino.
-		self.user.twist_flag = False
-		self.user.tspin_flag = False
 		self.entry_flag = False
 		self.entry_frame = self.entry_delay
 		# There is no piece in play, so stop the forced drop timer until the next spawn.
@@ -659,6 +755,15 @@ class Core:
 			self.render_text('Forced Drop:', 0xFFFFFF, topleft=(lalign, talign + spacing * 8))
 			self.render_text('{:.2f}s'.format(left), color, topright=(ralign, talign + spacing * 9))
 
+		# Display the spin just made, and what it went on to clear.
+		if self.spin_frames > 0:
+			middle = (lalign + ralign) // 2
+			banner = self.bannerfont.render(self.spin_label, 0, env.convert_hexcolor(0xFFD24A))
+			env.screen.blit(banner, banner.get_rect(midtop=(middle, talign + spacing * 10)))
+			if self.spin_count:
+				count = self.bannerfont.render(self.spin_count, 0, env.convert_hexcolor(0xFFFFFF))
+				env.screen.blit(count, count.get_rect(midtop=(middle, talign + spacing * 10 + 24)))
+
 		# Display ghost piece.
 		if self.user.showghost:
 			self.ghostshape.draw()
@@ -695,6 +800,8 @@ class Core:
 		# The reading is clamped because the game loop stops calling this method
 		# while a menu is up, so the first frame back would otherwise be huge.
 		self.apply_handling()
+		if self.spin_frames > 0:
+			self.spin_frames -= 1
 		now = time.perf_counter()
 		self.frame_delta = 0. if self.forced_tick is None else min(now - self.forced_tick, self.max_frame_delta)
 		self.forced_tick = now
@@ -770,6 +877,7 @@ class Core:
 				# now belong to a cascade the generator has just resolved.
 				if self.grid.csprts:
 					env.play_sound('tetris' if self.user.line_list[-1] > 3 else 'clear')
+					self.announce_clear(self.user.line_list[-1])
 		# Refresh screen. There is not enough fast rendering to justify using update()
 		pg.display.flip()
 

@@ -67,6 +67,7 @@ row, Left and Right change it, and holding the key repeats.
 | Wall Kicks | On / Off |
 | Linked Tiles | On / Off |
 | Line Clears | Naive / Sticky Cascade / Linked Cascade |
+| Spins | Off / T-Spin / All-Spin / All-Spin + Mini |
 | Music | Off, then 5% to 100% in 5% steps |
 | Sound | Off, then 5% to 100% in 5% steps |
 | Controls... | Rebind the gameplay keys |
@@ -121,6 +122,26 @@ with the level.
 Unlike the other settings, controls and handling **persist**, in `data/controls.json`.
 Rebinding that reset on every launch would not be worth having. A missing, corrupt or
 unwritable file falls back to the defaults, which is also what the browser build gets.
+
+## Spins
+
+A spin puts its name up beside the board for a couple of seconds — `T-SPIN`, `MINI
+S-SPIN` — and the line count joins it underneath once the clear resolves, so a spin and
+what it earned read as one event.
+
+Nothing counts unless the last thing you did to the piece was rotate it; shifting or
+auto-shifting disarms it, falling does not. **Spins** in Game Settings picks how
+generously the rest is judged:
+
+| Setting | Counts as a spin |
+| --- | --- |
+| Off | Nothing |
+| T-Spin | T pieces only, by the three-corner rule. Full when both corners the T faces are filled, mini otherwise |
+| All-Spin | Any piece that ends up wedged in — unable to move up, left or right. All of them score as full |
+| All-Spin + Mini | The same, except T still goes by the corner rule and other pieces are minis unless the rotation needed a kick |
+
+The default is All-Spin, since TETR.IO plays that way. Cells outside the matrix count as
+filled for both rules — a wall wedges a piece as well as a block does.
 
 ## Sound
 
@@ -213,7 +234,7 @@ pygame's SDL2 built there is its own project. The browser build is the supported
 
 ## Tests
 
-All six suites run headlessly — no display, sound card, or browser needed.
+All seven suites run headlessly — no display, sound card, or browser needed.
 
 ```bash
 python tools/test_forced_drop.py   # the timer rules above, against a fake clock
@@ -222,6 +243,7 @@ python tools/test_web.py           # the properties the browser build depends on
 python tools/test_controls.py      # rebinding, including that the game obeys the new key
 python tools/test_handling.py      # DAS, ARR, DCD and SDF, measured in cells travelled
 python tools/test_rotation.py      # 180 rotation, swept over every piece and position
+python tools/test_spins.py         # spin detection under each rule, and the banner
 ```
 
 ## Credits and licence

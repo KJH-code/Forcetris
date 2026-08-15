@@ -49,6 +49,20 @@ def press(menu, key, times=1):
         menu.run()
 
 
+def goto_row(menu, action, limit=30):
+    """Move the cursor onto a named row.
+
+    Counting Down presses breaks every time a row is inserted above the one a
+    check cares about, which is a property of the test rather than the menu.
+    """
+    menu.reset()
+    for _ in range(limit):
+        if menu.selected.action == action:
+            return True
+        press(menu, pg.K_DOWN)
+    return False
+
+
 def current():
     return getattr(tetris, user.state)
 
@@ -117,9 +131,8 @@ user.forced_delay = 1.0
 settings.set_labels()
 
 # --- The toggles below it work too. -----------------------------------------
-for downs, action, attr in ((1, 'ghost', 'showghost'), (2, 'kicks', 'enablekicks'), (3, 'tiles', 'linktiles')):
-    settings.reset()
-    press(settings, pg.K_DOWN, downs)
+for action, attr in (('ghost', 'showghost'), ('kicks', 'enablekicks'), ('tiles', 'linktiles')):
+    goto_row(settings, action)
     before = getattr(user, attr)
     press(settings, pg.K_RETURN)
     check(
@@ -129,8 +142,7 @@ for downs, action, attr in ((1, 'ghost', 'showghost'), (2, 'kicks', 'enablekicks
     )
     press(settings, pg.K_RETURN)  # put it back
 
-settings.reset()
-press(settings, pg.K_DOWN, 4)
+goto_row(settings, 'clears')
 before = user.cleartype
 press(settings, pg.K_RIGHT)
 check(
@@ -140,8 +152,7 @@ check(
 )
 
 # --- Music volume, which has to reach the mixer and not just the user. ------
-settings.reset()
-press(settings, pg.K_DOWN, 5)
+goto_row(settings, 'music')
 check('the music row is where it should be', settings.selected.action == 'music', settings.selected.action)
 before = user.volume
 press(settings, pg.K_LEFT, 4)
@@ -175,8 +186,7 @@ check(
 
 # Back is the last row and has to leave the menu.
 # --- Sound effect volume, which lives on the Sound objects themselves. ------
-settings.reset()
-press(settings, pg.K_DOWN, 6)
+goto_row(settings, 'sound')
 check('the sound row is where it should be', settings.selected.action == 'sound', settings.selected.action)
 press(settings, pg.K_LEFT, 5)
 check(
@@ -212,8 +222,7 @@ check(
 )
 
 # Back is the last row and has to leave the menu.
-settings.reset()
-press(settings, pg.K_DOWN, 9)
+goto_row(settings, 'back')
 press(settings, pg.K_RETURN)
 check('the Back row leaves the menu', user.state == 'main_menu', user.state)
 
@@ -251,7 +260,10 @@ core.set_data()
 for _ in range(30):
     core.run()
 check('a piece is in play', core.piece_elapsed is not None)
-user.forced_delay = 0.01  # what the settings menu writes
+# Set the budget below what this piece has already spent, rather than to a fixed
+# number of milliseconds: these frames run as fast as the loop can go, not at the
+# 50fps the game paces itself to, so a literal here is a coin flip.
+user.forced_delay = max(0.001, core.piece_elapsed / 2)   # what the settings menu writes
 core.run()
 check(
     'a delay lowered in the settings drops the piece already in play',

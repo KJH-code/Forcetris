@@ -47,6 +47,20 @@ def press(menu, key, times=1):
         menu.run()
 
 
+def goto_row(menu, action, limit=30):
+    """Move the cursor onto a named row.
+
+    Counting Down presses breaks every time a row is inserted above the one a
+    check cares about, which is a property of the test rather than the menu.
+    """
+    menu.reset()
+    for _ in range(limit):
+        if menu.selected.action == action:
+            return True
+        press(menu, pg.K_DOWN)
+    return False
+
+
 tetris = G.init(Namespace(debug=False, forced_delay=60., volume=0., sfx_volume=0.))
 user = tetris.user
 controls = tetris.controls_menu
@@ -155,8 +169,7 @@ ctl.reset(user)
 # --- The rebinding screen. --------------------------------------------------
 user.state = 'settings_menu'
 settings = tetris.settings_menu
-settings.reset()
-press(settings, pg.K_DOWN, 7)
+goto_row(settings, 'controls')
 press(settings, pg.K_RETURN)
 check(
     'settings opens the controls screen',
@@ -190,23 +203,20 @@ check(
 check('cancelling does not leave the screen', user.state == 'controls_menu', user.state)
 
 # Reset is the row above Back, below one row per action.
-controls.reset()
-press(controls, pg.K_DOWN, len(ctl.ACTIONS))
+goto_row(controls, 'reset')
 press(controls, pg.K_RETURN)
 check(
     'reset restores every default',
     controls.selected.action == 'reset' and ctl.matches(user, 'left', pg.K_LEFT),
     ctl.describe(user, 'left')
 )
-controls.reset()
-press(controls, pg.K_DOWN, len(ctl.ACTIONS) + 1)
+goto_row(controls, 'back')
 press(controls, pg.K_RETURN)
 check('back returns to settings', user.state == 'settings_menu', user.state)
 
 # Right adds a key to the highlighted row, left takes one away.
 ctl.reset(user)
-controls.reset()
-press(controls, pg.K_DOWN, 4)          # rotate_ccw
+goto_row(controls, 'rotate_ccw')
 check('the cursor is on the right row', controls.selected.action == 'rotate_ccw', controls.selected.action)
 press(controls, pg.K_RIGHT)
 check('right opens an adding prompt', controls.listening == 'rotate_ccw' and controls.listening_adds)

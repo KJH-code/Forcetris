@@ -4,6 +4,7 @@ try:
 	import engine.environment as env
 	import engine.filehandler as fh
 	import engine.controls as ctl
+	import engine.userstate as us
 except ImportError:
 	print("Something fucking jammed in here:")
 	raise
@@ -245,8 +246,8 @@ class SettingsMenu (env.Menu):
 	clear_names = ('Naive', 'Sticky Cascade', 'Linked Cascade')
 
 	def __init__ (self, user, controls_menu, handling_menu):
-		# Tall enough for ten rows under the title plus the hint line beneath them.
-		bg = pg.Surface((460, 476))
+		# Tall enough for eleven rows under the title plus the hint line beneath them.
+		bg = pg.Surface((460, 512))
 		bg.fill(0x00A060)
 		super().__init__(user, bg, center=env.screct.center)
 		self.return_state = 'main_menu'
@@ -261,7 +262,7 @@ class SettingsMenu (env.Menu):
 
 		self.selections = [[
 			env.MenuOption(self, action, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
-			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'music', 'sound', 'controls', 'handling', 'back'))]]
+			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'spins', 'music', 'sound', 'controls', 'handling', 'back'))]]
 		self.set_labels()
 
 	def label (self, action):
@@ -277,6 +278,8 @@ class SettingsMenu (env.Menu):
 			return 'Linked Tiles:  ' + ('On' if self.user.linktiles else 'Off')
 		elif action == 'clears':
 			return 'Line Clears:  ' + self.clear_names[self.user.cleartype]
+		elif action == 'spins':
+			return 'Spins:  ' + us.SPIN_RULES[self.user.spinrule]
 		elif action == 'music':
 			return 'Music:  ' + ('{:.0%}'.format(self.user.volume) if self.user.volume > 0. else 'Off')
 		elif action == 'sound':
@@ -308,6 +311,8 @@ class SettingsMenu (env.Menu):
 			self.user.linktiles = not self.user.linktiles
 		elif action == 'clears':
 			self.user.cleartype = (self.user.cleartype + movedir) % len(self.clear_names)
+		elif action == 'spins':
+			self.user.spinrule = (self.user.spinrule + movedir) % len(us.SPIN_RULES)
 		elif action == 'music':
 			volume = round(self.user.volume + movedir * self.volume_step, 2)
 			self.user.volume = min(1., max(0., volume))
