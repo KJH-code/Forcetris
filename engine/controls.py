@@ -39,6 +39,7 @@ SETTINGS = (
 	('sfx_volume', lambda v: max(0., min(1., float(v)))),
 	('cleartype', lambda v: max(0, min(2, int(v)))),
 	('spinrule', lambda v: max(0, min(len(us.SPIN_RULES) - 1, int(v)))),
+	('finesse', lambda v: max(0, min(len(us.FINESSE_RULES) - 1, int(v)))),
 	('enablekicks', bool),
 	('showghost', bool),
 	('linktiles', bool),

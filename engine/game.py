@@ -11,6 +11,7 @@ try:
 	import engine.menu as menu
 	import engine.controls as ctl
 	import engine.userstate as us
+	import engine.finesse as fin
 	from engine.shapes import (Shape, Grid)
 	from engine.sortedcollections import SortedCollection as SC
 except ImportError:
@@ -23,6 +24,9 @@ pg.display.set_caption('Forcetris')
 SHAPE_NAMES = ('I', 'O', 'T', 'S', 'Z', 'J', 'L')
 # What a clear of each size is called.
 CLEAR_NAMES = {1: 'SINGLE', 2: 'DOUBLE', 3: 'TRIPLE', 4: 'QUAD'}
+# The row a piece starts on. Read off an empty Shape rather than written out
+# again, so the finesse check cannot disagree with where pieces really spawn.
+SPAWN_Y = Shape().pos[1]
 
 class Core:
 	"""
@@ -119,6 +123,10 @@ class Core:
 		self.das_charged = False # True once the auto-shift delay has elapsed.
 		self.rotated_last = False # True if the last thing the player did to the piece was turn it.
 
+		self.finesse_inputs = 0 # Presses spent on the piece in play.
+		self.finesse_label = '' # Banner naming the presses last thrown away, if any.
+		self.finesse_frames = 0 # Frames that banner has left on screen.
+
 		self.spin_label = '' # Banner naming the spin just made, if any.
 		self.spin_count = '' # The line count that spin went on to clear.
 		self.spin_frames = 0 # Frames the banner has left on screen.
@@ -187,6 +195,8 @@ class Core:
 		self.eval_block()
 		# A held direction must not carry its full charge into the new piece.
 		self.cut_das()
+		# A new piece is a fresh count. Nothing spent on the last one is its fault.
+		self.finesse_inputs = 0
 		# Start this piece's forced drop timer, unless that spawn just ended the game.
 		self.piece_elapsed = None if self.user.state == 'loss_menu' else 0.
 
@@ -219,11 +229,83 @@ class Core:
 					# A swap bypasses set_shape, so restart the forced drop timer here.
 					# The per-piece hold lock is what keeps this from stalling forever.
 					self.piece_elapsed = 0.
+					# The piece coming out of storage starts from spawn, so it is owed a
+					# clean count. Hold itself is not charged for: every guideline finesse
+					# table leaves it out, and counting it would make the swap a fault.
+					self.finesse_inputs = 0
 				else:
 					# Allow pieces to be swapped during spawn delay.
 					self.nextshapes[0], self.storedshape = self.storedshape, self.nextshapes[0]
 				return True
 		return False
+
+	def drop_reachable (self):
+		"""True if the piece could have been dropped straight into where it sits.
+
+		Finesse only has an opinion about placements you can reach by turning the
+		piece, walking it across, and letting go. A piece slid under an overhang or
+		spun into a notch got where it is by moves the finesse tables do not model,
+		and every press spent on it would read as waste. Judging those would punish
+		exactly the downstacking this trainer exists to practise, so they are left
+		alone.
+
+		The test is the honest one: put a fresh copy of the piece back at the spawn
+		row in its current orientation and column, drop it, and see whether it lands
+		where the real one did.
+		"""
+		if self.freeshape.form > 6:
+			return False
+		trial = Shape(self.freeshape.form, self.freeshape.state, [self.freeshape.pos[0], SPAWN_Y])
+		if self.check_collision(trial):
+			# The column is blocked all the way up, so the piece cannot have arrived
+			# from above at all.
+			return False
+		while True:
+			trial.translate((0, 1))
+			if self.check_collision(trial):
+				trial.translate((0, -1))
+				break
+		return trial.pos == self.freeshape.pos
+
+	def eval_finesse (self, forced):
+		"""Judge the placement about to be made. True if the piece was handed back.
+
+		Called with the piece already sitting where it is going to lock, from both
+		the routes that get it there - the player's own drop and gravity running out
+		- so that a placement counts the same however it was committed.
+		"""
+		if self.user.finesse == us.FINESSE_OFF or self.user.state == 'loss_menu':
+			return False
+		if forced:
+			# The timer chose this placement, not the player. Charging them for the
+			# presses they had not finished making would be scoring the clock.
+			return False
+		if not self.drop_reachable():
+			return False
+		best = fin.optimal(self.freeshape.form, self.freeshape.state, self.freeshape.pos[0])
+		if best is None:
+			return False
+		self.user.finesse_judged += 1
+		wasted = self.finesse_inputs - best
+		if wasted <= 0:
+			return False
+		self.user.finesse_faults += 1
+		self.user.finesse_wasted += wasted
+		self.finesse_label = 'FINESSE +{}'.format(wasted)
+		self.finesse_frames = self.banner_frames
+		env.play_sound('finesse')
+		if self.user.finesse != us.FINESSE_RETRY:
+			return False
+		# Hand the piece back. It keeps the time it has already spent falling, so a
+		# deliberate fault cannot be used to buy another full forced drop budget.
+		spent = self.piece_elapsed
+		self.set_shape(self.freeshape.form)
+		self.piece_elapsed = spent
+		# A soft drop held through the retry gets no new keypress to re-mark where it
+		# started from, and a mark left down at the floor would score the next drop
+		# as a climb.
+		self.soft_pos = self.freeshape.pos[1]
+		return True
 
 	def check_collision (self, shape):
 		# Check if the shape to be evaluated is intersecting with any other blocks on the grid.
@@ -245,9 +327,14 @@ class Core:
 		# why the cue it fires has to say which of the two just took the placement.
 		if not self.entry_flag or self.clearing:
 			return False
-		self.user.hard_flag = True
 		posdif = self.ghostshape.pos[1] - self.freeshape.pos[1]
 		self.freeshape.pos = self.ghostshape.pos[:]
+		# Judged where it is about to land, before it becomes part of the board. A
+		# retry sends the piece back to spawn instead of locking it, so nothing below
+		# this point should run for it.
+		if self.eval_finesse(forced):
+			return False
+		self.user.hard_flag = True
 		env.play_sound('forced' if forced else 'drop')
 		self.eval_fallen(posdif)
 		return True
@@ -280,6 +367,10 @@ class Core:
 				self.shift_frame = self.shift_delay + 1
 				if self.entry_flag:
 					self.newshape.translate((-1, 0))
+					# One press, however far auto-shift goes on to carry the piece. That
+					# is the whole point of the measure: holding the key to the wall costs
+					# what a single tap costs, and tapping four times costs four.
+					self.finesse_inputs += 1
 					# Only the initial press is heard. Auto-shift steps run every couple
 					# of frames and would turn the cue into a machine gun.
 					self.rotated_last = False
@@ -290,6 +381,7 @@ class Core:
 				self.shift_frame = self.shift_delay + 1
 				if self.entry_flag:
 					self.newshape.translate(( 1, 0))
+					self.finesse_inputs += 1
 					self.rotated_last = False
 					env.play_sound('move')
 			elif ctl.matches(self.user, 'softdrop', event.key): # Toggle soft drop
@@ -305,12 +397,14 @@ class Core:
 					self.wall_kick()
 					self.cut_das()
 					self.rotated_last = True
+					self.finesse_inputs += 1
 					env.play_sound('rotate')
 				elif ctl.matches(self.user, 'rotate_cw', event.key): # Rotate CW
 					self.newshape.rotate(True)
 					self.wall_kick()
 					self.cut_das()
 					self.rotated_last = True
+					self.finesse_inputs += 1
 					env.play_sound('rotate')
 				elif ctl.matches(self.user, 'rotate_180', event.key): # Rotate 180
 					# Two clockwise steps, so the rotation maths stays in one place. The
@@ -320,6 +414,7 @@ class Core:
 					self.wall_kick()
 					self.cut_das()
 					self.rotated_last = True
+					self.finesse_inputs += 1
 					env.play_sound('rotate')
 
 				elif ctl.matches(self.user, 'harddrop', event.key): # Hard drop
@@ -805,16 +900,38 @@ class Core:
 		if self.user.combo_ctr > 1:
 			self.render_text('{} COMBO'.format(self.user.combo_ctr - 1), 0xA0E0FF, midtop=(637, self.grid.rect.y + 450))
 
-		# Display the spin just made, and what it went on to clear.
-		if self.spin_frames > 0:
+		# How economically the pieces are going down. Sits in the gap between the
+		# queue and the combo counters, which is the only space on that side wide
+		# enough for it and still inside the panel.
+		if self.user.finesse != us.FINESSE_OFF:
+			rate = self.user.finesse_rate()
+			self.render_text(
+				'FINESSE {:.0%}'.format(rate),
+				0xFFFFFF if rate >= 0.95 else 0xFFC040 if rate >= 0.8 else 0xFF7B7B,
+				midtop=(637, self.grid.rect.y + 375)
+			)
+			if self.user.finesse_faults:
+				self.render_text(
+					'{} fault{}, {} wasted'.format(
+						self.user.finesse_faults, '' if self.user.finesse_faults == 1 else 's',
+						self.user.finesse_wasted),
+					0xB0B0B0, midtop=(637, self.grid.rect.y + 400)
+				)
+
+		# Display the spin just made, and what it went on to clear, with anything
+		# thrown away on the placement underneath.
+		if self.spin_frames > 0 or self.finesse_frames > 0:
 			middle = (lalign + ralign) // 2
 			lines = []
-			if self.spin_label:
-				lines.append((self.spin_label, 0xFFD24A))
-			if self.spin_count:
-				lines.append((self.spin_count, 0xFFFFFF))
-			if self.spin_perfect:
-				lines.append(('PERFECT CLEAR', 0x7CFF8A))
+			if self.spin_frames > 0:
+				if self.spin_label:
+					lines.append((self.spin_label, 0xFFD24A))
+				if self.spin_count:
+					lines.append((self.spin_count, 0xFFFFFF))
+				if self.spin_perfect:
+					lines.append(('PERFECT CLEAR', 0x7CFF8A))
+			if self.finesse_frames > 0:
+				lines.append((self.finesse_label, 0xFF7B7B))
 			for i, (text, colour) in enumerate(lines):
 				line = self.bannerfont.render(text, 0, env.convert_hexcolor(colour))
 				env.screen.blit(line, line.get_rect(midtop=(middle, talign + spacing * 10 + i * 24)))
@@ -857,6 +974,8 @@ class Core:
 		self.apply_handling()
 		if self.spin_frames > 0:
 			self.spin_frames -= 1
+		if self.finesse_frames > 0:
+			self.finesse_frames -= 1
 		now = time.perf_counter()
 		self.frame_delta = 0. if self.forced_tick is None else min(now - self.forced_tick, self.max_frame_delta)
 		self.forced_tick = now
@@ -884,8 +1003,11 @@ class Core:
 						else:
 							# Evaluate dropped piece.
 							self.grav_frame = 0
-							env.play_sound('lock')
-							self.eval_fallen(self.ghostshape.pos[1] - self.soft_pos if self.soft_drop else 0)
+							# A piece that settled under gravity is as much the player's
+							# placement as one they dropped, so it is judged the same way.
+							if not self.eval_finesse(False):
+								env.play_sound('lock')
+								self.eval_fallen(self.ghostshape.pos[1] - self.soft_pos if self.soft_drop else 0)
 
 					else: # If there won't be gravity collision:
 						if self.grav_frame < self.grav_delay - 1:

@@ -245,24 +245,30 @@ class SettingsMenu (env.Menu):
 
 	clear_names = ('Naive', 'Sticky Cascade', 'Linked Cascade')
 
+	# Every row the screen carries, in the order it lists them.
+	rows = (
+		'delay', 'ghost', 'kicks', 'tiles', 'clears', 'spins', 'finesse',
+		'music', 'sound', 'controls', 'handling', 'back',
+	)
+
 	def __init__ (self, user, controls_menu, handling_menu):
-		# Tall enough for eleven rows under the title plus the hint line beneath them.
-		bg = pg.Surface((460, 512))
+		hmargin = 20
+		tmargin = 50
+		spacing = 5
+		height = 34
+		# Sized from the row list rather than by hand, so adding a setting cannot
+		# quietly push the last row or the hint line off the bottom of the panel.
+		bg = pg.Surface((460, tmargin + len(self.rows) * (spacing + height) + 33))
 		bg.fill(0x00A060)
 		super().__init__(user, bg, center=env.screct.center)
 		self.return_state = 'main_menu'
 		self.controls_menu = controls_menu
 		self.handling_menu = handling_menu
 
-		hmargin = 20
-		tmargin = 50
-		spacing = 5
-		height = 34
 		width = self.rect.w - 2 * hmargin
-
 		self.selections = [[
 			env.MenuOption(self, action, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
-			for i, action in enumerate(('delay', 'ghost', 'kicks', 'tiles', 'clears', 'spins', 'music', 'sound', 'controls', 'handling', 'back'))]]
+			for i, action in enumerate(self.rows)]]
 		self.set_labels()
 
 	def label (self, action):
@@ -280,6 +286,8 @@ class SettingsMenu (env.Menu):
 			return 'Line Clears:  ' + self.clear_names[self.user.cleartype]
 		elif action == 'spins':
 			return 'Spins:  ' + us.SPIN_RULES[self.user.spinrule]
+		elif action == 'finesse':
+			return 'Finesse:  ' + us.FINESSE_RULES[self.user.finesse]
 		elif action == 'music':
 			return 'Music:  ' + ('{:.0%}'.format(self.user.volume) if self.user.volume > 0. else 'Off')
 		elif action == 'sound':
@@ -313,6 +321,8 @@ class SettingsMenu (env.Menu):
 			self.user.cleartype = (self.user.cleartype + movedir) % len(self.clear_names)
 		elif action == 'spins':
 			self.user.spinrule = (self.user.spinrule + movedir) % len(us.SPIN_RULES)
+		elif action == 'finesse':
+			self.user.finesse = (self.user.finesse + movedir) % len(us.FINESSE_RULES)
 		elif action == 'music':
 			volume = round(self.user.volume + movedir * self.volume_step, 2)
 			self.user.volume = min(1., max(0., volume))

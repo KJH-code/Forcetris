@@ -21,6 +21,16 @@ SPIN_OFF, SPIN_TSPIN, SPIN_ALL, SPIN_ALL_MINI = range(4)
 # This is a TETR.IO trainer and TETR.IO plays all-spin, so that is the default.
 DEFAULT_SPINRULE = SPIN_ALL
 
+# What happens when a placement takes more key presses than it needed to.
+#   Off      nothing is counted
+#   Count    the running percentage on the HUD, and a note when one is wasted
+#   Retry    as above, and the piece is handed back to be placed again
+FINESSE_RULES = ('Off', 'Count', 'Retry')
+FINESSE_OFF, FINESSE_COUNT, FINESSE_RETRY = range(3)
+# Counting is on by default because it costs nothing to ignore. Retry is not,
+# because a trainer that takes pieces back is a thing you should have to ask for.
+DEFAULT_FINESSE = FINESSE_COUNT
+
 class User:
 	"""
 	The User class tracks global game state values, such as
@@ -30,10 +40,11 @@ class User:
 	"""
 	__slots__ = (
 		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume', 'sfx_volume', 'keys', 'das', 'arr', 'dcd', 'sdf', 'are', 'spinrule',
-		'cleartype', 'enablekicks', 'showghost', 'linktiles',
+		'cleartype', 'enablekicks', 'showghost', 'linktiles', 'finesse',
 		'hard_flag', 'twist_flag', 'tspin_flag',
 		'score', 'last_score', 'lines_cleared', 'level', 'timer',
-		'line_list', 'combo_ctr', 'current_combo', 'b2b'
+		'line_list', 'combo_ctr', 'current_combo', 'b2b',
+		'finesse_judged', 'finesse_faults', 'finesse_wasted'
 	)
 	# Score data.
 	drop_score = 1. # The base score added when a block lands.
@@ -56,6 +67,7 @@ class User:
 		# Retro Tetris would use cleartype 0, enablekicks, showghost, and linktiles False.
 		self.cleartype = 2 # Determines line clear type, refer to Grid.clear_lines().
 		self.spinrule = DEFAULT_SPINRULE # Which rotations count as spins.
+		self.finesse = DEFAULT_FINESSE # What happens on a wasted key press.
 		self.enablekicks = True # Determines if wall kicks are allowed.
 		self.showghost = True # Determines if the ghost tetrimino will be shown.
 		self.linktiles = True # Determines if the blocks will use connected textures.
@@ -82,7 +94,8 @@ class User:
 			"Wall Kicks: "+('Enabled' if self.enablekicks else 'Disabled')+"; "
 			"Ghost Piece: "+('Enabled' if self.showghost else 'Disabled')+"; "
 			"Linked Tile Textures: "+('Enabled' if self.linktiles else 'Disabled')+"; "
-			"Spins: "+SPIN_RULES[self.spinrule]+"\n"
+			"Spins: "+SPIN_RULES[self.spinrule]+"; "
+			"Finesse: "+FINESSE_RULES[self.finesse]+"\n"
 			"Forced Drop: "+("{:.3f}s".format(self.forced_delay) if self.forced_delay > 0 else 'Disabled')+"; "
 			"Music Volume: "+"{:.0%}".format(self.volume)+"; "
 			"Sound Volume: "+"{:.0%}".format(self.sfx_volume)+"\n\n"
@@ -90,6 +103,8 @@ class User:
 			"Score: "+str(self.score)+"; Last Clear: "+str(self.last_score)+" Clearing Chain: "+str(self.line_list[:-1])+"\n"
 			"Level: "+str(self.level)+"; Timer: "+"{}:{:02d}:{:02d}".format(self.timer // 60000, self.timer//1000 % 60, self.timer%1000 // 10)+"\n"
 			"Combo Number: "+str(self.combo_ctr)+"; Combo Multiplier: "+str(self.current_combo)+"\n"
+			"Finesse: "+"{:.0%}".format(self.finesse_rate())+" over "+str(self.finesse_judged)+" placements; "
+			""+str(self.finesse_faults)+" faults wasting "+str(self.finesse_wasted)+" presses\n"
 		)
 
 	def eval_argv (self, argv):
@@ -126,6 +141,18 @@ class User:
 		self.b2b = 0 # Consecutive difficult clears: quads, and anything out of a spin.
 		self.combo_ctr = 0 # Current combo number.
 		self.current_combo = 1. # The current combo multiplier.
+
+		self.finesse_judged = 0 # Placements finesse had an opinion about.
+		self.finesse_faults = 0 # How many of those took more presses than they needed.
+		self.finesse_wasted = 0 # Total presses thrown away across all of them.
+
+	def finesse_rate (self):
+		# The share of judged placements made in the fewest presses, as a fraction.
+		# One with nothing to go on reads as clean rather than as zero, so the HUD
+		# does not open every game at 0%.
+		if self.finesse_judged < 1:
+			return 1.
+		return float(self.finesse_judged - self.finesse_faults) / self.finesse_judged
 
 	def eval_drop_score (self, posdif=0):
 		# Add score value when piece is dropped.

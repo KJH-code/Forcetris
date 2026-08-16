@@ -133,7 +133,7 @@ COMBO_STEPS = 10
 # Every cue the game can fire. Names match the files in sound/.
 SFX_NAMES = (
 	'move', 'rotate', 'hold', 'lock', 'drop',
-	'forced', 'clear', 'tetris', 'tspin', 'perfect', 'b2b', 'gameover',
+	'forced', 'clear', 'tetris', 'tspin', 'perfect', 'b2b', 'finesse', 'gameover',
 ) + tuple('combo{}'.format(step) for step in range(1, COMBO_STEPS + 1))
 sounds = {}
 

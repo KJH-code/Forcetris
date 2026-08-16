@@ -72,10 +72,11 @@ row, Left and Right change it, and holding the key repeats.
 | Linked Tiles | On / Off |
 | Line Clears | Naive / Sticky Cascade / Linked Cascade |
 | Spins | Off / T-Spin / All-Spin / All-Spin + Mini |
+| Finesse | Off / Count / Retry |
 | Music | Off, then 5% to 100% in 5% steps |
 | Sound | Off, then 5% to 100% in 5% steps |
 | Controls... | Rebind the gameplay keys |
-| Handling... | DAS, ARR, DCD and SDF |
+| Handling... | DAS, ARR, DCD, SDF and ARE |
 
 Changes apply immediately, including to the piece already falling and to the music
 playing behind the pause menu, so you can pause mid-run, shave 0.05s off, and feel it on
@@ -132,8 +133,8 @@ defaults to none.
 
 Everything the settings menu can change is written to `data/settings.json` the moment you
 change it — the forced delay, both volumes, the ghost, kicks, tiles, clear and spin
-options, every handling number, and every key binding. Nothing needs saving by hand and
-there is no Apply button; closing the game keeps what you last had.
+options, the finesse rule, every handling number, and every key binding. Nothing needs
+saving by hand and there is no Apply button; closing the game keeps what you last had.
 
 Three things set those values, in this order:
 
@@ -191,6 +192,53 @@ generously the rest is judged:
 The default is All-Spin, since TETR.IO plays that way. Cells outside the matrix count as
 filled for both rules — a wall wedges a piece as well as a block does.
 
+## Finesse
+
+Finesse is how few key presses a placement took. Every placement you can reach by
+dropping a piece straight down has a minimum — turn it, move it, let go — and using more
+than that minimum is a fault. Tapping left four times where one held key would have walked
+the piece into the wall is the classic one: same placement, four times the work.
+
+**FINESSE** sits under the queue with the running percentage, and the faults and presses
+thrown away underneath it. A fault also puts `FINESSE +2` up beside the board, naming what
+that particular placement cost you.
+
+| Setting | Does |
+| --- | --- |
+| Off | Nothing is counted and nothing is drawn |
+| Count | Faults are counted and shown. The placement stands |
+| Retry | As above, and the piece is handed straight back to be placed again |
+
+Retry is the one that actually trains it. A faulted piece returns to spawn, the board is
+untouched, and you place it again — as many times as it takes. It keeps the time it had
+already spent falling, so a deliberate fault cannot be used to buy another full forced
+drop budget.
+
+What counts as a press: shifting and rotating, one per press. Holding a direction is one
+press however far auto-shift carries the piece, which is the whole point of the measure.
+Soft drop, hard drop and hold are not counted — hold starts the count over, since the
+piece it hands you comes from spawn like any other.
+
+Three kinds of placement are **not judged at all**:
+
+- **Tucks.** A piece slid under an overhang did not get there by anything the finesse
+  tables describe, so every press spent on it would read as waste.
+- **Spins.** Same reason. A spin bonus and a finesse fault never arrive together.
+- **Forced drops.** The timer chose that placement, not you. Charging you for presses you
+  had not finished making would be scoring the clock.
+
+The test for the first two is the honest one: put a fresh copy of the piece back at the
+spawn row in the same column and orientation, drop it, and see whether it lands where the
+real one did. If it does not, the placement is off the tables and is left alone. That is
+what makes Retry usable while downstacking — it enforces finesse on ordinary placements
+and stays out of the way of the ones that need a tuck or a spin.
+
+The minimums are not a hard-coded table. They are searched out from the spawn position
+over an empty field, once per piece, which is what the published tables are. Nothing needs
+more than three presses; a piece that needs no turning needs no more than two. Rotations
+that would put a piece through a wall are refused rather than kicked, because the tables
+every guideline game measures against are built that way.
+
 ## Sound
 
 | Cue | When |
@@ -202,6 +250,7 @@ filled for both rules — a wall wedges a piece as well as a block does.
 | clear / tetris | One to three lines, or four |
 | combo1..combo10 | A clear extending a combo. Each rung is a semitone above the last, so the run can be heard climbing |
 | b2b | A clear keeping back to back alive |
+| finesse | A placement that took more presses than it needed |
 | tspin | A spin landed |
 | perfect | The placement emptied the board |
 | gameover | The stack topped out |
@@ -289,7 +338,7 @@ pygame's SDL2 built there is its own project. The browser build is the supported
 
 ## Tests
 
-All eight suites run headlessly — no display, sound card, or browser needed.
+All nine suites run headlessly — no display, sound card, or browser needed.
 
 ```bash
 python tools/test_forced_drop.py   # the timer rules above, against a fake clock
@@ -300,6 +349,7 @@ python tools/test_handling.py      # DAS, ARR, DCD and SDF, measured in cells tr
 python tools/test_rotation.py      # 180 rotation, swept over every piece and position
 python tools/test_spins.py         # spin detection under each rule, and the banner
 python tools/test_settings.py      # the saved profile, including an actual relaunch
+python tools/test_finesse.py       # the minimums, the counting, and what must not be judged
 ```
 
 They write to a temporary profile rather than the real one, so running them will not

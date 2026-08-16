@@ -121,6 +121,14 @@ SOUNDS.update({
         tone(330, 0.085, 0.5, 'saw', release=0.15, vibrato=0.05),
         tone(165, 0.13, 0.5, 'saw', release=0.4, vibrato=0.07),
     ),
+    # A wasted press. Deliberately small and dry - a fault is information, not a
+    # punishment, and something triumphant here would be unbearable by the tenth
+    # one. Two descending clicks, well under the clear cues so it never competes
+    # with the placement that fired at the same moment.
+    'finesse': lambda: chain(
+        tone(370, 0.05, 0.2, 'square', release=0.35),
+        tone(247, 0.09, 0.2, 'square', release=0.45),
+    ),
     # Clears climb; a tetris climbs further and rings out.
     'clear': lambda: chain(
         tone(523, 0.06, 0.34, 'sine', release=0.5),
