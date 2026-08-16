@@ -123,6 +123,7 @@ class Core:
 		self.spin_count = '' # The line count that spin went on to clear.
 		self.spin_frames = 0 # Frames the banner has left on screen.
 		self.spin_perfect = False # True if the placement emptied the board outright.
+		self.cleared_lines = False # True if this placement took any lines with it.
 
 		self.grav_frame = 0 # The gravity frame counter.
 		self.grav_delay = self.fall_delay # Currently used gravity delay.
@@ -595,7 +596,19 @@ class Core:
 		self.spin_label = ''
 		self.spin_count = ''
 		self.spin_perfect = False
+		self.cleared_lines = False
 		self.spin_frames = 0
+
+	def announce_chains (self):
+		# Fired once the clearer has finished and the counters are final. The combo
+		# cue climbs a rung per clear, which is the whole point of it: the run can be
+		# heard extending without looking away from the stack.
+		if not self.cleared_lines:
+			return
+		if self.user.combo_ctr > 1:
+			env.play_sound('combo{}'.format(min(self.user.combo_ctr - 1, env.COMBO_STEPS)))
+		if self.user.b2b > 1:
+			env.play_sound('b2b')
 
 	def announce_perfect (self):
 		# Outranks everything else the placement did, and raises the banner even when
@@ -622,6 +635,7 @@ class Core:
 		# Recorded either way. If a spin put a banner up this joins it; if not, it sits
 		# there unshown in case a perfect clear a moment later wants to name it.
 		self.spin_count = CLEAR_NAMES.get(lines, '{} LINES'.format(lines))
+		self.cleared_lines = True
 		if self.spin_frames > 0:
 			self.spin_frames = self.banner_frames
 
@@ -919,10 +933,14 @@ class Core:
 				if self.grid.csprts:
 					env.play_sound('tetris' if self.user.line_list[-1] > 3 else 'clear')
 					self.announce_clear(self.user.line_list[-1])
-				elif not self.clearing and self.board_empty():
-					# The clearer has finished and left nothing behind. A placement that
-					# cleared no lines cannot get here, since it put a piece on the board.
-					self.announce_perfect()
+				elif not self.clearing:
+					# The clearer has finished, so the combo and back to back counters are
+					# final and the board has settled into whatever it is going to be.
+					self.announce_chains()
+					if self.board_empty():
+						# A placement that cleared no lines cannot empty the board, since it
+						# just put a piece on it.
+						self.announce_perfect()
 		# Refresh screen. There is not enough fast rendering to justify using update()
 		pg.display.flip()
 

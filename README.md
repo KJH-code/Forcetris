@@ -164,6 +164,8 @@ filled for both rules — a wall wedges a piece as well as a block does.
 | drop | You hard dropped it yourself |
 | **forced** | The timer took the placement away from you |
 | clear / tetris | One to three lines, or four |
+| combo1..combo10 | A clear extending a combo. Each rung is a semitone above the last, so the run can be heard climbing |
+| b2b | A clear keeping back to back alive |
 | tspin | A spin landed |
 | perfect | The placement emptied the board |
 | gameover | The stack topped out |
@@ -171,6 +173,10 @@ filled for both rules — a wall wedges a piece as well as a block does.
 `drop` and `forced` are deliberately unalike — a low sawtooth buzz against the hard
 drop's thud — because the whole point is hearing, without looking, that you ran out of
 time rather than chose to place.
+
+The combo ladder is why there are ten of one cue: pitch is the only channel that says
+*how long* the run is without asking you to look away from the stack. It stops climbing
+at the tenth rung.
 
 The effects are synthesised, not sampled, so the repository carries no third-party
 audio. `tools/make_sounds.py` regenerates every file from the parameters at the bottom

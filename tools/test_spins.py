@@ -347,6 +347,43 @@ for expected in (1, 2, 3):
 clear_event(0)
 check('a placement with no clear breaks the combo', user.combo_ctr == 0, str(user.combo_ctr))
 
+# --- And both say so out loud. ----------------------------------------------
+fired = []
+real_play = G.env.play_sound
+G.env.play_sound = lambda name: fired.append(name)
+
+
+def chains_after(combo, b2b, cleared=True):
+    """Set the counters as the scorer would have, then ask for the cues."""
+    del fired[:]
+    user.combo_ctr = combo
+    user.b2b = b2b
+    core.cleared_lines = cleared
+    core.announce_chains()
+    return list(fired)
+
+
+check('a first clear is no combo yet', chains_after(1, 0) == [])
+check('a second clear opens the ladder', chains_after(2, 0) == ['combo1'], str(chains_after(2, 0)))
+check('the ladder climbs a rung per clear', chains_after(5, 0) == ['combo4'], str(chains_after(5, 0)))
+check(
+    'the ladder stops climbing at its top rung',
+    chains_after(40, 0) == ['combo{}'.format(G.env.COMBO_STEPS)], str(chains_after(40, 0))
+)
+check('a lone difficult clear is not back to back yet', chains_after(1, 1) == [])
+check('a second one is', 'b2b' in chains_after(2, 2), str(chains_after(2, 2)))
+check('both can sound together', chains_after(3, 3) == ['combo2', 'b2b'], str(chains_after(3, 3)))
+check('a placement that cleared nothing is silent', chains_after(5, 5, cleared=False) == [])
+
+# Every rung the ladder can reach has to exist as a file.
+G.env.play_sound = real_play
+missing = [
+    'combo{}'.format(step) for step in range(1, G.env.COMBO_STEPS + 1)
+    if 'combo{}'.format(step) not in G.env.sounds
+]
+check('every rung of the ladder is loaded', not missing, 'missing {}'.format(missing))
+check('the back to back cue is loaded', 'b2b' in G.env.sounds)
+
 # Both are drawn beside the queue, and only once they mean something.
 user.reset()
 blank_board()

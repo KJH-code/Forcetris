@@ -215,7 +215,16 @@ fired = set()
 for line in open(os.path.join(ROOT, 'engine', 'game.py')):
     if 'play_sound(' in line and 'def ' not in line:
         fired.update(part.split("'")[0] for part in line.split("play_sound(")[1].split("'")[1::2])
-unknown = sorted(name for name in fired if name not in env.SFX_NAMES)
+# A cue named by a format string, like combo{}, stands for the family of names
+# that share its prefix.
+def known(name):
+    if '{}' not in name:
+        return name in env.SFX_NAMES
+    prefix = name.split('{}')[0]
+    return any(real.startswith(prefix) for real in env.SFX_NAMES)
+
+
+unknown = sorted(name for name in fired if not known(name))
 check(
     'every cue the game fires is a real effect',
     not unknown, 'unknown {}'.format(unknown) if unknown else 'fires {}'.format(sorted(fired))

@@ -86,7 +86,22 @@ def write (name, samples):
     print('{:>10}.wav  {:>6} frames  {:.0f}ms'.format(name, len(data), 1000. * len(data) / RATE))
 
 
-SOUNDS = {
+# How many rungs the combo ladder has before it stops climbing. Mirrored by
+# engine.environment.COMBO_STEPS, which names the files this writes.
+COMBO_STEPS = 10
+
+
+def combo_step (step):
+    """One rung of the combo ladder, a semitone higher than the last."""
+    freq = 523.25 * (2. ** (step / 12.))
+    return mix(
+        tone(freq, 0.09, 0.3, 'sine', release=0.4),
+        tone(freq * 2, 0.06, 0.1, 'sine', release=0.5),
+    )
+
+
+SOUNDS = {'combo{}'.format(step + 1): (lambda s=step: combo_step(s)) for step in range(COMBO_STEPS)}
+SOUNDS.update({
     # Shifting and rotating fire constantly, so they stay short and quiet.
     'move': lambda: tone(180, 0.035, 0.22, 'square', release=0.6),
     'rotate': lambda: tone(300, 0.045, 0.24, 'square', freq_end=340, release=0.5),
@@ -138,13 +153,22 @@ SOUNDS = {
         tone(1175, 0.28, 0.2, 'sine', release=0.2),
         tone(1568, 0.20, 0.12, 'sine', release=0.2),
     ),
+    # Keeping a back to back going: a fifth, with a little weight under it, so it
+    # reads as separate from the clear it arrives with.
+    'b2b': lambda: chain(
+        tone(392, 0.06, 0.28, 'square', release=0.5),
+        mix(
+            tone(587, 0.20, 0.28, 'sine', release=0.3),
+            tone(294, 0.20, 0.14, 'square', release=0.4),
+        ),
+    ),
     'gameover': lambda: chain(
         tone(392, 0.16, 0.4, 'square', release=0.3),
         tone(330, 0.16, 0.4, 'square', release=0.3),
         tone(262, 0.16, 0.4, 'square', release=0.3),
         tone(196, 0.40, 0.4, 'square', release=0.25, vibrato=0.02),
     ),
-}
+})
 
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)

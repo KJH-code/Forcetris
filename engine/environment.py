@@ -127,11 +127,14 @@ def load_music(name):
 	# Loads a music file into the stream.
 	return pg.mixer.music.load(datapath('music', name))
 
+# Rungs on the combo ladder. Mirrored by tools/make_sounds.py, which writes them.
+COMBO_STEPS = 10
+
 # Every cue the game can fire. Names match the files in sound/.
 SFX_NAMES = (
 	'move', 'rotate', 'hold', 'lock', 'drop',
-	'forced', 'clear', 'tetris', 'tspin', 'perfect', 'gameover',
-)
+	'forced', 'clear', 'tetris', 'tspin', 'perfect', 'b2b', 'gameover',
+) + tuple('combo{}'.format(step) for step in range(1, COMBO_STEPS + 1))
 sounds = {}
 
 def load_sounds ():
