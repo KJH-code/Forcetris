@@ -327,6 +327,8 @@ class SettingsMenu (env.Menu):
 			env.play_sound('rotate')
 		else:
 			return
+		# Kept, so a value set once does not have to be set again next launch.
+		ctl.save(self.user)
 		self.set_labels()
 
 	def eval_move (self, coord, movedir):

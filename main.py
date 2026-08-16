@@ -8,22 +8,22 @@ __basedon__ = "pyTetris 1.1.9"
 
 if __name__ == '__main__':
 	import argparse
-	# Safe to import ahead of parsing: userstate pulls in nothing, unlike engine.game.
-	from engine.userstate import DEFAULT_FORCED_DELAY, DEFAULT_VOLUME, DEFAULT_SFX_VOLUME
-	# Parse the optional arguments for the command line interface.
+	# Parse the optional arguments for the command line interface. Anything left off
+	# the command line keeps whatever the saved profile holds, so a value set once in
+	# the settings menu survives without being retyped.
 	parser = argparse.ArgumentParser(description="Tetris clone with a forced hard drop timer, implemented using Pygame.")
 	parser.add_argument('-d', '--debug', action='store_true', help="enables debug mode")
 	parser.add_argument(
-		'-f', '--forced-delay', type=float, default=DEFAULT_FORCED_DELAY, metavar='SECONDS',
-		help="seconds a piece may stay in play before it is hard dropped for you (default %(default)s, 0 disables)"
+		'-f', '--forced-delay', type=float, default=None, metavar='SECONDS',
+		help="seconds a piece may stay in play before it is hard dropped for you (0 disables)"
 	)
 	parser.add_argument(
-		'-v', '--volume', type=float, default=DEFAULT_VOLUME * 100, metavar='PERCENT',
-		help="music volume from 0 to 100 (default %(default)g, 0 mutes)"
+		'-v', '--volume', type=float, default=None, metavar='PERCENT',
+		help="music volume from 0 to 100 (0 mutes)"
 	)
 	parser.add_argument(
-		'-s', '--sfx-volume', type=float, default=DEFAULT_SFX_VOLUME * 100, metavar='PERCENT',
-		help="sound effect volume from 0 to 100 (default %(default)g, 0 mutes)"
+		'-s', '--sfx-volume', type=float, default=None, metavar='PERCENT',
+		help="sound effect volume from 0 to 100 (0 mutes)"
 	)
 	# The browser build has no command line, so it runs on the defaults. Everything
 	# these flags set can also be changed in the game's own settings menu. Unknown

@@ -1,7 +1,7 @@
 __pycache__/
 *.py[cod]
 
-# Save data written next to the game at runtime: scores, and the player's controls.
+# Save data written next to the game at runtime: scores, and the player's profile.
 data/*.dat
 data/*.json
 data/back/*.bak

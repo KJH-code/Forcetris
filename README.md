@@ -31,9 +31,13 @@ python main.py -v 0 -s 60           # no music, effects at 60%
 ```
 
 `--forced-delay` takes seconds as a float, so `0.45` is fine. `--volume` and `--sfx-volume` take a
-percentage from 0 to 100, matching what the settings menu shows. Both clamp rather than
-complain, and both only set the starting value — **Game Settings** retunes either one
-without restarting.
+percentage from 0 to 100, matching what the settings menu shows. All three clamp rather
+than complain.
+
+A flag left off the command line keeps whatever the saved profile holds, so the usual way
+to run the game is `python main.py` with everything already set from the last session. A
+flag that *is* passed wins for that launch only — it is not written back, so
+`-f 0.5` for one run does not become the value every later run starts from.
 
 The HUD shows the time the active piece has left under **Forced Drop**, and turns red
 over the last quarter of the budget.
@@ -75,8 +79,8 @@ row, Left and Right change it, and holding the key repeats.
 
 Changes apply immediately, including to the piece already falling and to the music
 playing behind the pause menu, so you can pause mid-run, shave 0.05s off, and feel it on
-the very next piece. They last for the session only — use `--forced-delay`, `--volume`
-and `--sfx-volume` for values you want every time.
+the very next piece. They are also saved as you make them — see
+[Saved settings](#saved-settings).
 
 ## Controls and handling
 
@@ -124,9 +128,41 @@ ARE is the pause between one piece locking and the next appearing. The base game
 board for 400ms there, which is dead time in a trainer built on reaction speed, so it
 defaults to none.
 
-Unlike the other settings, controls and handling **persist**, in `data/controls.json`.
-Rebinding that reset on every launch would not be worth having. A missing, corrupt or
-unwritable file falls back to the defaults, which is also what the browser build gets.
+## Saved settings
+
+Everything the settings menu can change is written to `data/settings.json` the moment you
+change it — the forced delay, both volumes, the ghost, kicks, tiles, clear and spin
+options, every handling number, and every key binding. Nothing needs saving by hand and
+there is no Apply button; closing the game keeps what you last had.
+
+Three things set those values, in this order:
+
+1. the built-in defaults,
+2. `data/settings.json`, if it is there,
+3. whatever you typed on the command line, for that launch only.
+
+So `--forced-delay 0.8` overrides the saved delay without replacing it, and the next
+plain `python main.py` is back to what the menu says.
+
+A missing, corrupt or unwritable file falls back to the defaults rather than refusing to
+start, and a single unusable value inside an otherwise good file is skipped rather than
+taking the rest of the file down with it. Out-of-range numbers are clamped into the range
+the menus can express, so a hand-edited file cannot put the game somewhere its own screens
+cannot get it back from.
+
+Upgrading from a version that only saved bindings, in `data/controls.json`, reads that
+file once if there is no `settings.json` yet; the bindings carry over and the old file is
+then left alone.
+
+Set `FORCETRIS_CONFIG` to a path to keep a second profile — a different delay and handling
+for a different kind of practice — without disturbing the first:
+
+```bash
+FORCETRIS_CONFIG=~/forcetris-sprint.json python main.py
+```
+
+The browser build gets an in-memory filesystem, so it saves happily and starts from the
+defaults again on the next reload.
 
 ## Spins
 
@@ -240,8 +276,8 @@ Two things differ in the browser:
 
 - **There is no command line.** The build runs on the defaults, so set the delay and the
   volumes in **Game Settings** instead.
-- **High scores do not survive a reload.** The page gets an in-memory filesystem, so the
-  score file is written and then thrown away when the tab closes.
+- **Nothing survives a reload.** The page gets an in-memory filesystem, so high scores and
+  the settings file alike are written and then thrown away when the tab closes.
 
 Audio will not start until you have pressed a key, which browsers require. Since the
 music starts when you pick a mode, this happens on its own.
@@ -253,7 +289,7 @@ pygame's SDL2 built there is its own project. The browser build is the supported
 
 ## Tests
 
-All seven suites run headlessly — no display, sound card, or browser needed.
+All eight suites run headlessly — no display, sound card, or browser needed.
 
 ```bash
 python tools/test_forced_drop.py   # the timer rules above, against a fake clock
@@ -263,7 +299,11 @@ python tools/test_controls.py      # rebinding, including that the game obeys th
 python tools/test_handling.py      # DAS, ARR, DCD and SDF, measured in cells travelled
 python tools/test_rotation.py      # 180 rotation, swept over every piece and position
 python tools/test_spins.py         # spin detection under each rule, and the banner
+python tools/test_settings.py      # the saved profile, including an actual relaunch
 ```
+
+They write to a temporary profile rather than the real one, so running them will not
+disturb your own settings.
 
 ## Credits and licence
 

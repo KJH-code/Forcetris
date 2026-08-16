@@ -94,18 +94,25 @@ class User:
 
 	def eval_argv (self, argv):
 		# argv is an argparse.Namespace object that defines special behavior for testing purposes.
-		if argv is not None:
-			self.debug = argv.debug # Debug mode: cheats on!
-			# Seconds a piece is allowed to stay in play before it is dropped for the player.
-			self.forced_delay = max(0., argv.forced_delay)
-			# Taken as a percentage on the command line, kept as a fraction here.
-			self.volume = min(1., max(0., argv.volume / 100.))
-			self.sfx_volume = min(1., max(0., argv.sfx_volume / 100.))
-		else:
+		if argv is None:
+			# The built-in defaults, laid down before the saved profile is read over
+			# them and before the command line gets the last word.
 			self.debug = False
 			self.forced_delay = DEFAULT_FORCED_DELAY
 			self.volume = DEFAULT_VOLUME
 			self.sfx_volume = DEFAULT_SFX_VOLUME
+			return
+		self.debug = argv.debug # Debug mode: cheats on!
+		# Only what was actually typed overrides the saved profile. argparse hands
+		# back None for a flag nobody passed, which is how the two tell each other apart.
+		if getattr(argv, 'forced_delay', None) is not None:
+			# Seconds a piece is allowed to stay in play before it is dropped for the player.
+			self.forced_delay = max(0., argv.forced_delay)
+		if getattr(argv, 'volume', None) is not None:
+			# Taken as a percentage on the command line, kept as a fraction here.
+			self.volume = min(1., max(0., argv.volume / 100.))
+		if getattr(argv, 'sfx_volume', None) is not None:
+			self.sfx_volume = min(1., max(0., argv.sfx_volume / 100.))
 
 	def reset (self):
 		# Reset data when starting a new game.

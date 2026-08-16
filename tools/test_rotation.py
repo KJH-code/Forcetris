@@ -16,6 +16,10 @@ from argparse import Namespace
 
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
 os.environ['SDL_AUDIODRIVER'] = 'dummy'
+# The saved profile is read the moment engine.environment is imported, so this has
+# to be pointed somewhere disposable before that happens - otherwise a test run
+# reads, and then overwrites, the player's own settings.
+os.environ['FORCETRIS_CONFIG'] = os.path.join(tempfile.mkdtemp(), 'settings.json')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -27,7 +31,6 @@ import engine.controls as ctl
 from engine.shapes import Shape
 
 pg.key.get_focused = lambda: True
-ctl.CONFIG = os.path.join(tempfile.mkdtemp(), 'controls.json')
 
 FAILED = []
 

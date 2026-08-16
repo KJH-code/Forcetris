@@ -1,4 +1,4 @@
-"""Gameplay key bindings, and the file they persist in.
+"""The saved profile: key bindings, handling, and the game settings.
 
 Only gameplay keys are reboundable. Menu navigation stays fixed on the arrow
 keys, Z, X, Enter and Escape, because it is the only route back to the screen
@@ -14,6 +14,7 @@ try:
 	import os
 	import json
 	import pygame as pg
+	import engine.userstate as us
 except ImportError:
 	print("A module must've shat itself:")
 	raise
@@ -21,7 +22,27 @@ except ImportError:
 # Same anchor as engine.environment.ROOT, recomputed here to keep this module
 # free of anything that needs a display surface.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG = os.path.join(ROOT, 'data', 'controls.json')
+# Overridable so that a test run cannot read or overwrite the player's own profile,
+# and so anyone who wants two profiles can have them.
+CONFIG = os.environ.get('FORCETRIS_CONFIG') or os.path.join(ROOT, 'data', 'settings.json')
+# What the file was called back when it only held bindings. Read if the current one
+# is missing, then left alone, so an upgrade keeps the bindings already set. Skipped
+# entirely when a profile was named explicitly - that names the only file to read.
+LEGACY = None if os.environ.get('FORCETRIS_CONFIG') else os.path.join(ROOT, 'data', 'controls.json')
+
+# The settings the menu can change, each with the rule that decides whether a value
+# read back off disk is usable. A hand-edited or outdated file must not be able to
+# put the game into a state its own menus cannot express.
+SETTINGS = (
+	('forced_delay', lambda v: max(0., min(60., float(v)))),
+	('volume', lambda v: max(0., min(1., float(v)))),
+	('sfx_volume', lambda v: max(0., min(1., float(v)))),
+	('cleartype', lambda v: max(0, min(2, int(v)))),
+	('spinrule', lambda v: max(0, min(len(us.SPIN_RULES) - 1, int(v)))),
+	('enablekicks', bool),
+	('showghost', bool),
+	('linktiles', bool),
+)
 
 # Action order is the order the rebinding screen lists them in.
 ACTIONS = (
@@ -94,12 +115,17 @@ def describe_handling (user, name):
 		return 'None'
 	return '{}{}'.format(int(value), 'ms' if name != 'sdf' else 'x')
 
-def set_handling (user, name, value):
+def clamp_handling (user, name, value):
+	# The setting on its own, without touching the file. Load needs this: writing a
+	# half-applied profile back over the one being read is a good way to lose it.
 	for key, label, unit, low, high, step in HANDLING:
 		if key == name:
 			setattr(user, name, min(high, max(low, value)))
-			save(user)
 			return
+
+def set_handling (user, name, value):
+	clamp_handling(user, name, value)
+	save(user)
 
 def key_name (code):
 	# A label for one key code, as close to what is printed on the key as we can get.
@@ -161,17 +187,22 @@ def unbind_last (user, action):
 	return True
 
 def load (user):
-	# Read saved bindings, falling back to the defaults for anything missing or
-	# unreadable. Bindings are worth persisting even though the other settings
-	# are not: nobody wants to redo them on every launch.
+	# Read the saved profile, falling back to the defaults for anything missing or
+	# unreadable. Everything the settings menu can change is in here, so a session
+	# spent tuning the delay and the handling is not thrown away on exit.
 	user.keys = defaults()
 	for name, value in HANDLING_DEFAULTS.items():
 		setattr(user, name, value)
-	try:
-		with open(CONFIG, 'r') as config:
-			saved = json.load(config)
-	except (IOError, ValueError):
-		return
+	saved = None
+	for path in (CONFIG, LEGACY):
+		if path is None:
+			continue
+		try:
+			with open(path, 'r') as config:
+				saved = json.load(config)
+			break
+		except (IOError, ValueError):
+			continue
 	if not isinstance(saved, dict):
 		return
 	for action, codes in (saved.get('keys') or {}).items():
@@ -179,7 +210,14 @@ def load (user):
 			user.keys[action] = tuple(code for code in codes if isinstance(code, int))
 	for name, value in (saved.get('handling') or {}).items():
 		if name in HANDLING_DEFAULTS and isinstance(value, (int, float)):
-			set_handling(user, name, value)
+			clamp_handling(user, name, value)
+	for name, clean in SETTINGS:
+		if name in (saved.get('settings') or {}):
+			try:
+				setattr(user, name, clean(saved['settings'][name]))
+			except (TypeError, ValueError):
+				# One unusable value is no reason to discard the rest of the file.
+				pass
 
 def save (user):
 	# Best effort. The browser build has no writable filesystem worth the name,
@@ -190,6 +228,7 @@ def save (user):
 			json.dump({
 				'keys': {action: list(codes) for action, codes in user.keys.items()},
 				'handling': {name: getattr(user, name) for name in HANDLING_DEFAULTS},
+				'settings': {name: getattr(user, name) for name, clean in SETTINGS},
 			}, config, indent=1)
 	except (IOError, OSError):
 		pass
