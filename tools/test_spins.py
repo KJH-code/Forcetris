@@ -247,6 +247,30 @@ check('and the spin scored something', user.score > 0, 'score {}'.format(user.sc
 
 # Spawning is what clears the flags now.
 core.set_shape(0)
+# --- A rotation that was refused is not a spin. -----------------------------
+# There used to be a second, older T-spin check that ran when every wall kick
+# had failed - that is, when the rotation did not happen at all - and it set the
+# spin flag from the corners around the piece. A refused rotation would score a
+# spin bonus and carry back to back on. It also indexed the grid without bounds,
+# so a T against the right wall crashed the game outright.
+blank_board()
+user.tspin_flag = False
+user.twist_flag = False
+# A T facing left against the right wall, boxed in so nothing can turn.
+place(2, 3, 9, 18)
+fill([(8, 17), (8, 18), (8, 19), (9, 16), (9, 20)])
+core.newshape = core.freeshape.copy()
+core.newshape.rotate(True)
+core.wall_kick()
+check(
+    'a rotation the walls refused is not scored as a spin',
+    not user.tspin_flag, 'tspin_flag is {}'.format(user.tspin_flag)
+)
+check(
+    'and the piece is left where it was',
+    core.freeshape.state == 3, 'state {}'.format(core.freeshape.state)
+)
+
 check('spawning clears the spin flags', not user.tspin_flag and not user.twist_flag)
 
 # --- Perfect clears. --------------------------------------------------------

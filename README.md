@@ -473,6 +473,26 @@ python tools/test_replay.py        # recording, the file, and that the fix moves
 They write to a temporary profile rather than the real one, so running them will not
 disturb your own settings.
 
+## The C++ core
+
+A rewrite is under way, one piece at a time, and the first piece is in `cpp/`:
+the board, the rotation system with its kick tables, and the finesse search.
+**The game you play is still the Python one** — nothing calls into the C++ yet.
+
+It exists to be graded rather than trusted. The Python side has ten test suites
+behind it, so instead of writing a second set of assertions the C++ is held to
+the answers the tested implementation actually gives — every piece's cells,
+every finesse route, around 130,000 rotations over ten boards with kicks on and
+off, and where every piece falls.
+
+```bash
+cmake -S cpp -B cpp/build && cmake --build cpp/build -j
+ctest --test-dir cpp/build --output-on-failure
+```
+
+See [cpp/README.md](cpp/README.md), which also explains why fourteen of the 104
+kick table entries can never fire.
+
 ## Credits and licence
 
 Built on [virtuNat/pyTetris](https://github.com/virtuNat/pyTetris), which is licensed

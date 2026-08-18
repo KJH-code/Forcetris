@@ -554,30 +554,6 @@ class Core:
 				self.ghostshape.translate(( 0,-1))
 				break
 
-	def eval_tspin (self):
-		# If a twist hasn't occured after a successful rotation,
-		# and the piece is a T, check if it's in a position for a valid T-spin.
-		if not self.user.twist_flag and self.freeshape.form == 2:
-			cornercount = 0
-			if (self.grid
-					[self.freeshape.pos[1] - 1]
-					[self.freeshape.pos[0] - 1] is not None):
-				cornercount += 1
-			if (self.grid
-					[self.freeshape.pos[1] - 1]
-					[self.freeshape.pos[0] + 1] is not None):
-				cornercount += 1
-			if (self.grid
-					[self.freeshape.pos[1] + 1]
-					[self.freeshape.pos[0] - 1] is not None):
-				cornercount += 1
-			if (self.grid
-					[self.freeshape.pos[1] + 1]
-					[self.freeshape.pos[0] + 1] is not None):
-				cornercount += 1
-			if cornercount == 3:
-				self.user.tspin_flag = True
-
 	def test_kicks (self, poslist):
 		# Test four kick positions.
 		for pos in poslist:
@@ -677,9 +653,6 @@ class Core:
 				if self.user.twist_flag:
 					# Wall kicks reset the gravity timer.
 					self.grav_frame = 0
-				else:
-					# If no wall kicks happened, check if this was a T-spin instead.
-					self.eval_tspin()
 			elif self.user.twist_flag:
 				# Kicks are switched off and the rotation collides. Refuse it rather
 				# than commit it: the piece would be left overlapping the stack, and

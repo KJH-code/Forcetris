@@ -11,6 +11,8 @@ data/back/*.bak
 crashdump.log
 screenshots/*.png
 
-# cx_Freeze output.
+# cx_Freeze output, and the C++ build tree.
 build/
 dist/
+cpp/build/
+reference.txt
