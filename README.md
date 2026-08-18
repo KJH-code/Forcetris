@@ -301,8 +301,14 @@ hops where one would have done.
 | `F` | Play it by the book — see below |
 | `X` | Back |
 
-The panel beside the board names the piece, the column, the presses, which one is being
-made right now, and what finesse made of the placement.
+Between the board and the readout sit **Hold** and **Next**, showing what the player could
+see coming while that placement was being made. Those are recorded with the placement
+rather than read off the pieces that follow it: a hold reorders those, so the piece played
+next is not the piece that was shown next, and taking the shortcut would quietly
+misrepresent the decision you are watching.
+
+The panel beside them names the piece, the column, the presses, which one is being made
+right now, and what finesse made of the placement.
 
 ### Play it by the book
 
@@ -330,7 +336,12 @@ A replay is a list of placements, not a list of keystrokes. Keystrokes would be 
 but playing them back means re-simulating gravity, auto-shift and the bag, and a replay
 that drifts from the game it recorded is worse than no replay. Each entry carries the
 piece, where it ended up, what was pressed, where the piece stood after each of those
-presses, and a snapshot of the board once the clear had resolved.
+presses, the queue and held piece at the time, and a snapshot of the board once the clear
+had resolved.
+
+Replays written by an older build are still read; the fields they never carried come back
+empty and the screens do without them. One written by a *newer* build is refused, since
+there is no telling what its fields mean.
 
 The snapshots keep only from the highest occupied row down, which is most of the size of a
 file, since most of a Tetris board is empty most of the time. The newest 30 replays are

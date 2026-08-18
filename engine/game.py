@@ -827,6 +827,11 @@ class Core:
 			held=self.from_hold,
 			presses=list(self.input_log),
 			trail=[list(stop) for stop in self.move_trail if stop is not None],
+			# What the player could see coming while they made this placement. Taken
+			# from the queue rather than from the placements that follow, because a
+			# hold reorders those - what was played next is not what was shown next.
+			queue=[shape.form for shape in self.nextshapes[:3]],
+			stored=self.storedshape.form,
 			best=self.last_best,
 			judged=self.last_judged,
 			forced=self.last_forced,

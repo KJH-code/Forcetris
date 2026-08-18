@@ -45,10 +45,15 @@ KEEP = 30
 # started and immediately abandoned.
 MIN_PLACEMENTS = 5
 
-# Bumped if the shape of the file ever changes. A reader that does not recognise
-# the number declines the file rather than guessing at it. Version 2 added the
-# movement trail, without which a replay can be read but not re-enacted.
-FORMAT = 2
+# Bumped when the shape of the file changes. Version 2 added the movement trail,
+# without which a replay can be read but not re-enacted; version 3 added the
+# queue and the held piece.
+FORMAT = 3
+# The oldest version still worth reading. Fields a older file does not carry come
+# back as None and the screens do without them, which costs nothing and means an
+# upgrade does not throw away the replays already on disk. A file from the future
+# is declined outright, since there is no telling what its fields mean.
+MIN_FORMAT = 2
 
 # What a clear of each size is called, matching the banner the game puts up.
 CLEAR_NAMES = {1: 'Single', 2: 'Double', 3: 'Triple', 4: 'Quad'}
@@ -84,7 +89,7 @@ class Placement:
 	__slots__ = (
 		'form', 'state', 'x', 'y', 'held', 'presses', 'trail', 'best', 'judged',
 		'forced', 'lines', 'spin', 'perfect', 'combo', 'b2b', 'score', 'elapsed',
-		'rows',
+		'rows', 'queue', 'stored',
 	)
 
 	def __init__ (self, **fields):
@@ -225,7 +230,10 @@ class Replay:
 
 	@classmethod
 	def from_dict (cls, data, path=None):
-		if not isinstance(data, dict) or data.get('format') != FORMAT:
+		if not isinstance(data, dict):
+			return None
+		version = data.get('format')
+		if not isinstance(version, int) or not MIN_FORMAT <= version <= FORMAT:
 			return None
 		rows = data.get('placements')
 		if not isinstance(rows, list):

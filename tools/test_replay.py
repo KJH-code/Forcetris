@@ -196,6 +196,53 @@ check(
     rp.padded(place.rows)[-len(place.rows):] == place.rows
 )
 
+# --- The queue, which is what the player could see coming. ------------------
+# Recorded rather than derived from the placements that follow, because a hold
+# reorders those: the piece played next is not the piece that was shown next.
+new_game()
+watched = []
+for i in range(9):
+    if i == 4:
+        tap(pg.K_LSHIFT)   # the hold that pulls the two orders apart
+        settle()
+    watched.append((
+        [shape.form for shape in core.nextshapes[:3]],
+        core.storedshape.form,
+    ))
+    tap(pg.K_LEFT, 2)
+    tap(pg.K_SPACE)
+    settle()
+
+recorded = core.recorder.placements
+check(
+    'a queue is recorded for every placement',
+    len(recorded) == 9 and all(p.queue for p in recorded),
+    '{} placements'.format(len(recorded))
+)
+wrong = [
+    i for i, (place, (queue, stored)) in enumerate(zip(recorded, watched))
+    if place.queue != queue or place.stored != stored
+]
+check(
+    'and it is the queue that was actually on screen',
+    not wrong, str([(recorded[i].queue, watched[i][0]) for i in wrong[:2]])
+)
+check(
+    'the held piece is recorded too, and starts empty',
+    recorded[0].stored == 7 and recorded[-1].stored < 7,
+    '{} -> {}'.format(recorded[0].stored, recorded[-1].stored)
+)
+# The check that makes the two previous ones worth having: after a hold, what
+# was played next stops matching what was shown next, so a queue derived from
+# the following placements would have been wrong from that point on.
+played_next = [p.form for p in recorded[1:]]
+shown_next = [p.queue[0] for p in recorded[:-1]]
+check(
+    'a hold really does pull the two orders apart',
+    played_next != shown_next,
+    'played {} against shown {}'.format(played_next, shown_next)
+)
+
 # --- A whole game, then the file. -------------------------------------------
 new_game()
 for _ in range(8):
@@ -577,6 +624,42 @@ if len(replays.replays) > len(replays.selections[0]):
     check('walking off the bottom scrolls it', replays.top > 0, str(replays.top))
     seen = replays.chosen()
     check('and the row under the cursor is a real replay', seen is not None)
+
+# --- A replay from before the queue was recorded. ---------------------------
+# Older files are read rather than refused, with the fields they never had
+# coming back empty. The viewer has to draw one without a queue.
+old = rp.Replay(dict(played.meta), [
+    rp.Placement(**dict(p.to_dict(), queue=None, stored=None))
+    for p in played.placements
+])
+older_path = os.path.join(rp.FOLDER, 'zzz-older.json')
+with open(older_path, 'w') as out:
+    payload = old.to_dict()
+    payload['format'] = rp.MIN_FORMAT
+    json.dump(payload, out)
+back = rp.load(older_path)
+check('a replay in an older format still reads', back is not None)
+check(
+    'and its placements come back without a queue',
+    back is not None and all(p.queue is None for p in back.placements)
+)
+user.state = 'replay_viewer'
+viewer.load(back, 'replay_menu')
+viewer.index = viewer.step = 0
+viewer.run()
+check('the viewer draws one without falling over', True)
+viewer.fixed = True
+viewer.run()
+viewer.fixed = False
+check('and does so with the fix on as well', True)
+os.remove(older_path)
+
+# One from a format this build does not know is refused outright.
+ahead = os.path.join(rp.FOLDER, 'zzz-ahead.json')
+with open(ahead, 'w') as out:
+    json.dump({'format': rp.FORMAT + 1, 'meta': {}, 'placements': []}, out)
+check('a replay from a later format is still refused', rp.load(ahead) is None)
+os.remove(ahead)
 
 # --- Nothing laid out past its panel. ---------------------------------------
 for name in ('analysis_menu', 'replay_menu', 'replay_viewer', 'main_menu', 'loss_menu'):

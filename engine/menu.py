@@ -1131,6 +1131,9 @@ class ReplayViewer (env.Menu):
 	them to, and inventing one would be inventing a mistake.
 	"""
 	cell = 18
+	# The queue and the held piece are drawn small, in their own column between
+	# the board and the readout.
+	mini = 10
 	speeds = (1., 2., 4., 8.)
 
 	def __init__ (self, user, replay_menu):
@@ -1307,6 +1310,52 @@ class ReplayViewer (env.Menu):
 		state, x, y = stop
 		return [(x + dx, y + dy) for dx, dy in fin.offsets(place.form, state)]
 
+	def draw_mini (self, surf, form, left, top, width):
+		# One piece drawn small, centred in a box of the given width, in its spawn
+		# orientation - which is how the game's own queue shows it.
+		if form is None or not 0 <= form < 7:
+			return
+		cells = fin.offsets(form, 0)
+		lox = min(dx for dx, dy in cells)
+		loy = min(dy for dx, dy in cells)
+		span = (max(dx for dx, dy in cells) - lox + 1) * self.mini
+		pad = max(0, (width - span) // 2)
+		colour = env.convert_hexcolor(PIECE_COLOURS[form % len(PIECE_COLOURS)])
+		for dx, dy in cells:
+			pg.draw.rect(surf, colour, (
+				left + pad + (dx - lox) * self.mini + 1,
+				top + (dy - loy) * self.mini + 1,
+				self.mini - 2, self.mini - 2))
+
+	def draw_queue (self, surf, place, left, top, width):
+		"""What the player could see coming while they made this placement.
+
+		Taken from the queue recorded with the placement rather than from the
+		placements that follow it. A hold reorders those, so the pieces played next
+		are not the pieces that were shown next, and showing the wrong three would
+		quietly misrepresent the decision being watched.
+		"""
+		y = top
+		self.render_text('Hold', 0xA8C0D8, surf, topleft=(left, y))
+		y += 20
+		if place.stored is not None and place.stored < 7:
+			self.draw_mini(surf, place.stored, left, y, width)
+		else:
+			self.render_text('-', 0x60707C, surf, topleft=(left + width // 2 - 4, y))
+		y += 46
+		queue = place.queue
+		if not queue:
+			# A replay recorded before the queue was kept. Saying so beats drawing
+			# three empty boxes that look like an empty bag.
+			self.render_text('Next', 0xA8C0D8, surf, topleft=(left, y))
+			self.render_text('n/a', 0x60707C, surf, topleft=(left, y + 20))
+			return
+		self.render_text('Next', 0xA8C0D8, surf, topleft=(left, y))
+		y += 20
+		for form in queue[:3]:
+			self.draw_mini(surf, form, left, y, width)
+			y += 46
+
 	@env.Menu.render
 	def display_body (self, surf):
 		place = self.here()
@@ -1328,7 +1377,11 @@ class ReplayViewer (env.Menu):
 			self.draw_cells(
 				surf, 24, 44, rows, place.form, self.piece_cells(place, stops[self.step]))
 
-		panel = 24 + 10 * self.cell + 28
+		queue_left = 24 + 10 * self.cell + 16
+		queue_width = 52
+		self.draw_queue(surf, place, queue_left, 44, queue_width)
+
+		panel = queue_left + queue_width + 22
 		presses = place.presses_shown(self.fixed)
 		# What is left for a value once the label column has had its share.
 		room = self.rect.w - 24 - (panel + 96)
