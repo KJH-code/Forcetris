@@ -1112,15 +1112,23 @@ class ReplayMenu (env.Menu):
 
 class ReplayViewer (env.Menu):
 	"""
-	Plays a replay back, one placement at a time.
+	Re-enacts a replay: the piece is walked to where it went, stop by stop.
 
-	The board is drawn from the snapshot each placement carries rather than
-	re-simulated, so what is on screen is what was on screen. The one thing the
-	viewer can change is the advice down the side: with the fix on, every
-	placement is annotated with the presses it should have taken instead of the
-	ones it did. The placements themselves are untouched, because correcting
-	someone's finesse does not move their pieces - it only changes what it cost
-	them to put those pieces there.
+	The boards come from the snapshots each placement carries rather than being
+	re-simulated, so what settles is what settled. The piece on top of them is
+	animated from the movement trail recorded alongside - where it stood after
+	each press - so watching it back shows the placement being made, not just
+	its result.
+
+	Turning the fix on swaps that trail for the finesse route. The piece is the
+	same piece, it arrives in the same column in the same orientation, and the
+	board it leaves behind is the same board; it simply stops fewer times on the
+	way. That is the whole of what better finesse would have changed, so it is
+	the whole of what the corrected replay changes.
+
+	Placements finesse has no opinion about - tucks, spins, and any the timer
+	took - keep the player's own path in both views. There is no route to hold
+	them to, and inventing one would be inventing a mistake.
 	"""
 	cell = 18
 	speeds = (1., 2., 4., 8.)
@@ -1134,6 +1142,7 @@ class ReplayViewer (env.Menu):
 		self.smallfont = pg.font.SysFont(None, 21)
 		self.replay = None
 		self.index = 0
+		self.step = 0
 		self.playing = False
 		self.speed = 1
 		self.fixed = False
@@ -1144,6 +1153,7 @@ class ReplayViewer (env.Menu):
 		self.replay = replay
 		self.return_state = return_state
 		self.index = 0
+		self.step = 0
 		self.playing = False
 		self.carry = 0.
 
@@ -1152,27 +1162,67 @@ class ReplayViewer (env.Menu):
 			return None
 		return self.replay.placements[min(self.index, len(self.replay) - 1)]
 
-	def step (self, by):
+	def stops (self, index=None):
+		# Where the piece stands at each stage of the placement being watched.
+		place = self.replay.placements[self.index if index is None else index]
+		return place.steps(self.fixed)
+
+	def step_count (self, index=None):
+		# One stage per stop, plus one for the board it settles into afterwards.
+		return len(self.stops(index)) + 1
+
+	def clamp (self):
+		# Keep the cursor on a stage that exists, which matters after the fix is
+		# toggled: the corrected path usually has fewer stops than the real one.
+		if self.replay is None or not len(self.replay):
+			self.index = self.step = 0
+			return
+		self.index = max(0, min(len(self.replay) - 1, self.index))
+		self.step = max(0, min(self.step_count() - 1, self.step))
+
+	def advance_step (self, by):
+		# One stage forward or back, running on into the next placement or back
+		# into the last one rather than stopping at the seam.
+		if self.replay is None or not len(self.replay):
+			return False
+		self.clamp()
+		self.step += by
+		if self.step >= self.step_count():
+			if self.index >= len(self.replay) - 1:
+				self.step = self.step_count() - 1
+				return False
+			self.index += 1
+			self.step = 0
+		elif self.step < 0:
+			if self.index <= 0:
+				self.step = 0
+				return False
+			self.index -= 1
+			self.step = self.step_count() - 1
+		return True
+
+	def jump_piece (self, by):
 		if self.replay is None or not len(self.replay):
 			return
 		self.index = max(0, min(len(self.replay) - 1, self.index + by))
+		self.step = 0
 
 	def eval_move (self, coord, movedir):
-		# Sideways steps through the run and repeats when held; up and down pick
-		# the playback speed. The cursor itself never moves - there is one thing on
+		# Sideways walks the placement stage by stage and repeats when held; up and
+		# down jump a whole piece. The cursor never moves - there is one thing on
 		# this screen and it is the board.
 		if coord == 0:
 			if not self.moved:
-				self.step(movedir)
+				self.advance_step(movedir)
 				self.moved = True
 			else:
 				self.movetime -= 1
 				if self.movetime < 1:
-					self.step(movedir)
-					self.movetime = 2
+					self.advance_step(movedir)
+					self.movetime = 3
 			return
 		if not self.moved:
-			self.speed = max(0, min(len(self.speeds) - 1, self.speed - movedir))
+			self.jump_piece(movedir)
 			self.moved = True
 
 	def eval_input (self):
@@ -1181,33 +1231,42 @@ class ReplayViewer (env.Menu):
 			if event.key == pg.K_z or event.key == pg.K_RETURN:
 				self.playing = not self.playing
 				self.carry = 0.
-				if self.playing and self.replay is not None and self.index >= len(self.replay) - 1:
+				if self.playing and self.at_end():
 					# Play from the top rather than sitting on the last frame doing
 					# nothing, which is what pressing play on a finished replay means.
-					self.index = 0
+					self.index = self.step = 0
 			elif event.key == pg.K_f:
 				self.fixed = not self.fixed
+				self.clamp()
+			elif event.key == pg.K_s:
+				self.speed = (self.speed + 1) % len(self.speeds)
 			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
 				self.playing = False
 				self.user.state = self.return_state
 				if self.return_state == 'replay_menu':
 					self.replay_menu.reset()
 
+	def at_end (self):
+		return (
+			self.replay is not None and len(self.replay)
+			and self.index >= len(self.replay) - 1
+			and self.step >= self.step_count() - 1)
+
 	def advance (self):
-		# Called once a frame while playing.
-		if not self.playing or self.replay is None:
+		# Called once a frame while playing. Stages are the unit of time here, so a
+		# piece that took more presses genuinely takes longer to watch, which is the
+		# difference the corrected view is there to show.
+		if not self.playing or self.replay is None or not len(self.replay):
 			return
-		self.carry += self.speeds[self.speed] / 50.
+		self.carry += self.speeds[self.speed] * 4. / 50.
 		while self.carry >= 1.:
 			self.carry -= 1.
-			if self.index >= len(self.replay) - 1:
+			if not self.advance_step(1):
 				self.playing = False
 				break
-			self.index += 1
 
-	def draw_board (self, surf, place):
-		left, top = 24, 44
-		rows = rp.padded(place.rows if place is not None else [])
+	def draw_cells (self, surf, left, top, rows, form=None, cells=()):
+		# The settled board, and the piece standing on top of it if there is one.
 		wide = len(rows[0]) if rows else 10
 		pg.draw.rect(
 			surf, pg.Color(0x18, 0x20, 0x2C),
@@ -1219,6 +1278,34 @@ class ReplayViewer (env.Menu):
 				pg.draw.rect(
 					surf, env.convert_hexcolor(PIECE_COLOURS[int(mark) % len(PIECE_COLOURS)]),
 					(left + x * self.cell + 1, top + y * self.cell + 1, self.cell - 2, self.cell - 2))
+		if form is None:
+			return
+		colour = env.convert_hexcolor(PIECE_COLOURS[form % len(PIECE_COLOURS)])
+		for x, y in cells:
+			if not (0 <= x < wide and 0 <= y < len(rows)):
+				continue
+			box = (left + x * self.cell + 1, top + y * self.cell + 1, self.cell - 2, self.cell - 2)
+			pg.draw.rect(surf, colour, box)
+			# Outlined, so the piece still in motion reads as separate from the
+			# stack it is about to join.
+			pg.draw.rect(surf, pg.Color(0xFF, 0xFF, 0xFF), box, 2)
+
+	def fit (self, font, presses, width):
+		# The press list, shortened from the end until it sits inside the panel.
+		# A placement can take a lot of presses - that is rather the point of the
+		# screen - and a line that runs off the edge tells the player nothing.
+		text = fin.brief(presses)
+		if font.size(text)[0] <= width:
+			return text
+		for keep in range(len(presses) - 1, 0, -1):
+			text = '{} +{}'.format(fin.brief(presses[:keep]), len(presses) - keep)
+			if font.size(text)[0] <= width:
+				return text
+		return '{} presses'.format(len(presses))
+
+	def piece_cells (self, place, stop):
+		state, x, y = stop
+		return [(x + dx, y + dy) for dx, dy in fin.offsets(place.form, state)]
 
 	@env.Menu.render
 	def display_body (self, surf):
@@ -1227,27 +1314,44 @@ class ReplayViewer (env.Menu):
 		if self.replay is None or place is None:
 			self.render_text('Nothing to play back.', 0xC0C0C0, surf, topleft=(24, 48))
 			return
-		total = len(self.replay)
+		self.clamp()
+		stops = self.stops()
+		settled = self.step >= len(stops)
 		self.render_text(
-			'{} / {}'.format(self.index + 1, total), 0xA8C0D8, surf, topright=(self.rect.w - 24, 14))
-		self.draw_board(surf, place)
+			'piece {} / {}'.format(self.index + 1, len(self.replay)), 0xA8C0D8, surf,
+			topright=(self.rect.w - 24, 14))
+
+		if settled:
+			self.draw_cells(surf, 24, 44, rp.padded(place.rows))
+		else:
+			rows = rp.padded(self.replay.before(self.index))
+			self.draw_cells(
+				surf, 24, 44, rows, place.form, self.piece_cells(place, stops[self.step]))
 
 		panel = 24 + 10 * self.cell + 28
-		presses = place.route() if self.fixed else place.presses
-		if self.fixed and presses is None:
-			presses = place.presses
+		presses = place.presses_shown(self.fixed)
+		# What is left for a value once the label column has had its share.
+		room = self.rect.w - 24 - (panel + 96)
 		lines = [
 			('Piece', '{}{}'.format(SHAPE_LETTERS[place.form], ' (held)' if place.held else ''), 0xFFFFFF),
 			('Column', '{}'.format(place.x), 0xFFFFFF),
-			('Presses', fin.describe(presses), 0xFFFFFF),
+			('Presses', self.fit(self.smallfont, presses, room), 0xFFFFFF),
 			('Count', '{}'.format(len(presses)), 0xFFFFFF),
 		]
+		if settled:
+			doing = 'settled'
+		elif self.step == 0:
+			doing = 'spawned'
+		else:
+			doing = fin.MOVE_NAMES.get(
+				presses[self.step - 1] if self.step - 1 < len(presses) else '', 'dropping')
+		lines.append(('Doing', doing, 0x7CFF8A if self.fixed else 0xFFFFFF))
 		if place.forced:
-			lines.append(('Verdict', 'timer took it', 0xFFC040))
+			lines.append(('Verdict', 'timer took it, left as played', 0xFFC040))
 		elif not place.judged:
-			lines.append(('Verdict', 'tuck or spin, not judged', 0xA8C0D8))
+			lines.append(('Verdict', 'tuck or spin, left as played', 0xA8C0D8))
 		elif self.fixed:
-			lines.append(('Verdict', 'corrected', 0x7CFF8A))
+			lines.append(('Verdict', 'played by the book', 0x7CFF8A))
 		elif place.fault:
 			lines.append(('Verdict', '{} press{} wasted'.format(
 				place.wasted, '' if place.wasted == 1 else 'es'), 0xFF7B7B))
@@ -1260,16 +1364,22 @@ class ReplayViewer (env.Menu):
 		if place.spin:
 			lines.append(('Spin', place.spin, 0xFFD24A))
 		lines.append(('Score', '{}'.format(place.score), 0xFFFFFF))
-		lines.append(('At', '{:.1f}s'.format(place.elapsed or 0.), 0xA8C0D8))
 
 		for i, (name, value, colour) in enumerate(lines):
 			y = 48 + i * 24
 			self.render_text(name, 0xA8C0D8, surf, topleft=(panel, y))
-			self.render_text(value, colour, surf, topleft=(panel + 96, y))
+			if name == 'Presses':
+				# The one line that can be long enough to need the smaller face.
+				line = self.smallfont.render(value, 0, env.convert_hexcolor(colour))
+				surf.blit(line, line.get_rect(topleft=(panel + 96, y + 3)))
+			else:
+				self.render_text(value, colour, surf, topleft=(panel + 96, y))
 
 		summary = self.replay.summary(self.fixed)
 		y = 48 + (len(lines) + 1) * 24
-		self.render_text('Whole run', 0xFFFFFF, surf, topleft=(panel, y))
+		self.render_text(
+			'Whole run, as {}'.format('corrected' if self.fixed else 'played'),
+			0xFFFFFF, surf, topleft=(panel, y))
 		for i, (name, value) in enumerate((
 			('Finesse', '{:.1%}'.format(summary['rate'])),
 			('Presses', '{}'.format(summary['presses'])),
@@ -1282,10 +1392,10 @@ class ReplayViewer (env.Menu):
 			'{}  |  {:g}x'.format('Playing' if self.playing else 'Paused', self.speeds[self.speed]),
 			0xC8D8E8, surf, bottomleft=(24, self.rect.h - 32))
 		self.render_text(
-			'F: fix finesse  [{}]'.format('on' if self.fixed else 'off'),
+			'F: play it by the book  [{}]'.format('on' if self.fixed else 'off'),
 			0x7CFF8A if self.fixed else 0xC8D8E8, surf, bottomright=(self.rect.w - 24, self.rect.h - 32))
 		self.render_text(
-			'LEFT / RIGHT step, Z play, UP / DOWN speed, F fix, X back',
+			'LEFT / RIGHT a move, UP / DOWN a piece, Z play, S speed, F fix, X back',
 			0xC8D8E8, surf, midbottom=(self.rect.w / 2, self.rect.h - 10))
 
 	def run (self):

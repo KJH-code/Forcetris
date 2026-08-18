@@ -36,7 +36,7 @@ import engine.replay as rp
 import engine.finesse as fin
 import engine.userstate as us
 import engine.environment as env
-from engine.shapes import Shape
+from engine.shapes import Shape, Block
 
 pg.key.get_focused = lambda: True
 
@@ -202,10 +202,35 @@ for _ in range(8):
     drop(T, [pg.K_LEFT] * 3)
 for _ in range(3):
     drop(T, [])
+
+# One tuck as well, so the run holds a placement finesse has no opinion about.
+# Without it every check about leaving those alone would pass by having nothing
+# to leave alone.
+# Cleared by hand rather than by starting a new game, which would start a new
+# recording as well and lose the eleven placements above.
+core.grid.set_cells()
+for column in range(4):
+    core.grid.cells[18][column] = Block([column, 18], 7, fallen=True)
+core.grid.update()
+core.set_shape(T)
+core.freeshape.pos = core.newshape.pos = [4, 21]
+core.eval_ghost()
+core.finesse_inputs = 0
+core.input_log = []
+core.move_trail = []
+tap(pg.K_LEFT, 3)
+tap(pg.K_SPACE)
+settle()
+
 played = core.recorder.finish(user)
 check(
     'the recording covers every placement',
-    played is not None and len(played) == 11, str(None if played is None else len(played))
+    played is not None and len(played) == 12, str(None if played is None else len(played))
+)
+check(
+    'and the run really does hold an unjudged placement',
+    sum(1 for p in played.placements if not p.judged) == 1,
+    str([i for i, p in enumerate(played.placements) if not p.judged])
 )
 
 summary = played.summary()
@@ -217,17 +242,19 @@ check(
 )
 check(
     'and the presses they cost',
-    (summary['presses'], summary['wasted']) == (24, 16),
+    (summary['presses'], summary['wasted']) == (27, 16),
     '{} presses, {} wasted'.format(summary['presses'], summary['wasted'])
 )
+# Eight faults corrected to one press each, three placements that needed none,
+# and the tuck's three presses left exactly as they were.
 check(
     'the corrected count is what the routes add up to',
-    fixed['presses'] == 8 and fixed['faults'] == 0 and fixed['rate'] == 1.,
+    fixed['presses'] == 11 and fixed['faults'] == 0 and fixed['rate'] == 1.,
     '{} presses, {} faults'.format(fixed['presses'], fixed['faults'])
 )
 check(
     'correcting does not invent placements',
-    fixed['placements'] == summary['placements'] == 11,
+    fixed['placements'] == summary['placements'] == 12,
     '{} against {}'.format(fixed['placements'], summary['placements'])
 )
 
@@ -336,11 +363,16 @@ check(
 # --- The screens. -----------------------------------------------------------
 analysis.show(played)
 check('the analysis screen takes the replay', analysis.stats is not None)
+# Both press counts have to be on the screen, and they have to be different, or
+# the row that exists to be compared against has nothing to say.
+shown = [value for name, value in analysis.rows() if '/piece' in value]
 check(
     'it shows both counts, the real one and the corrected one',
-    any('24' in value for _, value in analysis.rows())
-    and any('8  (' in value for _, value in analysis.rows()),
-    str([v for _, v in analysis.rows() if '/piece' in v])
+    len(shown) == 2
+    and shown[0].startswith('{} '.format(summary['presses']))
+    and shown[1].startswith('{} '.format(fixed['presses']))
+    and summary['presses'] != fixed['presses'],
+    str(shown)
 )
 user.state = 'analysis_menu'
 analysis.return_state = 'loss_menu'
@@ -360,33 +392,141 @@ press_menu(analysis, pg.K_RETURN)
 check('Watch Replay opens the viewer', user.state == 'replay_viewer', user.state)
 check('with the replay loaded', viewer.replay is played)
 
-# Stepping.
-viewer.index = 0
+# --- The re-enactment. ------------------------------------------------------
+# A placement is watched stop by stop: where the piece spawned, where each press
+# left it, and where it landed.
+faulted = next(p for p in played.placements if p.fault)
+walked = faulted.steps(False)
+booked = faulted.steps(True)
+check(
+    'the piece starts from spawn',
+    walked[0] == (fin.SPAWN_STATE, fin.SPAWN_X, fin.SPAWN_Y), str(walked[0])
+)
+check(
+    'and ends where it locked',
+    walked[-1] == (faulted.state, faulted.x, faulted.y), str(walked[-1])
+)
+check(
+    'there is a stop for every press the player made',
+    len(walked) == len(faulted.presses) + 2,
+    '{} stops for {} presses'.format(len(walked), len(faulted.presses))
+)
+check(
+    'the corrected path has a stop for every press of the route',
+    len(booked) == len(faulted.route()) + 2,
+    '{} stops for {} presses'.format(len(booked), len(faulted.route()))
+)
+check(
+    'and so is shorter than the one actually walked',
+    len(booked) < len(walked), '{} against {}'.format(len(booked), len(walked))
+)
+
+# The whole claim of the corrected view, checked on every placement in the run:
+# the piece is the same piece and it finishes in the same place. Only the way it
+# gets there differs.
+diverged = [
+    i for i, p in enumerate(played.placements)
+    if p.steps(True)[-1] != p.steps(False)[-1] or p.steps(True)[0] != p.steps(False)[0]
+]
+check(
+    'corrected or not, every piece starts and finishes in the same place',
+    not diverged, str(diverged)
+)
+check(
+    'the corrected run makes no more stops than the played one',
+    all(len(p.steps(True)) <= len(p.steps(False)) for p in played.placements)
+)
+# ...and it really does make fewer somewhere, or the check above is vacuous.
+check(
+    'and fewer somewhere, so that means something',
+    any(len(p.steps(True)) < len(p.steps(False)) for p in played.placements)
+)
+
+# Every stop has to be a position the piece could actually be in.
+astray = [
+    (i, stop) for i, p in enumerate(played.placements)
+    for stop in p.steps(True)
+    if not all(0 <= stop[1] + dx < fin.WIDTH for dx, dy in fin.offsets(p.form, stop[0]))
+]
+check('no corrected stop puts the piece through a wall', not astray, str(astray[:2]))
+
+# A placement finesse has no opinion about is re-enacted exactly as played.
+unjudged = [p for p in played.placements if not p.judged]
+check(
+    'placements that were never judged keep the path they were played with',
+    unjudged and all(p.steps(True) == p.steps(False) for p in unjudged),
+    '{} of them'.format(len(unjudged))
+)
+check(
+    'and their presses are read out unchanged too',
+    all(p.presses_shown(True) == p.presses_shown(False) == list(p.presses) for p in unjudged)
+)
+
+
+# --- Walking through it. ----------------------------------------------------
+viewer.load(played, 'analysis_menu')
+viewer.fixed = False
+viewer.index = viewer.step = 0
 press_menu(viewer, pg.K_RIGHT)
-check('right steps forward', viewer.index == 1, str(viewer.index))
+check('right walks one stop', (viewer.index, viewer.step) == (0, 1), str((viewer.index, viewer.step)))
 press_menu(viewer, pg.K_LEFT)
-check('left steps back', viewer.index == 0, str(viewer.index))
+check('left walks back', (viewer.index, viewer.step) == (0, 0), str((viewer.index, viewer.step)))
 press_menu(viewer, pg.K_LEFT)
-check('and stops at the beginning', viewer.index == 0, str(viewer.index))
-viewer.index = len(played) - 1
+check('and stops at the very beginning', (viewer.index, viewer.step) == (0, 0), str((viewer.index, viewer.step)))
+
+# Walking off the end of a placement runs on into the next one rather than
+# stopping at the seam.
+viewer.index, viewer.step = 0, 0
+for _ in range(viewer.step_count(0)):
+    press_menu(viewer, pg.K_RIGHT)
+check(
+    'walking past the last stop moves on to the next piece',
+    (viewer.index, viewer.step) == (1, 0), str((viewer.index, viewer.step))
+)
+press_menu(viewer, pg.K_LEFT)
+check(
+    'and walking back crosses the seam the other way',
+    viewer.index == 0 and viewer.step == viewer.step_count(0) - 1,
+    str((viewer.index, viewer.step))
+)
+
+viewer.index, viewer.step = 0, 0
+press_menu(viewer, pg.K_DOWN)
+check('down jumps a whole piece', (viewer.index, viewer.step) == (1, 0), str((viewer.index, viewer.step)))
+press_menu(viewer, pg.K_UP)
+check('up jumps back', (viewer.index, viewer.step) == (0, 0), str((viewer.index, viewer.step)))
+
+viewer.index, viewer.step = len(played) - 1, viewer.step_count(len(played) - 1) - 1
 press_menu(viewer, pg.K_RIGHT)
-check('and at the end', viewer.index == len(played) - 1, str(viewer.index))
+check('and it stops at the very end', viewer.at_end(), str((viewer.index, viewer.step)))
+
+# The board under the piece is the one the placement was made onto, and the last
+# stop of a placement shows the board it settled into.
+check(
+    'the first piece is placed onto an empty board',
+    not any(row.strip('.') for row in rp.padded(played.before(0))),
+    str([r for r in rp.padded(played.before(0)) if r.strip('.')])
+)
+check(
+    'later pieces are placed onto what the one before them left',
+    played.before(3) == played.placements[2].rows
+)
 
 # Playing.
-viewer.index = 0
+viewer.index = viewer.step = 0
 viewer.playing = True
 viewer.speed = len(viewer.speeds) - 1
 for _ in range(60):
     viewer.run()
-check('playing advances on its own', viewer.index > 0, str(viewer.index))
-viewer.index = len(played) - 1
+check('playing walks it on its own', (viewer.index, viewer.step) != (0, 0), str((viewer.index, viewer.step)))
+viewer.index, viewer.step = len(played) - 1, viewer.step_count(len(played) - 1) - 1
 viewer.playing = True
 for _ in range(20):
     viewer.run()
-check('and stops itself at the end', not viewer.playing and viewer.index == len(played) - 1)
+check('and stops itself at the end', not viewer.playing and viewer.at_end())
 
 # The fix.
-viewer.index = 0
+viewer.index = viewer.step = 0
 viewer.fixed = False
 viewer.run()
 press_menu(viewer, pg.K_f)

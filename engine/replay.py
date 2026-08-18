@@ -4,13 +4,20 @@ A replay here is a list of placements, not a list of keystrokes. Keystrokes woul
 be smaller, but replaying them means re-simulating gravity, auto-shift and the
 bag, and a replay that drifts from the game it recorded is worse than no replay.
 Each entry carries what the piece was, where it ended up, what the player pressed
-to get it there, and a snapshot of the board once the clear had resolved - so
-playback is a matter of showing a board, never of deriving one.
+to get it there, where the piece stood after each of those presses, and a
+snapshot of the board once the clear had resolved.
 
-That also makes the corrected view honest. Fixing a player's finesse changes the
-presses, never the placement, so the boards in a corrected replay are the same
-boards. What changes is what the screen says they should have pressed, and the
-count that follows from it.
+So playback shows boards rather than deriving them, and walks the piece over the
+top of them along the trail that was recorded. The result is a re-enactment
+rather than a simulation: what settled is what settled, and the piece is seen
+getting there the way it actually did.
+
+That is also what makes the corrected view honest. Correcting a player's finesse
+swaps the trail for the finesse route - the same piece arriving in the same
+column in the same orientation, stopping fewer times on the way. The placement
+does not move, so the boards in a corrected replay are the same boards and the
+score is the same score. Only the journey is different, which is the only thing
+better finesse would have changed.
 
 Files live in data/replays as JSON. They are written once when a game ends and
 never edited, and the newest handful are kept.
@@ -39,8 +46,9 @@ KEEP = 30
 MIN_PLACEMENTS = 5
 
 # Bumped if the shape of the file ever changes. A reader that does not recognise
-# the number declines the file rather than guessing at it.
-FORMAT = 1
+# the number declines the file rather than guessing at it. Version 2 added the
+# movement trail, without which a replay can be read but not re-enacted.
+FORMAT = 2
 
 # What a clear of each size is called, matching the banner the game puts up.
 CLEAR_NAMES = {1: 'Single', 2: 'Double', 3: 'Triple', 4: 'Quad'}
@@ -74,8 +82,9 @@ def padded (rows, height=HEIGHT):
 class Placement:
 	"""One piece going down, and everything worth saying about it afterwards."""
 	__slots__ = (
-		'form', 'state', 'x', 'y', 'held', 'presses', 'best', 'judged', 'forced',
-		'lines', 'spin', 'perfect', 'combo', 'b2b', 'score', 'elapsed', 'rows',
+		'form', 'state', 'x', 'y', 'held', 'presses', 'trail', 'best', 'judged',
+		'forced', 'lines', 'spin', 'perfect', 'combo', 'b2b', 'score', 'elapsed',
+		'rows',
 	)
 
 	def __init__ (self, **fields):
@@ -98,6 +107,39 @@ class Placement:
 		# tables, which is the same set of placements that go unjudged.
 		return fin.route(self.form, self.state, self.x) if self.judged else None
 
+	def steps (self, fixed=False):
+		"""Where the piece stands at each stage of being placed.
+
+		A list of (state, x, y), beginning at spawn and ending where the piece
+		locked, which is what the replay walks the piece through.
+
+		With `fixed` on, a judged placement is re-enacted along the finesse route
+		instead: the same piece arriving in the same column in the same
+		orientation, having stopped fewer times on the way. A placement that was
+		never judged - a tuck, a spin, one the timer took - has no route to follow,
+		so it keeps the player's own path. Those are the placements finesse has no
+		opinion about, and inventing one for them would be inventing a mistake.
+		"""
+		spawn = (fin.SPAWN_STATE, fin.SPAWN_X, fin.SPAWN_Y)
+		landed = (self.state, self.x, self.y)
+		best = self.route() if fixed else None
+		if best is not None:
+			# The route is walked over an empty field, which is where finesse is
+			# measured, so every stop on it is at the spawn row. The piece then falls
+			# the whole way, which is exactly what made this placement judgeable.
+			path = [(state, x, fin.SPAWN_Y) for state, x in fin.follow(self.form, best)]
+		else:
+			path = [tuple(stop) for stop in (self.trail or []) if len(stop) == 3]
+		stops = [spawn] + path
+		if stops[-1] != landed:
+			stops.append(landed)
+		return stops
+
+	def presses_shown (self, fixed=False):
+		# The presses the screen names, matching whichever path it is animating.
+		best = self.route() if fixed else None
+		return list(best) if best is not None else list(self.presses or [])
+
 	def to_dict (self):
 		return {name: getattr(self, name) for name in self.__slots__}
 
@@ -115,6 +157,10 @@ class Replay:
 
 	def __len__ (self):
 		return len(self.placements)
+
+	def before (self, index):
+		# The board a placement was made onto: whatever the one before it left.
+		return self.placements[index - 1].rows if 0 < index < len(self.placements) else []
 
 	def title (self):
 		# What the list screen shows for this file.

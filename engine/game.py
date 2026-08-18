@@ -25,9 +25,9 @@ pg.display.set_caption('Forcetris')
 SHAPE_NAMES = ('I', 'O', 'T', 'S', 'Z', 'J', 'L')
 # What a clear of each size is called.
 CLEAR_NAMES = {1: 'SINGLE', 2: 'DOUBLE', 3: 'TRIPLE', 4: 'QUAD'}
-# The row a piece starts on. Read off an empty Shape rather than written out
-# again, so the finesse check cannot disagree with where pieces really spawn.
-SPAWN_Y = Shape().pos[1]
+# The row a piece starts on, taken from the same place the finesse search takes
+# it, so the two cannot disagree about where pieces spawn.
+SPAWN_Y = fin.SPAWN_Y
 
 class Core:
 	"""
@@ -131,6 +131,7 @@ class Core:
 
 		self.finesse_inputs = 0 # Presses spent on the piece in play.
 		self.input_log = [] # Those same presses, in order, for the replay.
+		self.move_trail = [] # Where the piece stood after each of them.
 		self.from_hold = False # True if the piece in play came out of storage.
 		self.finesse_label = '' # Banner naming the presses last thrown away, if any.
 		self.finesse_frames = 0 # Frames that banner has left on screen.
@@ -177,11 +178,24 @@ class Core:
 		self.entry_delay = int(round(self.user.are / self.frame_ms))
 
 	def note_input (self, name):
-		# One press of one of the keys finesse counts. Kept both as a running total
-		# and as a list, because the replay wants to show what was pressed and in
-		# what order, not just how much of it there was.
+		# One press of one of the keys finesse counts. Kept three ways: a running
+		# total for the HUD, the press names for the replay to read out, and where
+		# the piece ended up after each press so the replay can animate it.
+		#
+		# The position is filled in on the *next* press rather than this one,
+		# because a press is not finished when the key goes down - a held direction
+		# auto-shifts for several frames afterwards, and what matters is where the
+		# piece came to rest, not where it started moving from.
 		self.finesse_inputs += 1
+		self.settle_move()
 		self.input_log.append(name)
+		self.move_trail.append(None)
+
+	def settle_move (self):
+		# Close off the press before this one at wherever the piece now is.
+		if self.move_trail and self.move_trail[-1] is None:
+			self.move_trail[-1] = [
+				self.freeshape.state, self.freeshape.pos[0], self.freeshape.pos[1]]
 
 	def cut_das (self):
 		# DAS cut delay: an auto-shift that has finished charging is knocked back to
@@ -218,6 +232,7 @@ class Core:
 		# A new piece is a fresh count. Nothing spent on the last one is its fault.
 		self.finesse_inputs = 0
 		self.input_log = []
+		self.move_trail = []
 		self.from_hold = False
 		# Start this piece's forced drop timer, unless that spawn just ended the game.
 		self.piece_elapsed = None if self.user.state == 'loss_menu' else 0.
@@ -256,6 +271,7 @@ class Core:
 					# table leaves it out, and counting it would make the swap a fault.
 					self.finesse_inputs = 0
 					self.input_log = []
+					self.move_trail = []
 					self.from_hold = True
 				else:
 					# Allow pieces to be swapped during spawn delay.
@@ -364,6 +380,10 @@ class Core:
 		# why the cue it fires has to say which of the two just took the placement.
 		if not self.entry_flag or self.clearing:
 			return False
+		# Closed off before the piece is slammed down, so the last press is recorded
+		# where the player left the piece standing rather than at the floor. The drop
+		# itself is the stop after it.
+		self.settle_move()
 		posdif = self.ghostshape.pos[1] - self.freeshape.pos[1]
 		self.freeshape.pos = self.ghostshape.pos[:]
 		# Judged where it is about to land, before it becomes part of the board. A
@@ -403,11 +423,14 @@ class Core:
 				self.das_charged = False
 				self.shift_frame = self.shift_delay + 1
 				if self.entry_flag:
-					self.newshape.translate((-1, 0))
-					# One press, however far auto-shift goes on to carry the piece. That
-					# is the whole point of the measure: holding the key to the wall costs
-					# what a single tap costs, and tapping four times costs four.
+					# Noted before the move, so the press before this one is closed off
+					# where the piece actually stood rather than where this one is about
+					# to put it. One press, however far auto-shift goes on to carry the
+					# piece: that is the whole point of the measure, since holding the key
+					# to the wall costs what a single tap costs and tapping four times
+					# costs four.
 					self.note_input('left')
+					self.newshape.translate((-1, 0))
 					# Only the initial press is heard. Auto-shift steps run every couple
 					# of frames and would turn the cue into a machine gun.
 					self.rotated_last = False
@@ -417,8 +440,8 @@ class Core:
 				self.das_charged = False
 				self.shift_frame = self.shift_delay + 1
 				if self.entry_flag:
-					self.newshape.translate(( 1, 0))
 					self.note_input('right')
+					self.newshape.translate(( 1, 0))
 					self.rotated_last = False
 					env.play_sound('move')
 			elif ctl.matches(self.user, 'softdrop', event.key): # Toggle soft drop
@@ -430,28 +453,28 @@ class Core:
 
 			elif self.entry_flag:
 				if ctl.matches(self.user, 'rotate_ccw', event.key): # Rotate CCW
+					self.note_input('ccw')
 					self.newshape.rotate(False)
 					self.wall_kick()
 					self.cut_das()
 					self.rotated_last = True
-					self.note_input('ccw')
 					env.play_sound('rotate')
 				elif ctl.matches(self.user, 'rotate_cw', event.key): # Rotate CW
+					self.note_input('cw')
 					self.newshape.rotate(True)
 					self.wall_kick()
 					self.cut_das()
 					self.rotated_last = True
-					self.note_input('cw')
 					env.play_sound('rotate')
 				elif ctl.matches(self.user, 'rotate_180', event.key): # Rotate 180
 					# Two clockwise steps, so the rotation maths stays in one place. The
 					# kick table is picked from the start and end states, not the route.
+					self.note_input('flip')
 					self.newshape.rotate(True)
 					self.newshape.rotate(True)
 					self.wall_kick()
 					self.cut_das()
 					self.rotated_last = True
-					self.note_input('flip')
 					env.play_sound('rotate')
 
 				elif ctl.matches(self.user, 'harddrop', event.key): # Hard drop
@@ -791,6 +814,9 @@ class Core:
 		# lock meant the spin bonus never once applied. They are cleared on spawn.
 		self.begin_banner()
 		self.announce_spin()
+		# Closes off the last press of a piece that settled under gravity. A hard
+		# drop has already done it, and settle_move only fills a stop still open.
+		self.settle_move()
 		# Everything about the placement that is known now. What it went on to clear
 		# is not, so the record is completed when the clearer has finished.
 		self.recorder.hold(
@@ -800,6 +826,7 @@ class Core:
 			y=self.freeshape.pos[1],
 			held=self.from_hold,
 			presses=list(self.input_log),
+			trail=[list(stop) for stop in self.move_trail if stop is not None],
 			best=self.last_best,
 			judged=self.last_judged,
 			forced=self.last_forced,

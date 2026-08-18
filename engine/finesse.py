@@ -41,7 +41,7 @@ except ImportError:
 # table built against a wider board than the one being played would be quietly
 # wrong rather than obviously broken.
 WIDTH = 10
-SPAWN_X = Shape().pos[0]
+SPAWN_X, SPAWN_Y = Shape().pos
 SPAWN_STATE = 0
 
 # One entry per piece, filled in on first use. Building all seven costs a couple
@@ -154,6 +154,47 @@ def optimal (form, state, x):
 	best = route(form, state, x)
 	return None if best is None else len(best)
 
+# How much each rotation turns the piece, by press name.
+TURNS = {'cw': 1, 'ccw': 3, 'flip': 2}
+
+def follow (form, presses):
+	"""Walk a list of presses from spawn, and say where the piece is after each.
+
+	Returns one (state, x) per press, which is what the replay animates: a held
+	key is a single step to the wall, a tap is a single column, and a rotation
+	turns on the spot. A press the walls refuse leaves the piece where it was,
+	so the sequence is always as long as the presses that produced it.
+	"""
+	state, x = SPAWN_STATE, SPAWN_X
+	stops = []
+	for name in presses:
+		if name in TURNS:
+			spun = (state + TURNS[name]) % 4
+			if fits(form, spun, x):
+				state = spun
+		elif name in ('left', 'right'):
+			step = -1 if name == 'left' else 1
+			if fits(form, state, x + step):
+				x += step
+		elif name in ('das_left', 'das_right'):
+			step = -1 if name == 'das_left' else 1
+			while fits(form, state, x + step):
+				x += step
+		stops.append((state, x))
+	return stops
+
+# The same moves in as few characters as they can be told apart in, for the line
+# that has to show a whole placement's worth of them side by side.
+SHORT_NAMES = {
+	'das_left': 'Hold L', 'das_right': 'Hold R',
+	'left': 'L', 'right': 'R',
+	'ccw': 'CCW', 'cw': 'CW', 'flip': '180',
+}
+
 def describe (presses):
 	# A route, or a player's actual presses, written out for the replay screen.
 	return ' + '.join(MOVE_NAMES.get(name, name) for name in presses) if presses else 'nothing'
+
+def brief (presses):
+	# The same, compact enough to sit on one line next to a label.
+	return ', '.join(SHORT_NAMES.get(name, name) for name in presses) if presses else 'nothing'

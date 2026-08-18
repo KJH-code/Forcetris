@@ -287,36 +287,50 @@ motion.
 **Replays** on the main menu lists what has been saved, newest first, and **Watch Replay**
 on the analysis screen opens the one that just finished.
 
+The replay is a **re-enactment**, not a slideshow. The piece is walked to where it went,
+stop by stop — spawn, then wherever each press left it, then the drop — over the board the
+placement was actually made onto. Sloppy play looks sloppy: the piece inches across in four
+hops where one would have done.
+
 | Key | Does |
 | --- | --- |
-| `←` `→` | Step a placement, and repeat when held |
+| `←` `→` | One stop, and repeats when held. Runs on into the next piece |
+| `↑` `↓` | Jump a whole piece |
 | `Z` | Play and pause. Playing from the end starts over |
-| `↑` `↓` | Playback speed, 1x to 8x |
-| `F` | The fix — see below |
+| `S` | Speed, 1x to 8x |
+| `F` | Play it by the book — see below |
 | `X` | Back |
 
-Each placement shows the piece, the column, what was pressed to get it there, and what
-finesse made of it: clean, some number of presses wasted, or not judged at all because it
-was a tuck, a spin, or a placement the timer took.
+The panel beside the board names the piece, the column, the presses, which one is being
+made right now, and what finesse made of the placement.
 
-### The fix
+### Play it by the book
 
-`F` turns on the corrected view. Every placement is then annotated with the presses it
-*should* have taken — `Hold Left` where you tapped left four times — and the run totals
-underneath re-read at 100% and the lower press count.
+`F` re-enacts the same run with the finesse **route** in place of what you pressed.
 
-The placements do not move. Correcting someone's finesse changes what it cost them to put
-a piece somewhere, never where the piece went, so the boards in a corrected replay are the
-same boards and the score is the same score. That is the whole claim the screen makes, and
-it is the thing the tests check hardest.
+The piece is the same piece. It arrives in the same column, in the same orientation, and
+the board it leaves behind is the same board — it simply stops fewer times on the way.
+`Tap Left, Tap Left, Tap Left, Tap Left, Rotate CCW` becomes `Hold Left, Rotate CCW`, four
+stops become one, and the run totals underneath re-read at 100% and the lower press count.
+
+Because a stop is the unit of time, a corrected replay is visibly *shorter* to watch. That
+is the difference the screen exists to show.
+
+Placements finesse has no opinion about — **tucks, spins, and any the timer took** — keep
+your own path in both views. There is no route to hold them to, and inventing one would be
+inventing a mistake.
+
+Nothing else moves. Correcting finesse changes what it cost to put a piece somewhere, never
+where the piece went, so the score, the clears and the boards are untouched. That is the
+whole claim the screen makes, and it is what the tests check hardest.
 
 ### The files
 
 A replay is a list of placements, not a list of keystrokes. Keystrokes would be smaller,
 but playing them back means re-simulating gravity, auto-shift and the bag, and a replay
 that drifts from the game it recorded is worse than no replay. Each entry carries the
-piece, where it ended up, what was pressed, and a snapshot of the board once the clear had
-resolved — so playback shows a board rather than deriving one.
+piece, where it ended up, what was pressed, where the piece stood after each of those
+presses, and a snapshot of the board once the clear had resolved.
 
 The snapshots keep only from the highest occupied row down, which is most of the size of a
 file, since most of a Tetris board is empty most of the time. The newest 30 replays are
