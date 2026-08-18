@@ -30,10 +30,11 @@ import random
 from argparse import Namespace
 
 import pygame as pg
+import engine.attack as atk
 import engine.game as G
 import engine.replay as rp
 import engine.userstate as us
-from engine.shapes import Shape
+from engine.shapes import Block, Shape
 
 pg.key.get_focused = lambda: True
 
@@ -47,35 +48,127 @@ KEYMAP = {
 # One trace per entry: a name, the handling it plays under, and how the script
 # leans. Every config includes the settings that change frame counts - DAS,
 # ARR, DCD, SDF, ARE - plus the forced drop timer and the finesse rule, since
-# a retry moves the piece.
+# a retry moves the piece. The spin rule changes nothing about where pieces
+# go, only what the placements score, which the traces also grade. The last
+# column names a seeded starting board, for the scripts that need a stack
+# already standing.
 CONFIGS = (
-    # name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, flavour
-    ('defaults',  140, 40,  0,  6,   0, 0.0, True,  1, 1500, 'mixed'),
-    ('instant',    80,  0,  0, 40,   0, 0.0, True,  1, 1500, 'mixed'),
+    # name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, flavour, spinrule, seed
+    ('defaults',  140, 40,  0,  6,   0, 0.0, True,  1, 1500, 'mixed', 2, None),
+    ('instant',    80,  0,  0, 40,   0, 0.0, True,  1, 1500, 'mixed', 2, None),
     # SDF 12 lands on the one rounding Python and C++ disagree about:
     # 30/12 = 2.5, which Python's half-to-even rounds down.
-    ('das0',        0, 20,  0, 12,   0, 0.0, True,  1, 1200, 'mixed'),
-    ('cutdelay',  160, 40, 40,  8, 100, 0.5, True,  1, 1500, 'mixed'),
-    ('forced',    140, 40,  0,  6,   0, 0.3, True,  1, 1800, 'sparse'),
-    ('retry',     140, 40,  0,  6,   0, 0.0, True,  2, 1500, 'taps'),
-    ('nokicks',   140, 40,  0,  6,  60, 0.0, False, 1, 1200, 'spins'),
+    ('das0',        0, 20,  0, 12,   0, 0.0, True,  1, 1200, 'mixed', 2, None),
+    ('cutdelay',  160, 40, 40,  8, 100, 0.5, True,  1, 1500, 'mixed', 2, None),
+    ('forced',    140, 40,  0,  6,   0, 0.3, True,  1, 1800, 'sparse', 2, None),
+    ('retry',     140, 40,  0,  6,   0, 0.0, True,  2, 1500, 'taps', 2, None),
+    ('nokicks',   140, 40,  0,  6,  60, 0.0, False, 1, 1200, 'spins', 3, None),
     # Deterministic clears: an all-O feed laid out in rows, so the line clear
     # timing is exercised on purpose rather than by luck.
-    ('clears',    140, 40,  0,  6,   0, 0.0, True,  1, 1200, 'rows'),
+    ('clears',    140, 40,  0,  6,   0, 0.0, True,  1, 1200, 'rows', 2, None),
     # Deterministic retries: four taps into the wall and a drop, every piece,
     # so the piece is handed back once per window and locked clean on the
     # second drop. The random scripts only stumble into a retry now and then.
-    ('faults',    140, 40,  0,  6,   0, 0.0, True,  2, 1000, 'faultrows'),
+    ('faults',    140, 40,  0,  6,   0, 0.0, True,  2, 1000, 'faultrows', 2, None),
     # A fault with the timer running: the handed-back piece keeps the time it
     # already spent, so the forced drop lands a moment later, not a full budget
     # later. Only this trace can tell those two apart.
-    ('retryforce', 140, 40, 0,  6,   0, 2.0, True,  2, 1200, 'faultonce'),
+    ('retryforce', 140, 40, 0,  6,   0, 2.0, True,  2, 1200, 'faultonce', 2, None),
     # A held direction cut back by DCD on rotation, deliberately: hold right
     # through the whole window and rotate mid-slide. Without the cut the slide
     # resumes on the ARR beat; with it, a beat later. The random scripts never
     # held a charge into a rotation for long enough to show the difference.
-    ('dcdcut',    100, 60, 100, 6,   0, 0.0, True,  1, 900, 'chargecut'),
+    ('dcdcut',    100, 60, 100, 6,   0, 0.0, True,  1, 900, 'chargecut', 2, None),
+    # Two quads down the same well: the second extends the back to back chain
+    # and empties the board, so one trace grades the b2b bonus, the perfect
+    # clear bonus and the combo bookkeeping on known numbers. The third I
+    # lands on an empty board and clears nothing, which breaks the combo.
+    ('b2bwell',   140, 40,  0,  6,   0, 0.0, True,  1, 440, 'quadwell', 2, 'eightrows'),
+    # A tucked T on the floor, under the plain T-spin rule for once: soft
+    # dropped, slid under a lone corner block, and armed by a rotation the
+    # kicks refuse - the engine marks the attempt, not the success, and the
+    # verdict has to survive a zero-distance hard drop. A mini T-spin single,
+    # so the clear, the b2b from a spin and the banner verdict are all graded
+    # on known numbers. The next window's T gets kicked off the rubble and
+    # scores nothing - the verdict has to go away again, not stick.
+    ('minispin',  140, 40,  0, 40,   0, 0.0, True,  1, 300, 'tslot', 1, 'tslot'),
 )
+
+
+# The seeded boards, by name. Row 21 is the lowest playable row; the floor
+# sits below it.
+def seed_board (core, which):
+    if which == 'eightrows':
+        # Eight garbage rows with the last column open: a well four deep twice.
+        for y in range(14, 22):
+            for x in range(9):
+                core.grid.cells[y][x] = Block([x, y], 7, fallen=True)
+    elif which == 'tslot':
+        # The bottom row already full - nothing clears until something locks -
+        # the row above open exactly where the tucked T's cells land, and one
+        # block higher still: the T slides along the full row until that block
+        # stops it, exactly where it becomes the third corner. The lock then
+        # completes the row above, and both rows go as a mini T-spin double.
+        for x in range(10):
+            core.grid.cells[21][x] = Block([x, 21], 7, fallen=True)
+        for x in (0, 1, 2, 7, 8, 9):
+            core.grid.cells[20][x] = Block([x, 20], 7, fallen=True)
+        core.grid.cells[19][6] = Block([6, 19], 7, fallen=True)
+    core.grid.update()
+
+
+def build_quadwell_script (frames):
+    """Rotate the I upright, auto-shift it to the wall, and drop it."""
+    events = {}
+    window = 0
+    while (window + 1) * 100 <= frames:
+        start = window * 100
+        events[start + 30] = ('cw', 1)
+        events[start + 34] = ('right', 1)
+        events[start + 70] = ('right', 0)
+        events[start + 78] = ('hard', 1)
+        window += 1
+    return events
+
+
+def build_tslot_script (frames):
+    """Soft drop the T to the floor, tuck it under the corner block, arm it.
+
+    The instant soft drop sinks the T beside the slot without locking it, one
+    tap right tucks it under the corner block - a move no straight drop could
+    have made, which is the whole point of a spin - and the CCW is refused by
+    every kick in the tight spot, which still counts as the last thing done
+    to the piece. The hard drop covers no distance at all. The grace lock
+    would fire around thirty frames after the landing, so everything happens
+    before it.
+    """
+    events = {}
+    window = 0
+    while (window + 1) * 80 <= frames:
+        start = window * 80
+        if window % 2 == 0:
+            # The T: the tucked mini spin single described above.
+            events[start + 24] = ('soft', 1)
+            events[start + 26] = ('soft', 0)
+            events[start + 28] = ('right', 1)
+            events[start + 30] = ('right', 0)
+            events[start + 34] = ('ccw', 1)
+            events[start + 38] = ('hard', 1)
+        else:
+            # The I, upright, down the column the spin left open: a plain
+            # single right after a spin, which is what proves the spin flag
+            # went away again - a stale one would keep back to back alive.
+            # The taps left also disarm the rotation before the lock.
+            events[start + 24] = ('cw', 1)
+            events[start + 28] = ('left', 1)
+            events[start + 30] = ('left', 0)
+            events[start + 32] = ('left', 1)
+            events[start + 34] = ('left', 0)
+            events[start + 38] = ('soft', 1)
+            events[start + 40] = ('soft', 0)
+            events[start + 44] = ('hard', 1)
+        window += 1
+    return events
 
 
 class Clock:
@@ -206,11 +299,18 @@ def build_script(rng, frames, flavour):
     return {f: ev for f, ev in events.items() if f < frames}
 
 
-def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, flavour, out):
+def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, flavour,
+              spinrule, seedname, out):
     rng = random.Random('forcetris-' + name)
     if flavour == 'rows':
         pieces = [1] * 600
         script = build_rows_script(frames)
+    elif flavour == 'quadwell':
+        pieces = [0] * 600
+        script = build_quadwell_script(frames)
+    elif flavour == 'tslot':
+        pieces = [2, 0] * 300
+        script = build_tslot_script(frames)
     elif flavour == 'chargecut':
         pieces = []
         while len(pieces) < 600:
@@ -242,6 +342,7 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
     user.das, user.arr, user.dcd, user.sdf, user.are = das, arr, dcd, sdf, are
     user.enablekicks = kicks
     user.finesse = finesse
+    user.spinrule = spinrule
     user.cleartype = us.CLEAR_NAIVE
     user.state = 'game'
     user.gametype = 'free'
@@ -256,17 +357,27 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
 
     core.gen_shapelist = deal
     core.set_data()
+    if seedname:
+        seed_board(core, seedname)
 
     locks = []
+    scores = []
     in_forced = [False]
     real_fallen = core.eval_fallen
     real_forced = core.eval_forced_drop
+    real_commit = core.recorder.commit
     frame_at = [0]
 
     def noting_fallen(posdif):
+        # The two flags the spin verdict reads, written down at the moment the
+        # verdict reads them. Comparing them at every lock grades the flag
+        # bookkeeping across every trace, not just where a spin lands: a port
+        # that forgets to clear one on a shift, or to raise one on a refused
+        # rotation, disagrees at the next lock whether anything scored or not.
         locks.append((
             frame_at[0], core.freeshape.form, core.freeshape.state,
-            core.freeshape.pos[0], core.freeshape.pos[1], 1 if in_forced[0] else 0))
+            core.freeshape.pos[0], core.freeshape.pos[1], 1 if in_forced[0] else 0,
+            1 if core.rotated_last else 0, 1 if core.user.twist_flag else 0))
         return real_fallen(posdif)
 
     def noting_forced():
@@ -276,12 +387,24 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
         finally:
             in_forced[0] = False
 
+    def noting_commit(user_, grid, label, perfect, sent):
+        # The moment Core.run scores a placement: the clearer has finished and
+        # the chain counters are final. One of these per lock, in lock order.
+        scores.append((
+            atk.spin_kind(label), user_.b2b, user_.combo_ctr,
+            1 if perfect else 0, sent))
+        return real_commit(user_, grid, label, perfect, sent)
+
     core.eval_fallen = noting_fallen
     core.eval_forced_drop = noting_forced
+    core.recorder.commit = noting_commit
 
     out.append('trace {}'.format(name))
-    out.append('config {} {} {} {} {} {!r} {} {} 30'.format(
-        das, arr, dcd, sdf, are, float(forced), int(kicks), finesse))
+    out.append('config {} {} {} {} {} {!r} {} {} 30 {}'.format(
+        das, arr, dcd, sdf, are, float(forced), int(kicks), finesse, spinrule))
+    if seedname:
+        for row in rp.board_to_rows(core.grid):
+            out.append('seed ' + row)
     out.append('pieces ' + ' '.join(str(form) for form in pieces))
     for frame in sorted(script):
         key, down = script[frame]
@@ -312,7 +435,9 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
             break
 
     for lock in locks:
-        out.append('lock {} {} {} {} {} {}'.format(*lock))
+        out.append('lock {} {} {} {} {} {} {} {}'.format(*lock))
+    for index, score in enumerate(scores):
+        out.append('score {} {} {} {} {} {}'.format(index, *score))
     out.append('loss {}'.format(loss_frame))
     out.append('frames {}'.format(ran))
     rows = rp.board_to_rows(core.grid)

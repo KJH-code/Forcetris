@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "forcetris/attack.hpp"
 #include "forcetris/finesse.hpp"
+#include "forcetris/spins.hpp"
 
 namespace forcetris {
 
@@ -88,6 +90,13 @@ void Sim::eval_block () {
 void Sim::set_shape (int form) {
 	floor_kick_ = true;
 	hold_lock_ = false;
+	// The spin flags live from one spawn to the next, not from lock to lock:
+	// the line clearer reads tspin_flag frames after the piece locked, so
+	// clearing them at lock made the spin bonus never once apply. An in-play
+	// hold swap bypasses this and deliberately keeps them.
+	rotated_last_ = false;
+	twist_flag_ = false;
+	tspin_flag_ = false;
 	piece_ = Piece{form, 0, kSpawnX, kSpawnY};
 	cand_x_ = piece_.x;
 	eval_block();
@@ -146,6 +155,12 @@ void Sim::spin_key (int turns) {
 	++inputs_;
 	const Rotation spun = rotate(board_, piece_, turns, config_.kicks, floor_kick_);
 	floor_kick_ = spun.floor_kick;
+	if (piece_.form != O) {
+		// wall_kick leaves the twist flag exactly where the rotation left it:
+		// set when it only fitted after a kick, cleared when it fitted plainly
+		// or was refused. An O skips the whole kick step, flag included.
+		twist_flag_ = spun.kicked;
+	}
 	if (spun.turned) {
 		piece_ = spun.piece;
 		cand_x_ = piece_.x;
@@ -154,6 +169,9 @@ void Sim::spin_key (int turns) {
 			grav_frame_ = 0;
 		}
 	}
+	// Set for the attempt, not the success: the engine marks the press itself,
+	// refused rotations and O turns included.
+	rotated_last_ = true;
 	cut_das();
 }
 
@@ -170,6 +188,7 @@ void Sim::eval_input (const std::optional<Event>& event) {
 			if (entry_) {
 				++inputs_;
 				cand_x_ = piece_.x + shift_dir_;
+				rotated_last_ = false;
 			}
 		} else if (key == Key::Soft) {
 			soft_ = true;
@@ -202,6 +221,9 @@ void Sim::eval_shift () {
 	} else if (shift_dir_ != 0 && entry_) {
 		shift_frame_ = shift_fdelay_;
 		das_charged_ = true;
+		// An auto-shift step is a move like any other, so it disarms the spin -
+		// even when the step is then reverted at the wall.
+		rotated_last_ = false;
 		if (shift_fdelay_ < 1) {
 			// ARR 0: cover the whole distance to the wall in this one frame.
 			while (true) {
@@ -267,10 +289,30 @@ void Sim::lock (bool forced) {
 	if (shift_frame_ == 0 && shift_dir_ != 0) {
 		shift_frame_ = shift_delay_ + 1;
 	}
+	// The spin verdict, decided while the piece still stands where it landed
+	// and before it becomes part of the stack, as announce_spin decides it.
+	int spin = attack::NOT_SPIN;
+	const auto verdict = spins::judge(
+		board_, piece_, static_cast<spins::Rule>(config_.spin_rule),
+		rotated_last_, twist_flag_);
+	if (verdict.has_value()) {
+		spin = verdict->full ? attack::SPIN_FULL : attack::SPIN_MINI;
+		tspin_flag_ = true;
+	}
+	// The finesse judgement the analysis screen shows: how many presses the
+	// placement took against the fewest it needed. Placements finesse cannot
+	// route - tucks, spins, forced drops - are left unjudged.
+	int best = -1;
+	if (!forced && piece_.form <= 6 && drop_reachable()) {
+		best = finesse::optimal(piece_.form, piece_.state, piece_.x).value_or(-1);
+	}
 	board_.paste(piece_);
 	const int lines = board_.clear_lines();
-	locked_.push_back(Locked{
-		frame_, piece_.form, piece_.state, piece_.x, piece_.y, lines, forced});
+	Locked entry{
+		frame_, piece_.form, piece_.state, piece_.x, piece_.y, lines, forced,
+		rotated_last_, twist_flag_, inputs_, best};
+	entry.spin = spin;
+	locked_.push_back(entry);
 	clearing_ = true;
 	pending_rows_ = lines;
 	sprite_frames_ = 0;
@@ -336,9 +378,39 @@ void Sim::clearing_step () {
 		--pending_rows_;
 		sprite_frames_ = 6;
 	} else {
-		// The final yield: the clearer reports done.
+		// The final yield: the clearer reports done, and the counters are
+		// final - which is the moment the placement can be scored in full.
 		clearing_ = false;
+		resolve_score();
 	}
+}
+
+void Sim::resolve_score () {
+	// eval_clear_score, plus the attack sum Core.run makes once the clearer
+	// has finished. tspin_flag is still set from the lock: it is cleared on
+	// spawn, not at lock, precisely so this late reading works.
+	Locked& last = locked_.back();
+	const int total = last.lines;
+	if (total > 0) {
+		// A quad, or any clear that came out of a spin, carries the back to
+		// back chain on. A smaller clear ends it. A placement that clears
+		// nothing at all leaves it alone - but does break the combo.
+		b2b_ = (tspin_flag_ || total >= 4) ? b2b_ + 1 : 0;
+		lines_cleared_ += total;
+		++combo_;
+	} else {
+		combo_ = 0;
+	}
+	const bool perfect = total > 0 && board_.empty();
+	const int sent = attack::attack_for(
+		total, static_cast<attack::SpinKind>(last.spin), b2b_ > 1,
+		std::max(0, combo_ - 1), perfect);
+	attack_sent_ += sent;
+	last.scored = true;
+	last.b2b = b2b_;
+	last.combo = combo_;
+	last.perfect = perfect;
+	last.attack = sent;
 }
 
 bool Sim::step (const std::optional<Event>& event) {

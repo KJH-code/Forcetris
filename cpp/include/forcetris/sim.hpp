@@ -37,6 +37,9 @@ struct SimConfig {
 	int finesse_rule = 1;
 	// Free mode's gravity: frames between one row and the next.
 	int fall_delay = 30;
+	// Which rotations count as spins - spins::Rule, defaulting as the game does.
+	// Scoring only: no placement moves differently for it.
+	int spin_rule = 2;
 };
 
 enum class Key : int { Left, Right, Soft, Hard, Hold, Ccw, Cw, Flip };
@@ -46,7 +49,10 @@ struct Event {
 	bool down = true;
 };
 
-// One piece locking, which is the unit a trace is compared in.
+// One piece locking, which is the unit a trace is compared in. The score half
+// is settled a few frames after the geometry half: the chain counters are only
+// final once the line clearer has finished, so until `scored` goes up the
+// fields after it still hold their defaults.
 struct Locked {
 	long frame = 0;
 	int form = 0;
@@ -55,6 +61,22 @@ struct Locked {
 	int y = 0;
 	int lines = 0;
 	bool forced = false;
+	// The two flags the spin verdict read, as they stood at the lock. Written
+	// down so a trace can grade the flag bookkeeping at every lock rather than
+	// only where a spin happened to land.
+	bool rotated = false;
+	bool twist = false;
+	// The presses finesse counted on the piece, against the fewest that could
+	// have made the placement. `best` is -1 when the placement is not judgeable.
+	int inputs = 0;
+	int best = -1;
+	// Filled when the clear resolves.
+	bool scored = false;
+	int spin = 0;        // attack::SpinKind: 0 none, 1 mini, 2 full.
+	int b2b = 0;         // The counters as eval_clear_score left them.
+	int combo = 0;
+	bool perfect = false;
+	int attack = 0;
 };
 
 // Python's round(): half rounds to the even neighbour, which is not what
@@ -67,17 +89,38 @@ public:
 	// never generates pieces itself, so the trace controls the game completely.
 	Sim (const SimConfig& config, std::vector<int> pieces);
 
+	// Start from a board other than an empty one. Only sensible before the
+	// first step, which is when a seeded trace or a practice setup wants it.
+	void seed (const Board& board) { board_ = board; }
+
+	// Append to the piece queue. The game proper feeds its bag through this as
+	// the queue runs down; a trace deals everything up front instead.
+	void feed (int form) { queue_.push_back(form); }
+
 	// One frame, with at most one input event - the engine polls one per frame.
 	// Returns false once the game has been lost.
 	bool step (const std::optional<Event>& event);
 
 	long frame () const { return frame_; }
 	bool entry () const { return entry_; }
+	bool clearing () const { return clearing_; }
 	const Piece& piece () const { return piece_; }
 	const Board& board () const { return board_; }
 	const std::vector<Locked>& locked () const { return locked_; }
 	long loss_frame () const { return loss_frame_; }
 	int stored () const { return stored_; }
+	const std::deque<int>& queue () const { return queue_; }
+
+	// The chain counters and totals, as the analysis screen reads them. The
+	// counters show one behind their HUD figures: the HUD prints b2b - 1.
+	int b2b () const { return b2b_; }
+	int combo () const { return combo_; }
+	int attack_sent () const { return attack_sent_; }
+	int lines_cleared () const { return lines_cleared_; }
+
+	// Seconds the piece in play has been in play, for the forced drop meter.
+	// Empty between pieces or when the game is over.
+	std::optional<double> piece_elapsed () const { return piece_elapsed_; }
 
 private:
 	void eval_input (const std::optional<Event>& event);
@@ -94,6 +137,7 @@ private:
 	void cut_das ();
 	void eval_block ();
 	void clearing_step ();
+	void resolve_score ();
 
 	SimConfig config_;
 	// The handling, in frames.
@@ -124,6 +168,19 @@ private:
 	bool soft_ = false;
 	int grav_frame_ = 0;
 	int inputs_ = 0;            // Presses finesse counts on the piece in play.
+
+	// The spin bookkeeping, tracked as Core tracks it: `rotated_last_` is true
+	// while the last thing done to the piece was a rotation, `twist_flag_` while
+	// the last rotation only fitted after a kick, and `tspin_flag_` from a spin
+	// verdict at lock until the next spawn - the line clearer reads it frames
+	// after the piece is gone.
+	bool rotated_last_ = false;
+	bool twist_flag_ = false;
+	bool tspin_flag_ = false;
+	int b2b_ = 0;
+	int combo_ = 0;
+	int attack_sent_ = 0;
+	int lines_cleared_ = 0;
 
 	// The forced drop clock, in the same arithmetic Python runs.
 	double now_ = 0.;

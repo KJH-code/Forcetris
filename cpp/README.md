@@ -1,9 +1,10 @@
-# The C++ core
+# The C++ core, and its GUI
 
-The first step of an incremental port. **The game you play is still the Python
-one** — this is the pure-logic half of it rewritten in C++ and graded against the
-original, so that when the rest follows there is something underneath already
-known to behave identically.
+An incremental port. The pure-logic half of the game is rewritten in C++ and
+graded against the Python original, and `forcetris` — built when SDL2 is
+available — is a playable game on top of it: the graded sim fed from the
+keyboard, with Dear ImGui screens, mouse-driven menus, and a stat panel
+layout you drag into shape.
 
 What is here:
 
@@ -15,7 +16,40 @@ What is here:
 | `finesse` | The search for the fewest presses a placement could have taken |
 | `spins` | The three corner rule and the immobility rule, under each spin setting |
 | `attack` | TETR.IO's garbage table, and the APM / VS arithmetic on top of it |
-| `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, naive clears, and the finesse retry |
+| `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, naive clears, the finesse retry, and the scoring — spins, back to back, combos, attack |
+| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, menus, settings, and the stat layout editor |
+
+## The GUI
+
+```bash
+sudo apt install libsdl2-dev        # Debian/Ubuntu; on Windows see below
+cmake -S cpp -B cpp/build
+cmake --build cpp/build -j
+./cpp/build/forcetris
+```
+
+Arrows move, `Z`/`X`/`A` turn, space drops, down soft drops, shift or `C`
+holds, escape pauses. Everything else is the mouse.
+
+The stat panels beside the board are the point: pause → *Edit stat layout*
+gives every stat a checkbox and makes the panels draggable, so PPS, APM, APS,
+VS, finesse, back-to-back, combo and the rest sit wherever you put them. Four
+presets (`tetrastats`, `battle`, `minimal`, `full`) are starting points; the
+arrangement and all settings persist in a plain text file under SDL's
+per-user pref directory (`FORCETRIS_GUI_CONFIG` overrides the path).
+
+Settings — DAS/ARR/DCD/SDF/ARE, the forced drop timer, spin rule, finesse
+rule, kicks — mirror the Python game's and apply from the next game.
+
+On Windows, install SDL2 through vcpkg (`vcpkg install sdl2`) or point
+`SDL2_DIR` at an unpacked SDL2 development package, then run the same CMake
+commands. Dear ImGui is vendored in `third_party/imgui`, so there is nothing
+else to fetch.
+
+Headless machines can still prove the whole thing runs:
+`FORCETRIS_SMOKE=1500 SDL_VIDEODRIVER=dummy ./forcetris` plays that many
+frames of scripted-random input and exits; `FORCETRIS_SHOT=/path/out.bmp`
+saves the final frame. The `gui_smoke` ctest does exactly this.
 
 ## Building and grading it
 
@@ -45,16 +79,23 @@ C++ is held to the answers the tested implementation actually gives:
 - every attack table entry, and the APM / VS arithmetic
 - every spin verdict, under each rule, kicked and not — around 4,600
 - where every piece falls on every board
-- eleven scripted games replayed move for move through the sim: seeded random
-  button-mashing across the handling range, plus deliberate scripts for line
-  clear timing, finesse retries, DCD cuts, and the retry keeping the forced
-  drop time a piece had already spent
+- thirteen scripted games replayed move for move through the sim: seeded
+  random button-mashing across the handling range, plus deliberate scripts
+  for line clear timing, finesse retries, DCD cuts, the retry keeping the
+  forced drop time a piece had already spent, back-to-back quads down a
+  seeded well ending in a perfect clear, and a tucked mini T-spin armed by a
+  rotation the kicks refuse
+- what every one of those placements scored — the spin verdict, the back to
+  back and combo counters, the perfect clear flag and the attack — plus the
+  two flags the verdict reads, compared at every one of the ~190 locks
 
-The sim's port was verified the hard way: twelve deliberate mutations — the
-lock grace a frame short, the DAS `+1` dropped, ARR 0 stepping instead of
+The sim's port was verified the hard way: twenty-six deliberate mutations —
+the lock grace a frame short, the DAS `+1` dropped, ARR 0 stepping instead of
 sliding, the first spawn using ARE, Python's half-to-even rounding replaced
-with C++'s, and so on — each fail at least one trace. Where a mutation
-survived, the trace set was extended until it did not.
+with C++'s, the spin half of the back-to-back gate dropped, the combo bonus
+read off by one, the spin flags surviving a spawn, and so on — each fail at
+least one trace. Where a mutation survived, the trace set was extended until
+it did not.
 
 ## Kick table coverage
 
@@ -81,7 +122,7 @@ entry went undetected. The seeded rubble boards exist because of that.
 
 ## What it does not have
 
-No rendering, no audio, no menus, no replay files, no settings, no scoring —
-those still live in Python. Nothing in the game calls into this yet. The sim
-plays free mode with naive clearing, which is the trainer's default; the
-cascade clear modes and arcade's garbage ramp are not ported.
+No audio, no replay files, no rebindable keys yet. The Python game remains
+the reference implementation and keeps all of those. The sim plays free mode
+with naive clearing, which is the trainer's default; the cascade clear modes
+and arcade's garbage ramp are not ported.

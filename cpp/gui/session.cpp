@@ -1,0 +1,118 @@
+#include "session.hpp"
+
+#include <algorithm>
+
+namespace forcetris {
+namespace gui {
+
+namespace {
+
+// The clear names the banner uses, matching the Python game's.
+const char* clear_name (int lines) {
+	switch (lines) {
+		case 1: return "SINGLE";
+		case 2: return "DOUBLE";
+		case 3: return "TRIPLE";
+		case 4: return "QUAD";
+		default: return "";
+	}
+}
+
+const char* form_letter (int form) {
+	static const char* names[] = {"I", "O", "T", "S", "Z", "J", "L"};
+	return form >= 0 && form <= 6 ? names[form] : "?";
+}
+
+} // namespace
+
+Session::Session (const SimConfig& config, unsigned seed)
+	: sim_(config, {}), rng_(seed) {
+	refill();
+}
+
+void Session::refill () {
+	// The seven bag, as gen_shapelist deals it: a full set, shuffled, whenever
+	// the queue runs low enough that the previews could run out.
+	while (sim_.queue().size() < 8) {
+		int bag[7] = {0, 1, 2, 3, 4, 5, 6};
+		std::shuffle(bag, bag + 7, rng_);
+		for (const int form : bag) {
+			sim_.feed(form);
+		}
+	}
+}
+
+void Session::key (Key key, bool down) {
+	pending_.push_back(Event{key, down});
+}
+
+bool Session::step () {
+	if (over_) {
+		return false;
+	}
+	std::optional<Event> event;
+	if (!pending_.empty()) {
+		event = pending_.front();
+		pending_.pop_front();
+	}
+	over_ = !sim_.step(event);
+	refill();
+	absorb();
+	return !over_;
+}
+
+void Session::absorb () {
+	const auto& locked = sim_.locked();
+	for (; counted_ < locked.size(); ++counted_) {
+		const Locked& lock = locked[counted_];
+		presses_ += lock.inputs;
+		if (lock.forced) {
+			++forced_;
+		}
+		if (lock.best >= 0) {
+			++judged_;
+			const int over = lock.inputs - lock.best;
+			if (over > 0) {
+				++faults_;
+				wasted_ += over;
+			}
+		}
+	}
+	// Scores resolve a few frames after their locks, strictly in order.
+	for (; scored_ < locked.size() && locked[scored_].scored; ++scored_) {
+		const Locked& lock = locked[scored_];
+		best_b2b_ = std::max(best_b2b_, lock.b2b - 1);
+		best_combo_ = std::max(best_combo_, lock.combo - 1);
+		if (lock.spin != 0) {
+			++spins_;
+		}
+		if (lock.perfect) {
+			++perfects_;
+		}
+		// The banner, built the way the Python game layers it: the spin, the
+		// clear it made, and a perfect clear trumping the lot.
+		std::string text;
+		if (lock.spin != 0) {
+			text = std::string(lock.spin == 1 ? "MINI " : "")
+				+ form_letter(lock.form) + "-SPIN";
+		}
+		if (lock.lines > 0) {
+			text += std::string(text.empty() ? "" : "  ") + clear_name(lock.lines);
+		}
+		if (lock.perfect) {
+			text += std::string(text.empty() ? "" : "  ") + "PERFECT CLEAR";
+		}
+		if (lock.b2b > 1 && lock.lines > 0) {
+			text += "  B2B x" + std::to_string(lock.b2b - 1);
+		}
+		if (lock.combo > 1) {
+			text += "  " + std::to_string(lock.combo - 1) + " COMBO";
+		}
+		if (!text.empty()) {
+			banner_ = Banner{text, sim_.frame()};
+		}
+	}
+}
+
+} // namespace gui
+} // namespace forcetris

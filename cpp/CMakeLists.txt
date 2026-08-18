@@ -1,8 +1,9 @@
-# The C++ core: the parts of Forcetris that are pure logic.
+# The C++ core, and the GUI that plays it.
 #
-# This is the first step of an incremental port. The Python game is still the
-# one you play; this exists to be graded against it, so that when the rest
-# follows there is something underneath that is known to behave identically.
+# The core is an incremental port graded against the Python game, which
+# remains the reference. The GUI (built when SDL2 is available) runs the
+# graded sim with Dear ImGui screens on top; nothing about the game itself
+# is decided outside the core.
 cmake_minimum_required(VERSION 3.16)
 project(forcetris_core CXX)
 
@@ -34,6 +35,42 @@ add_executable(trace tests/trace.cpp)
 target_link_libraries(trace PRIVATE forcetris_core)
 target_compile_options(trace PRIVATE -Wall -Wextra -Wpedantic)
 
+# The game window needs SDL2; everything else builds without it, so a machine
+# that only wants the graded core (or has no SDL2 yet) still gets the tests.
+find_package(SDL2 QUIET)
+if (SDL2_FOUND)
+	add_library(imgui STATIC
+		third_party/imgui/imgui.cpp
+		third_party/imgui/imgui_draw.cpp
+		third_party/imgui/imgui_tables.cpp
+		third_party/imgui/imgui_widgets.cpp
+		third_party/imgui/backends/imgui_impl_sdl2.cpp
+		third_party/imgui/backends/imgui_impl_sdlrenderer2.cpp
+	)
+	target_include_directories(imgui PUBLIC
+		third_party/imgui third_party/imgui/backends)
+	if (TARGET SDL2::SDL2)
+		target_link_libraries(imgui PUBLIC SDL2::SDL2)
+	else()
+		target_include_directories(imgui PUBLIC ${SDL2_INCLUDE_DIRS})
+		target_link_libraries(imgui PUBLIC ${SDL2_LIBRARIES})
+	endif()
+
+	add_executable(forcetris
+		gui/main.cpp
+		gui/session.cpp
+		gui/stats.cpp
+		gui/config.cpp
+	)
+	target_link_libraries(forcetris PRIVATE forcetris_core imgui)
+	target_compile_options(forcetris PRIVATE -Wall -Wextra -Wpedantic)
+	if (TARGET SDL2::SDL2main)
+		target_link_libraries(forcetris PRIVATE SDL2::SDL2main)
+	endif()
+else()
+	message(STATUS "SDL2 not found - building the core and tests only")
+endif()
+
 enable_testing()
 # The reference is generated rather than committed, so the check is always
 # against the Python engine as it stands rather than as it once was.
@@ -50,3 +87,10 @@ add_test(NAME trace
 		-DBINARY=$<TARGET_FILE:trace>
 		-DDUMPER=dump_trace.py
 		-P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_equivalence.cmake)
+if (SDL2_FOUND)
+	# The whole window run headlessly under scripted-random input: proves the
+	# loop, the drawing and the shutdown hold together with no display.
+	add_test(NAME gui_smoke COMMAND forcetris)
+	set_tests_properties(gui_smoke PROPERTIES ENVIRONMENT
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-gui.cfg")
+endif()

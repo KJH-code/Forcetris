@@ -493,29 +493,43 @@ python tools/test_attack.py        # the attack table, and the game feeding it
 They write to a temporary profile rather than the real one, so running them will not
 disturb your own settings.
 
-## The C++ core
+## The C++ game
 
 A rewrite is under way, one piece at a time, in `cpp/`: the board, the rotation
 system with its kick tables, the finesse search, spin detection, the attack
 table — and the game loop itself, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE,
-hold, the forced drop timer, locking, line clears and the finesse retry.
-**The game you play is still the Python one** — nothing calls into the C++ yet.
+hold, the forced drop timer, locking, line clears, the finesse retry, and the
+scoring: spins, back to back, combos and attack.
 
-It exists to be graded rather than trusted. Instead of a second set of
+With SDL2 installed, the same build now produces `forcetris`, a playable game
+on that core: a clean dark board, mouse-driven menus, the forced drop meter,
+spin and combo banners — and a stat layout editor where every figure (PPS,
+APM, APS, VS, finesse, back to back, combo, and more) is a panel you tick on
+and drag wherever you want it, starting from presets, persisted between runs.
+
+```bash
+sudo apt install libsdl2-dev    # or vcpkg install sdl2 on Windows
+cmake -S cpp -B cpp/build && cmake --build cpp/build -j
+./cpp/build/forcetris
+```
+
+The Python game remains the reference implementation, and the C++ core exists
+to be graded against it rather than trusted. Instead of a second set of
 assertions the C++ is held to the answers the tested Python engine actually
 gives, two ways:
 
 - `equivalence` — every piece's cells, every finesse route, ~130,000 rotations
   over ten boards with kicks on and off, every attack table entry, ~4,600 spin
   verdicts, and where every piece falls.
-- `trace` — eleven scripted games are played through the Python engine, inputs
-  frame-stamped, and the sim has to reproduce them move for move: every
-  position the piece stands in, every lock and its frame, the loss, the final
-  board. A one-frame timing slip anywhere shifts everything after it, so
-  agreement means the loop's timing is right, not just its outcomes.
+- `trace` — thirteen scripted games are played through the Python engine,
+  inputs frame-stamped, and the sim has to reproduce them move for move: every
+  position the piece stands in, every lock and its frame, what each placement
+  scored — spin verdict, back to back, combo, perfect clear, attack — the
+  loss, the final board. A one-frame timing slip anywhere shifts everything
+  after it, so agreement means the loop's timing is right, not just its
+  outcomes.
 
 ```bash
-cmake -S cpp -B cpp/build && cmake --build cpp/build -j
 ctest --test-dir cpp/build --output-on-failure
 ```
 

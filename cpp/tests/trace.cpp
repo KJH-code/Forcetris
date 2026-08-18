@@ -50,13 +50,25 @@ std::optional<Key> key_named (const std::string& name) {
 	return std::nullopt;
 }
 
+// What the Python engine scored a placement as, once its clear had resolved.
+struct Score {
+	size_t lock = 0;
+	int spin = 0;
+	int b2b = 0;
+	int combo = 0;
+	int perfect = 0;
+	int attack = 0;
+};
+
 struct Trace {
 	std::string name;
 	SimConfig config;
+	std::vector<std::string> seed;
 	std::vector<int> pieces;
 	std::map<long, Event> events;
 	std::vector<Snap> expected;
 	std::vector<Locked> locks;
+	std::vector<Score> scores;
 	long loss = -1;
 	long frames = 0;
 	std::vector<std::string> board;
@@ -65,6 +77,9 @@ struct Trace {
 // One trace run and compared. Returns the number of disagreements printed.
 int grade (const Trace& trace) {
 	Sim sim(trace.config, trace.pieces);
+	if (!trace.seed.empty()) {
+		sim.seed(Board::from_rows(trace.seed));
+	}
 	std::vector<Snap> seen;
 	std::optional<Snap> last;
 	long ran = 0;
@@ -127,17 +142,53 @@ int grade (const Trace& trace) {
 			const Locked& want = trace.locks[i];
 			if (got.frame != want.frame || got.form != want.form
 				|| got.state != want.state || got.x != want.x || got.y != want.y
-				|| got.forced != want.forced) {
+				|| got.forced != want.forced || got.rotated != want.rotated
+				|| got.twist != want.twist) {
+				const auto flags = [] (const Locked& lock) {
+					return std::string(lock.forced ? " forced" : "")
+						+ (lock.rotated ? " rotated" : "") + (lock.twist ? " twist" : "");
+				};
 				complain("lock " + std::to_string(i) + ": got form "
 					+ std::to_string(got.form) + " state " + std::to_string(got.state)
 					+ " at " + std::to_string(got.x) + "," + std::to_string(got.y)
-					+ " frame " + std::to_string(got.frame) + (got.forced ? " forced" : "")
+					+ " frame " + std::to_string(got.frame) + flags(got)
 					+ " against form " + std::to_string(want.form) + " state "
 					+ std::to_string(want.state) + " at " + std::to_string(want.x) + ","
 					+ std::to_string(want.y) + " frame " + std::to_string(want.frame)
-					+ (want.forced ? " forced" : ""));
+					+ flags(want));
 				break;
 			}
+		}
+	}
+
+	// The scores: what each resolved placement counted for. The Python side
+	// wrote one per placement whose clear finished inside the trace, so a lock
+	// named here must be scored - and score the same.
+	for (const Score& want : trace.scores) {
+		if (want.lock >= locked.size()) {
+			complain("score names lock " + std::to_string(want.lock)
+				+ " but only " + std::to_string(locked.size()) + " locked");
+			break;
+		}
+		const Locked& got = locked[want.lock];
+		if (!got.scored) {
+			complain("lock " + std::to_string(want.lock)
+				+ " never resolved a score");
+			break;
+		}
+		if (got.spin != want.spin || got.b2b != want.b2b || got.combo != want.combo
+			|| (got.perfect ? 1 : 0) != want.perfect || got.attack != want.attack) {
+			complain("score " + std::to_string(want.lock) + ": got spin "
+				+ std::to_string(got.spin) + " b2b " + std::to_string(got.b2b)
+				+ " combo " + std::to_string(got.combo)
+				+ " perfect " + std::to_string(got.perfect ? 1 : 0)
+				+ " attack " + std::to_string(got.attack)
+				+ " against spin " + std::to_string(want.spin)
+				+ " b2b " + std::to_string(want.b2b)
+				+ " combo " + std::to_string(want.combo)
+				+ " perfect " + std::to_string(want.perfect)
+				+ " attack " + std::to_string(want.attack));
+			break;
 		}
 	}
 
@@ -189,8 +240,18 @@ int main (int argc, char** argv) {
 			int kicks = 0;
 			in >> trace.config.das_ms >> trace.config.arr_ms >> trace.config.dcd_ms
 			   >> trace.config.sdf >> trace.config.are_ms >> trace.config.forced_delay
-			   >> kicks >> trace.config.finesse_rule >> trace.config.fall_delay;
+			   >> kicks >> trace.config.finesse_rule >> trace.config.fall_delay
+			   >> trace.config.spin_rule;
 			trace.config.kicks = kicks != 0;
+		} else if (kind == "seed") {
+			std::string row;
+			in >> row;
+			trace.seed.push_back(row);
+		} else if (kind == "score") {
+			Score score{};
+			in >> score.lock >> score.spin >> score.b2b >> score.combo
+			   >> score.perfect >> score.attack;
+			trace.scores.push_back(score);
 		} else if (kind == "pieces") {
 			int form = 0;
 			while (in >> form) {
@@ -212,8 +273,13 @@ int main (int argc, char** argv) {
 		} else if (kind == "lock") {
 			Locked lock{};
 			int forced = 0;
-			in >> lock.frame >> lock.form >> lock.state >> lock.x >> lock.y >> forced;
+			int rotated = 0;
+			int twist = 0;
+			in >> lock.frame >> lock.form >> lock.state >> lock.x >> lock.y
+			   >> forced >> rotated >> twist;
 			lock.forced = forced != 0;
+			lock.rotated = rotated != 0;
+			lock.twist = twist != 0;
 			trace.locks.push_back(lock);
 		} else if (kind == "loss") {
 			in >> trace.loss;
