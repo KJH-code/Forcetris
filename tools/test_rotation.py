@@ -166,6 +166,55 @@ check(
     jammed > 0 and rescued > 0,
     '{} of {} blocked rotations were saved by a kick'.format(rescued, jammed)
 )
+# --- The same sweep with wall kicks switched off. ---------------------------
+# Kicks off is a setting, not a hypothetical, and the rule is the same either
+# way: a rotation may be refused, but it may never be committed on top of the
+# stack. Before this check the piece was left overlapping, and the next
+# placement took paste_shape's assert down with it.
+start_game()
+for row in range(14, 22):
+    core.grid.add_garbage()
+user.enablekicks = False
+unkicked = []
+tried_off = refused_off = 0
+try:
+    for form in sorted(FORMS):
+        if form == 1:
+            continue
+        for state in range(4):
+            for column in range(0, 12):
+                for depth in (0, 6, 12, 17):
+                    for turns in (1, 2, 3):
+                        core.set_shape(form)
+                        for _ in range(state):
+                            core.freeshape.rotate(True)
+                        core.freeshape.pos[0] = core.newshape.pos[0] = column
+                        core.freeshape.pos[1] = core.newshape.pos[1] = depth
+                        if core.check_collision(core.freeshape):
+                            continue
+                        core.newshape = core.freeshape.copy()
+                        tried_off += 1
+                        for _ in range(turns):
+                            core.newshape.rotate(True)
+                        core.wall_kick()
+                        if core.check_collision(core.freeshape):
+                            unkicked.append((FORMS[form], state, turns, column, depth))
+                        elif core.freeshape.state == state:
+                            refused_off += 1
+finally:
+    user.enablekicks = True
+check(
+    'with kicks off, a rotation is refused rather than forced through',
+    not unkicked,
+    '{} positions'.format(tried_off) if not unkicked
+    else '{} overlaps, first {}'.format(len(unkicked), unkicked[0])
+)
+check(
+    'and that sweep really did have rotations to refuse',
+    tried_off > 200 and refused_off > 0,
+    '{} tried, {} refused'.format(tried_off, refused_off)
+)
+
 check(
     'a 180 with room is never refused',
     not refused, 'refused {} unobstructed rotations, first {}'.format(len(refused), refused[:1])

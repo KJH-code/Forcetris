@@ -680,6 +680,12 @@ class Core:
 				else:
 					# If no wall kicks happened, check if this was a T-spin instead.
 					self.eval_tspin()
+			elif self.user.twist_flag:
+				# Kicks are switched off and the rotation collides. Refuse it rather
+				# than commit it: the piece would be left overlapping the stack, and
+				# the next placement would take paste_shape's assert down with it.
+				self.user.twist_flag = False
+				self.newshape = self.freeshape.copy()
 			# Update the active piece.
 			self.freeshape = self.newshape.copy()
 
