@@ -265,6 +265,63 @@ more than three presses; a piece that needs no turning needs no more than two. R
 that would put a piece through a wall are refused rather than kicked, because the tables
 every guideline game measures against are built that way.
 
+## Analysis and replays
+
+**Analysis** on the game over screen breaks the run down, and every game long enough to
+be worth reading is written to `data/replays` as it ends. Nothing to press, nothing to
+name.
+
+| | |
+| --- | --- |
+| Score, Pieces, Lines, Time | with pieces per second beside the count |
+| Finesse, Faults | the percentage, and how many placements it came from |
+| Key presses | what the run cost, and per piece |
+| **Without faults** | what it would have cost made cleanly |
+| Wasted | the difference |
+| Clears, Spins, Perfect clears, Best B2B / combo | what the run was made of |
+
+Those two press counts either side of each other are the point of the screen. One is what
+you did; the other is the same run, same pieces, same placements, played with no wasted
+motion.
+
+**Replays** on the main menu lists what has been saved, newest first, and **Watch Replay**
+on the analysis screen opens the one that just finished.
+
+| Key | Does |
+| --- | --- |
+| `←` `→` | Step a placement, and repeat when held |
+| `Z` | Play and pause. Playing from the end starts over |
+| `↑` `↓` | Playback speed, 1x to 8x |
+| `F` | The fix — see below |
+| `X` | Back |
+
+Each placement shows the piece, the column, what was pressed to get it there, and what
+finesse made of it: clean, some number of presses wasted, or not judged at all because it
+was a tuck, a spin, or a placement the timer took.
+
+### The fix
+
+`F` turns on the corrected view. Every placement is then annotated with the presses it
+*should* have taken — `Hold Left` where you tapped left four times — and the run totals
+underneath re-read at 100% and the lower press count.
+
+The placements do not move. Correcting someone's finesse changes what it cost them to put
+a piece somewhere, never where the piece went, so the boards in a corrected replay are the
+same boards and the score is the same score. That is the whole claim the screen makes, and
+it is the thing the tests check hardest.
+
+### The files
+
+A replay is a list of placements, not a list of keystrokes. Keystrokes would be smaller,
+but playing them back means re-simulating gravity, auto-shift and the bag, and a replay
+that drifts from the game it recorded is worse than no replay. Each entry carries the
+piece, where it ended up, what was pressed, and a snapshot of the board once the clear had
+resolved — so playback shows a board rather than deriving one.
+
+The snapshots keep only from the highest occupied row down, which is most of the size of a
+file, since most of a Tetris board is empty most of the time. The newest 30 replays are
+kept and older ones are pruned. Set `FORCETRIS_REPLAYS` to keep them somewhere else.
+
 ## Sound
 
 | Cue | When |
@@ -353,8 +410,9 @@ Two things differ in the browser:
 
 - **There is no command line.** The build runs on the defaults, so set the delay and the
   volumes in **Game Settings** instead.
-- **Nothing survives a reload.** The page gets an in-memory filesystem, so high scores and
-  the settings file alike are written and then thrown away when the tab closes.
+- **Nothing survives a reload.** The page gets an in-memory filesystem, so high scores,
+  settings and replays alike are written and then thrown away when the tab closes. The
+  analysis screen still works within a session.
 
 Audio will not start until you have pressed a key, which browsers require. Since the
 music starts when you pick a mode, this happens on its own.
@@ -366,7 +424,7 @@ pygame's SDL2 built there is its own project. The browser build is the supported
 
 ## Tests
 
-All nine suites run headlessly — no display, sound card, or browser needed.
+All eleven suites run headlessly — no display, sound card, or browser needed.
 
 ```bash
 python tools/test_forced_drop.py   # the timer rules above, against a fake clock
@@ -378,6 +436,7 @@ python tools/test_rotation.py      # 180 rotation, swept over every piece and po
 python tools/test_spins.py         # spin detection under each rule, and the banner
 python tools/test_settings.py      # the saved profile, including an actual relaunch
 python tools/test_finesse.py       # the minimums, the counting, and what must not be judged
+python tools/test_replay.py        # recording, the file, and that the fix moves nothing
 ```
 
 They write to a temporary profile rather than the real one, so running them will not

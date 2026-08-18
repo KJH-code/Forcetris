@@ -79,51 +79,67 @@ def placement (form, state, x):
 	floor = min(dy for dx, dy in cells)
 	return frozenset((x + dx, dy - floor) for dx, dy in cells)
 
+# What each move is called, in the order the search should prefer them when two
+# routes cost the same. A held key before a tap, and a single turn before a 180,
+# because that is the route a player reading the advice would rather be given.
+MOVE_NAMES = {
+	'das_left': 'Hold Left', 'das_right': 'Hold Right',
+	'left': 'Tap Left', 'right': 'Tap Right',
+	'ccw': 'Rotate CCW', 'cw': 'Rotate CW', 'flip': 'Rotate 180',
+}
+
 def moves (form, state, x):
-	# Every state one press can reach from this one.
+	# Every state one press can reach from this one, and the name of the press.
 	found = []
-	for step in (-1, 1):
-		if fits(form, state, x + step):
-			# A tap.
-			found.append((state, x + step))
+	for step, tap, das in ((-1, 'left', 'das_left'), (1, 'right', 'das_right')):
 		# A held key, which auto-shift walks into the wall off the one press.
 		wall = x
 		while fits(form, state, wall + step):
 			wall += step
 		if wall != x:
-			found.append((state, wall))
-	for turn in (1, 3, 2):
+			found.append((das, state, wall))
+		if fits(form, state, x + step) and x + step != wall:
+			# A tap. Skipped when one column IS the whole way to the wall, since the
+			# two presses would be the same move under two names.
+			found.append((tap, state, x + step))
+	for turn, name in ((1, 'cw'), (3, 'ccw'), (2, 'flip')):
 		spun = (state + turn) % 4
 		if fits(form, spun, x):
-			found.append((spun, x))
+			found.append((name, spun, x))
 	return found
 
 def table (form):
-	# Fewest presses from spawn to every placement this piece can be dropped in.
+	"""Cheapest route from spawn to every placement this piece can be dropped in.
+
+	Maps a placement to the tuple of presses that gets there. The length of that
+	tuple is the minimum the player is held to; the tuple itself is what the
+	replay shows them instead of what they actually did.
+	"""
 	if form in _TABLES:
 		return _TABLES[form]
 	start = (SPAWN_STATE, SPAWN_X)
-	seen = {start: 0}
+	routes = {start: ()}
 	queue = deque([start])
 	while queue:
 		state, x = queue.popleft()
-		cost = seen[(state, x)] + 1
-		for step in moves(form, state, x):
-			if step not in seen:
-				seen[step] = cost
-				queue.append(step)
+		route = routes[(state, x)]
+		for name, spun, moved in moves(form, state, x):
+			if (spun, moved) not in routes:
+				routes[(spun, moved)] = route + (name,)
+				queue.append((spun, moved))
 	# Several ways of holding the piece land on the same placement, and the
-	# cheapest of them is the one the player is held to.
+	# cheapest of them is the one the player is held to. Breadth first hands them
+	# over shortest first, so the first route to reach a placement is the one kept.
 	best = {}
-	for (state, x), cost in seen.items():
+	for (state, x), route in sorted(routes.items(), key=lambda item: len(item[1])):
 		key = placement(form, state, x)
-		if cost < best.get(key, cost + 1):
-			best[key] = cost
+		if key not in best:
+			best[key] = route
 	_TABLES[form] = best
 	return best
 
-def optimal (form, state, x):
-	"""Fewest presses this placement could have been made in, or None.
+def route (form, state, x):
+	"""The presses this placement should have taken, or None if it is off the table.
 
 	None means the search never reached it, which on an empty field should not
 	happen for any placement a piece can legally be in. A caller that gets one
@@ -132,3 +148,12 @@ def optimal (form, state, x):
 	if form > 6:
 		return None
 	return table(form).get(placement(form, state, x))
+
+def optimal (form, state, x):
+	# Fewest presses this placement could have been made in, or None.
+	best = route(form, state, x)
+	return None if best is None else len(best)
+
+def describe (presses):
+	# A route, or a player's actual presses, written out for the replay screen.
+	return ' + '.join(MOVE_NAMES.get(name, name) for name in presses) if presses else 'nothing'

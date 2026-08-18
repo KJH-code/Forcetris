@@ -78,10 +78,13 @@ def goto_main():
 
 
 # --- Every main menu entry goes somewhere. ----------------------------------
-# Order of the options is play, help, hiscore, settings, quit.
-for downs, action, expected in ((1, 'help', 'help_menu'), (3, 'settings', 'settings_menu')):
+# Found by name rather than by counting Down presses, so inserting a row above
+# one of these does not silently start testing a different button.
+for action, expected in (
+    ('help', 'help_menu'), ('replays', 'replay_menu'), ('settings', 'settings_menu')
+):
     goto_main()
-    press(tetris.main_menu, pg.K_DOWN, downs)
+    check('the main menu has a {} row'.format(action), goto_row(tetris.main_menu, action))
     selected = tetris.main_menu.selected.action
     press(tetris.main_menu, pg.K_RETURN)
     check(
@@ -95,7 +98,7 @@ for downs, action, expected in ((1, 'help', 'help_menu'), (3, 'settings', 'setti
 
 # --- The settings menu actually edits settings. -----------------------------
 goto_main()
-press(tetris.main_menu, pg.K_DOWN, 3)
+goto_row(tetris.main_menu, 'settings')
 press(tetris.main_menu, pg.K_RETURN)
 settings = tetris.settings_menu
 
@@ -254,8 +257,7 @@ press(settings, pg.K_ESCAPE)
 check('settings returns to the pause menu', user.state == 'pause_menu', user.state)
 
 user.state = 'loss_menu'
-tetris.loss_menu.reset()
-press(tetris.loss_menu, pg.K_DOWN, 1)  # restart, settings, quit
+goto_row(tetris.loss_menu, 'settings')
 press(tetris.loss_menu, pg.K_RETURN)
 check(
     'the loss menu opens settings',

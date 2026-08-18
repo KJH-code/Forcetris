@@ -5,9 +5,19 @@ try:
 	import engine.filehandler as fh
 	import engine.controls as ctl
 	import engine.userstate as us
+	import engine.finesse as fin
+	import engine.replay as rp
 except ImportError:
 	print("Something fucking jammed in here:")
 	raise
+
+# The pieces by letter, in Shape.form order.
+SHAPE_LETTERS = 'IOTSZJLG'
+# What each of those looks like, sampled from textures/tileset.png so the replay
+# is drawn in the same colours as the game it is replaying. The last is garbage.
+PIECE_COLOURS = (
+	0x1BDDDF, 0xDDDF1B, 0xAF1BDF, 0x49DF1B, 0xDF1B1B, 0x1B1BDF, 0xDF7C1B, 0x7D7D7D,
+)
 
 class MainMenu (env.Menu):
 	"""
@@ -17,25 +27,35 @@ class MainMenu (env.Menu):
 	changing the options.
 	"""
 
-	def __init__ (self, user, score_menu, help_menu, settings_menu):
-		bg = pg.Surface((210, 300))
-		bg.fill(0x00FF00)
-		super().__init__(user, bg, midtop=(env.screct.width / 2, 250))
-		self.score_menu = score_menu
-		self.help_menu = help_menu
-		self.settings_menu = settings_menu
+	rows = (
+		('play', 'Start Game'),
+		('help', 'How to Play'),
+		('hiscore', 'High Scores'),
+		('replays', 'Replays'),
+		('settings', 'Game Settings'),
+		('quit', 'Quit'),
+	)
 
+	def __init__ (self, user, score_menu, help_menu, settings_menu, replay_menu):
 		hmargin = 15 # horizontal margin in pixels
 		tmargin = 20 # top margin in pixels
 		spacing = 5 # space between selections in pixels
-		height = (self.rect.h - 2 * tmargin - 4 * spacing) / 5 # height of selections in pixels
+		height = 48 # height of selections in pixels
+		# Sized from the row list, so adding an entry grows the panel rather than
+		# squeezing the rows into a shorter one.
+		bg = pg.Surface((210, 2 * tmargin + len(self.rows) * height + (len(self.rows) - 1) * spacing))
+		bg.fill(0x00FF00)
+		super().__init__(user, bg, center=(env.screct.width / 2, env.screct.height / 2 + 60))
+		self.score_menu = score_menu
+		self.help_menu = help_menu
+		self.settings_menu = settings_menu
+		self.replay_menu = replay_menu
 
 		self.selections = [[
-			env.MenuOption(self, 'play', 'Start Game', (hmargin, tmargin), (self.rect.w - 2 * hmargin, height)),
-			env.MenuOption(self, 'help', 'How to Play', (hmargin, tmargin + (spacing + height)), (self.rect.w - 2 * hmargin, height)),
-			env.MenuOption(self, 'hiscore', 'High Scores', (hmargin, tmargin + 2 * (spacing + height)), (self.rect.w - 2 * hmargin, height)),
-			env.MenuOption(self, 'settings', 'Game Settings', (hmargin, tmargin + 3 * (spacing + height)), (self.rect.w - 2 * hmargin, height)),
-			env.MenuOption(self, 'quit', 'Quit', (hmargin, tmargin + 4 * (spacing + height)), (self.rect.w - 2 * hmargin, height))]]
+			env.MenuOption(
+				self, action, label, (hmargin, tmargin + i * (spacing + height)),
+				(self.rect.w - 2 * hmargin, height))
+			for i, (action, label) in enumerate(self.rows)]]
 
 	def eval_input (self):
 		event = super().eval_input()
@@ -51,6 +71,12 @@ class MainMenu (env.Menu):
 					# Load the scores into the score menu every time it is selected so the scores are up to date.
 					with fh.SFH() as sfh:
 						self.score_menu.scorelist = sfh.decode()
+				elif self.selected.action == 'replays':
+					# Re-read the folder on the way in, since a game played since this
+					# was last opened will have added to it.
+					self.replay_menu.return_state = 'main_menu'
+					self.replay_menu.refresh()
+					self.user.state = 'replay_menu'
 				elif self.selected.action == 'settings':
 					self.settings_menu.return_state = 'main_menu'
 					self.user.state = 'settings_menu'
@@ -822,22 +848,31 @@ class LossMenu (env.Menu):
 	"""
 	When you lose the game, this menu pops up to show your score and let you try for a higher one.
 	"""
-	def __init__ (self, user, settings_menu):
-		self.loss_bg = pg.Surface(env.screct.size)
-		bg = pg.Surface((250, 300))
-		bg.fill(0x7F7F00)
-		super().__init__(user, bg, center=env.screct.center)
-		self.settings_menu = settings_menu
+	rows = (
+		('restart', 'Try Again?'),
+		('analysis', 'Analysis'),
+		('settings', 'Game Settings'),
+		('quit', 'Return to Menu'),
+	)
 
+	def __init__ (self, user, settings_menu, analysis_menu):
 		tmargin = 20
 		hmargin = 15
 		spacing = 5
-		height = 60
+		height = 52
+		self.loss_bg = pg.Surface(env.screct.size)
+		# One row taller than the base game's, so sized from the list.
+		bg = pg.Surface((250, tmargin + (len(self.rows) + 1) * (spacing + height) + tmargin))
+		bg.fill(0x7F7F00)
+		super().__init__(user, bg, center=env.screct.center)
+		self.settings_menu = settings_menu
+		self.analysis_menu = analysis_menu
 
 		self.selections = [[
-			env.MenuOption(self, 'restart', 'Try Again?', (hmargin, tmargin + spacing + height), (self.rect.w - 2 * hmargin, height)),
-			env.MenuOption(self, 'settings', 'Game Settings', (hmargin, tmargin + 2 * (spacing + height)), (self.rect.w - 2 * hmargin, height)),
-			env.MenuOption(self, 'quit', 'Return to Menu', (hmargin, tmargin + 3 * (spacing + height)), (self.rect.w - 2 * hmargin, height))]]
+			env.MenuOption(
+				self, action, label, (hmargin, tmargin + (i + 1) * (spacing + height)),
+				(self.rect.w - 2 * hmargin, height))
+			for i, (action, label) in enumerate(self.rows)]]
 
 	def render_loss (self, bg):
 		# To be called inside the game engine, saving relevant game data to be used.
@@ -854,6 +889,9 @@ class LossMenu (env.Menu):
 					self.user.resetgame = True
 					env.restart_music()
 					self.reset()
+				elif self.selected.action == 'analysis':
+					self.analysis_menu.return_state = 'loss_menu'
+					self.user.state = 'analysis_menu'
 				elif self.selected.action == 'settings':
 					self.settings_menu.return_state = 'loss_menu'
 					self.user.state = 'settings_menu'
@@ -873,4 +911,387 @@ class LossMenu (env.Menu):
 		self.draw(env.screen)
 		self.rendered_text()
 		super().run()
+		pg.display.flip()
+
+class AnalysisMenu (env.Menu):
+	"""
+	What the run was actually made of, once it is over.
+
+	The finesse counter on the HUD says how you are doing; this says what you did.
+	The two figures either side of it are the point: what the run cost in presses,
+	and what it would have cost had every placement been made in the fewest.
+	"""
+	def __init__ (self, user, replay_menu):
+		bg = pg.Surface((470, 470))
+		bg.fill(0x203040)
+		super().__init__(user, bg, center=env.screct.center)
+		self.replay_menu = replay_menu
+		self.return_state = 'loss_menu'
+		self.replay = None
+		self.stats = None
+		self.fixed = None
+		self.smallfont = pg.font.SysFont(None, 21)
+
+		hmargin = 20
+		height = 34
+		width = self.rect.w - 2 * hmargin
+		self.selections = [[
+			env.MenuOption(self, 'watch', 'Watch Replay', (hmargin, 386), (width, height)),
+			env.MenuOption(self, 'back', 'Back', (hmargin, 386 + height + 6), (width, height))]]
+
+	def show (self, replay):
+		# Handed the finished recording when a game ends. A game too short to be
+		# worth a file leaves the screen with nothing, which it says rather than
+		# pretending to have numbers.
+		self.replay = replay
+		self.stats = None if replay is None else replay.summary()
+		self.fixed = None if replay is None else replay.summary(fixed=True)
+		self.reset()
+
+	def eval_input (self):
+		event = super().eval_input()
+		if event.type == pg.KEYDOWN:
+			if event.key == pg.K_z or event.key == pg.K_RETURN:
+				if self.selected.action == 'watch' and self.replay is not None:
+					self.replay_menu.watch(self.replay, self.user.state)
+				else:
+					self.user.state = self.return_state
+					self.reset()
+			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
+				self.user.state = self.return_state
+				self.reset()
+
+	def rows (self):
+		# Left column, right column. Built here rather than drawn inline so the
+		# layout check can count them.
+		if self.stats is None:
+			return []
+		s, f = self.stats, self.fixed
+		clears = s['clears']
+		return [
+			('Score', '{}'.format(s['score'])),
+			('Pieces', '{}  ({:.2f}/s)'.format(s['placements'], s['pps'])),
+			('Lines', '{}'.format(s['lines'])),
+			('Time', '{:.0f}:{:04.1f}'.format(s['seconds'] // 60, s['seconds'] % 60)),
+			('', ''),
+			('Finesse', '{:.1%}'.format(s['rate'])),
+			('Faults', '{} over {} judged'.format(s['faults'], s['judged'])),
+			('Key presses', '{}  ({:.2f}/piece)'.format(s['presses'], s['ppp'])),
+			('Without faults', '{}  ({:.2f}/piece)'.format(f['presses'], f['ppp'])),
+			('Wasted', '{} press{}'.format(s['wasted'], '' if s['wasted'] == 1 else 'es')),
+			('', ''),
+			('Clears', ' '.join(
+				'{}x{}'.format(count, rp.CLEAR_NAMES.get(size, '{}L'.format(size)))
+				for size, count in sorted(clears.items())) or 'none'),
+			('Spins', '{}'.format(s['spins'])),
+			('Perfect clears', '{}'.format(s['perfects'])),
+			('Best B2B / combo', '{} / {}'.format(s['best_b2b'], s['best_combo'])),
+		]
+
+	@env.Menu.render
+	def display_body (self, surf):
+		self.render_text('Analysis', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 12))
+		if self.stats is None:
+			self.render_text(
+				'That run was too short to record.', 0xC0C0C0, surf,
+				midtop=(self.rect.w / 2, 60))
+			return
+		top = 44
+		for i, (name, value) in enumerate(self.rows()):
+			if not name:
+				continue
+			y = top + i * 23
+			self.render_text(name, 0xA8C0D8, surf, topleft=(24, y))
+			self.render_text(value, 0xFFFFFF, surf, topright=(self.rect.w - 24, y))
+
+	def run (self):
+		self.menu_bg.draw(env.screen)
+		self.draw(env.screen)
+		super().run()
+		self.display_body()
+		pg.display.flip()
+
+class ReplayMenu (env.Menu):
+	"""
+	The saved replays, newest first, and the screen that plays one back.
+
+	Both live here because the list is only ever a way into the viewer, and a
+	separate screen for four lines of file names would be four lines of file names
+	on its own screen.
+	"""
+	# Placements advanced per second when playing rather than stepping.
+	speeds = (2., 4., 8.)
+	rows_shown = 8
+
+	def __init__ (self, user):
+		bg = pg.Surface((560, 420))
+		bg.fill(0x203040)
+		super().__init__(user, bg, center=env.screct.center)
+		self.return_state = 'main_menu'
+		self.smallfont = pg.font.SysFont(None, 21)
+		self.replays = []
+		self.top = 0
+		self.viewer = ReplayViewer(user, self)
+		self.selections = [[env.MenuOption(self, 'none', '', (20, 44), (self.rect.w - 40, 30))]]
+		self.refresh()
+
+	def refresh (self):
+		# Re-read the folder every time the screen is opened, since a game played
+		# since it was last looked at will have added to it.
+		self.replays = rp.listing()
+		hmargin = 20
+		height = 34
+		spacing = 4
+		width = self.rect.w - 2 * hmargin
+		count = max(1, min(len(self.replays), self.rows_shown))
+		self.selections = [[
+			env.MenuOption(self, 'row{}'.format(i), '', (hmargin, 52 + i * (height + spacing)), (width, height))
+			for i in range(count)]]
+		self.top = 0
+		self.reset()
+		self.set_labels()
+
+	def set_labels (self):
+		for i, option in enumerate(self.selections[0]):
+			index = self.top + i
+			text = self.replays[index].title() if index < len(self.replays) else ''
+			option.text = self.smallfont.render(text or 'No replays yet', 0, pg.Color(255, 255, 255))
+			option.text_rect = option.text.get_rect(center=option.rect.center)
+
+	def chosen (self):
+		index = self.top + self.selection[1]
+		return self.replays[index] if index < len(self.replays) else None
+
+	def watch (self, replay, return_state):
+		# Open the viewer on a replay, remembering where to go back to. The
+		# analysis screen uses this too, which is why it is not private.
+		self.viewer.load(replay, return_state)
+		self.user.state = 'replay_viewer'
+
+	def eval_move (self, coord, movedir):
+		if coord == 0:
+			return
+		super().eval_move(coord, movedir)
+		# Scroll the window when the cursor runs off either end of it.
+		shown = len(self.selections[0])
+		if self.selection[1] == shown - 1 and self.top + shown < len(self.replays) and movedir > 0:
+			self.top += 1
+			self.selection[1] = shown - 1
+		elif self.selection[1] == 0 and self.top > 0 and movedir < 0:
+			self.top -= 1
+		self.set_labels()
+
+	def eval_input (self):
+		event = super().eval_input()
+		if event.type == pg.KEYDOWN:
+			if event.key == pg.K_z or event.key == pg.K_RETURN:
+				replay = self.chosen()
+				if replay is not None:
+					self.watch(replay, 'replay_menu')
+			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
+				self.user.state = self.return_state
+				self.reset()
+
+	@env.Menu.render
+	def display_hint (self, surf):
+		self.render_text('Replays', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 12))
+		if len(self.replays) > len(self.selections[0]):
+			self.render_text(
+				'{} of {}'.format(self.top + 1, len(self.replays)), 0xA8C0D8, surf,
+				topright=(self.rect.w - 20, 16))
+		self.render_text(
+			'Z to watch, X to go back', 0xC8D8E8, surf,
+			midbottom=(self.rect.w / 2, self.rect.h - 10))
+
+	def run (self):
+		self.menu_bg.draw(env.screen)
+		self.draw(env.screen)
+		super().run()
+		self.display_hint()
+		pg.display.flip()
+
+class ReplayViewer (env.Menu):
+	"""
+	Plays a replay back, one placement at a time.
+
+	The board is drawn from the snapshot each placement carries rather than
+	re-simulated, so what is on screen is what was on screen. The one thing the
+	viewer can change is the advice down the side: with the fix on, every
+	placement is annotated with the presses it should have taken instead of the
+	ones it did. The placements themselves are untouched, because correcting
+	someone's finesse does not move their pieces - it only changes what it cost
+	them to put those pieces there.
+	"""
+	cell = 18
+	speeds = (1., 2., 4., 8.)
+
+	def __init__ (self, user, replay_menu):
+		bg = pg.Surface((760, 540))
+		bg.fill(0x101820)
+		super().__init__(user, bg, center=env.screct.center)
+		self.replay_menu = replay_menu
+		self.return_state = 'replay_menu'
+		self.smallfont = pg.font.SysFont(None, 21)
+		self.replay = None
+		self.index = 0
+		self.playing = False
+		self.speed = 1
+		self.fixed = False
+		self.carry = 0.
+		self.selections = [[env.MenuOption(self, 'view', '', (0, 0), (1, 1))]]
+
+	def load (self, replay, return_state='replay_menu'):
+		self.replay = replay
+		self.return_state = return_state
+		self.index = 0
+		self.playing = False
+		self.carry = 0.
+
+	def here (self):
+		if self.replay is None or not len(self.replay):
+			return None
+		return self.replay.placements[min(self.index, len(self.replay) - 1)]
+
+	def step (self, by):
+		if self.replay is None or not len(self.replay):
+			return
+		self.index = max(0, min(len(self.replay) - 1, self.index + by))
+
+	def eval_move (self, coord, movedir):
+		# Sideways steps through the run and repeats when held; up and down pick
+		# the playback speed. The cursor itself never moves - there is one thing on
+		# this screen and it is the board.
+		if coord == 0:
+			if not self.moved:
+				self.step(movedir)
+				self.moved = True
+			else:
+				self.movetime -= 1
+				if self.movetime < 1:
+					self.step(movedir)
+					self.movetime = 2
+			return
+		if not self.moved:
+			self.speed = max(0, min(len(self.speeds) - 1, self.speed - movedir))
+			self.moved = True
+
+	def eval_input (self):
+		event = super().eval_input()
+		if event.type == pg.KEYDOWN:
+			if event.key == pg.K_z or event.key == pg.K_RETURN:
+				self.playing = not self.playing
+				self.carry = 0.
+				if self.playing and self.replay is not None and self.index >= len(self.replay) - 1:
+					# Play from the top rather than sitting on the last frame doing
+					# nothing, which is what pressing play on a finished replay means.
+					self.index = 0
+			elif event.key == pg.K_f:
+				self.fixed = not self.fixed
+			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
+				self.playing = False
+				self.user.state = self.return_state
+				if self.return_state == 'replay_menu':
+					self.replay_menu.reset()
+
+	def advance (self):
+		# Called once a frame while playing.
+		if not self.playing or self.replay is None:
+			return
+		self.carry += self.speeds[self.speed] / 50.
+		while self.carry >= 1.:
+			self.carry -= 1.
+			if self.index >= len(self.replay) - 1:
+				self.playing = False
+				break
+			self.index += 1
+
+	def draw_board (self, surf, place):
+		left, top = 24, 44
+		rows = rp.padded(place.rows if place is not None else [])
+		wide = len(rows[0]) if rows else 10
+		pg.draw.rect(
+			surf, pg.Color(0x18, 0x20, 0x2C),
+			(left - 2, top - 2, wide * self.cell + 4, len(rows) * self.cell + 4))
+		for y, row in enumerate(rows):
+			for x, mark in enumerate(row):
+				if mark == '.':
+					continue
+				pg.draw.rect(
+					surf, env.convert_hexcolor(PIECE_COLOURS[int(mark) % len(PIECE_COLOURS)]),
+					(left + x * self.cell + 1, top + y * self.cell + 1, self.cell - 2, self.cell - 2))
+
+	@env.Menu.render
+	def display_body (self, surf):
+		place = self.here()
+		self.render_text('Replay', 0xFFFFFF, surf, topleft=(24, 14))
+		if self.replay is None or place is None:
+			self.render_text('Nothing to play back.', 0xC0C0C0, surf, topleft=(24, 48))
+			return
+		total = len(self.replay)
+		self.render_text(
+			'{} / {}'.format(self.index + 1, total), 0xA8C0D8, surf, topright=(self.rect.w - 24, 14))
+		self.draw_board(surf, place)
+
+		panel = 24 + 10 * self.cell + 28
+		presses = place.route() if self.fixed else place.presses
+		if self.fixed and presses is None:
+			presses = place.presses
+		lines = [
+			('Piece', '{}{}'.format(SHAPE_LETTERS[place.form], ' (held)' if place.held else ''), 0xFFFFFF),
+			('Column', '{}'.format(place.x), 0xFFFFFF),
+			('Presses', fin.describe(presses), 0xFFFFFF),
+			('Count', '{}'.format(len(presses)), 0xFFFFFF),
+		]
+		if place.forced:
+			lines.append(('Verdict', 'timer took it', 0xFFC040))
+		elif not place.judged:
+			lines.append(('Verdict', 'tuck or spin, not judged', 0xA8C0D8))
+		elif self.fixed:
+			lines.append(('Verdict', 'corrected', 0x7CFF8A))
+		elif place.fault:
+			lines.append(('Verdict', '{} press{} wasted'.format(
+				place.wasted, '' if place.wasted == 1 else 'es'), 0xFF7B7B))
+		else:
+			lines.append(('Verdict', 'clean', 0x7CFF8A))
+		if place.lines:
+			lines.append(('Cleared', '{}{}'.format(
+				rp.CLEAR_NAMES.get(place.lines, '{} lines'.format(place.lines)),
+				' + PC' if place.perfect else ''), 0xFFD24A))
+		if place.spin:
+			lines.append(('Spin', place.spin, 0xFFD24A))
+		lines.append(('Score', '{}'.format(place.score), 0xFFFFFF))
+		lines.append(('At', '{:.1f}s'.format(place.elapsed or 0.), 0xA8C0D8))
+
+		for i, (name, value, colour) in enumerate(lines):
+			y = 48 + i * 24
+			self.render_text(name, 0xA8C0D8, surf, topleft=(panel, y))
+			self.render_text(value, colour, surf, topleft=(panel + 96, y))
+
+		summary = self.replay.summary(self.fixed)
+		y = 48 + (len(lines) + 1) * 24
+		self.render_text('Whole run', 0xFFFFFF, surf, topleft=(panel, y))
+		for i, (name, value) in enumerate((
+			('Finesse', '{:.1%}'.format(summary['rate'])),
+			('Presses', '{}'.format(summary['presses'])),
+			('Per piece', '{:.2f}'.format(summary['ppp'])),
+		)):
+			self.render_text(name, 0xA8C0D8, surf, topleft=(panel, y + 24 + i * 22))
+			self.render_text(value, 0xFFFFFF, surf, topleft=(panel + 96, y + 24 + i * 22))
+
+		self.render_text(
+			'{}  |  {:g}x'.format('Playing' if self.playing else 'Paused', self.speeds[self.speed]),
+			0xC8D8E8, surf, bottomleft=(24, self.rect.h - 32))
+		self.render_text(
+			'F: fix finesse  [{}]'.format('on' if self.fixed else 'off'),
+			0x7CFF8A if self.fixed else 0xC8D8E8, surf, bottomright=(self.rect.w - 24, self.rect.h - 32))
+		self.render_text(
+			'LEFT / RIGHT step, Z play, UP / DOWN speed, F fix, X back',
+			0xC8D8E8, surf, midbottom=(self.rect.w / 2, self.rect.h - 10))
+
+	def run (self):
+		self.menu_bg.draw(env.screen)
+		self.draw(env.screen)
+		self.advance()
+		super().run()
+		self.display_body()
 		pg.display.flip()

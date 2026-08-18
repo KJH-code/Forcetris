@@ -12,6 +12,7 @@ try:
 	import engine.controls as ctl
 	import engine.userstate as us
 	import engine.finesse as fin
+	import engine.replay as rp
 	from engine.shapes import (Shape, Grid)
 	from engine.sortedcollections import SortedCollection as SC
 except ImportError:
@@ -63,6 +64,10 @@ class Core:
 		env.load_sounds()
 
 		self.grid = Grid(user)
+		# Kept across games: set_data starts a new recording, and the one belonging
+		# to the game that just ended has to outlive it for the analysis screen.
+		self.recorder = rp.Recorder()
+		self.replay = None
 		self.set_data()
 
 	def __str__ (self):
@@ -79,6 +84,7 @@ class Core:
 	def set_data (self):
 		# Initializes the game data.
 		self.grid.set_cells()
+		self.recorder.begin(self.user)
 		self.nextshapes = self.gen_shapelist() # List of next shapes.
 		self.freeshape = Shape() # The actual free tetrimino
 		self.newshape = Shape() # Potential new position to be checked.
@@ -124,8 +130,15 @@ class Core:
 		self.rotated_last = False # True if the last thing the player did to the piece was turn it.
 
 		self.finesse_inputs = 0 # Presses spent on the piece in play.
+		self.input_log = [] # Those same presses, in order, for the replay.
+		self.from_hold = False # True if the piece in play came out of storage.
 		self.finesse_label = '' # Banner naming the presses last thrown away, if any.
 		self.finesse_frames = 0 # Frames that banner has left on screen.
+		# The verdict on the placement being locked, handed from eval_finesse to the
+		# recorder a moment later.
+		self.last_judged = False
+		self.last_best = None
+		self.last_forced = False
 
 		self.spin_label = '' # Banner naming the spin just made, if any.
 		self.spin_count = '' # The line count that spin went on to clear.
@@ -163,6 +176,13 @@ class Core:
 		# too, and defaults to none.
 		self.entry_delay = int(round(self.user.are / self.frame_ms))
 
+	def note_input (self, name):
+		# One press of one of the keys finesse counts. Kept both as a running total
+		# and as a list, because the replay wants to show what was pressed and in
+		# what order, not just how much of it there was.
+		self.finesse_inputs += 1
+		self.input_log.append(name)
+
 	def cut_das (self):
 		# DAS cut delay: an auto-shift that has finished charging is knocked back to
 		# dcd_frames when the piece spawns or rotates, so a held direction doesn't
@@ -197,6 +217,8 @@ class Core:
 		self.cut_das()
 		# A new piece is a fresh count. Nothing spent on the last one is its fault.
 		self.finesse_inputs = 0
+		self.input_log = []
+		self.from_hold = False
 		# Start this piece's forced drop timer, unless that spawn just ended the game.
 		self.piece_elapsed = None if self.user.state == 'loss_menu' else 0.
 
@@ -233,6 +255,8 @@ class Core:
 					# clean count. Hold itself is not charged for: every guideline finesse
 					# table leaves it out, and counting it would make the swap a fault.
 					self.finesse_inputs = 0
+					self.input_log = []
+					self.from_hold = True
 				else:
 					# Allow pieces to be swapped during spawn delay.
 					self.nextshapes[0], self.storedshape = self.storedshape, self.nextshapes[0]
@@ -267,23 +291,36 @@ class Core:
 				break
 		return trial.pos == self.freeshape.pos
 
-	def eval_finesse (self, forced):
-		"""Judge the placement about to be made. True if the piece was handed back.
+	def judge_placement (self, forced):
+		"""What finesse makes of the piece where it now sits.
 
-		Called with the piece already sitting where it is going to lock, from both
-		the routes that get it there - the player's own drop and gravity running out
-		- so that a placement counts the same however it was committed.
+		Answered whatever the finesse setting says, because the replay is worth
+		analysing even for a game played with the counter switched off, and two
+		separate implementations of the same judgement would drift apart.
+
+		Returns whether the placement is judgeable at all, and the fewest presses
+		it could have been made in.
 		"""
-		if self.user.finesse == us.FINESSE_OFF or self.user.state == 'loss_menu':
-			return False
-		if forced:
-			# The timer chose this placement, not the player. Charging them for the
-			# presses they had not finished making would be scoring the clock.
-			return False
+		self.last_forced = forced
+		if forced or self.user.state == 'loss_menu' or self.freeshape.form > 6:
+			return False, None
 		if not self.drop_reachable():
-			return False
+			return False, None
 		best = fin.optimal(self.freeshape.form, self.freeshape.state, self.freeshape.pos[0])
-		if best is None:
+		return best is not None, best
+
+	def eval_finesse (self, forced):
+		"""Apply the finesse rule to the placement about to be made.
+
+		True if the piece was handed back. Called with the piece already sitting
+		where it is going to lock, from both the routes that get it there - the
+		player's own drop and gravity running out - so that a placement counts the
+		same however it was committed.
+		"""
+		judged, best = self.judge_placement(forced)
+		# Stashed for the recorder, which runs a moment later inside eval_fallen.
+		self.last_judged, self.last_best = judged, best
+		if self.user.finesse == us.FINESSE_OFF or not judged:
 			return False
 		self.user.finesse_judged += 1
 		wasted = self.finesse_inputs - best
@@ -370,7 +407,7 @@ class Core:
 					# One press, however far auto-shift goes on to carry the piece. That
 					# is the whole point of the measure: holding the key to the wall costs
 					# what a single tap costs, and tapping four times costs four.
-					self.finesse_inputs += 1
+					self.note_input('left')
 					# Only the initial press is heard. Auto-shift steps run every couple
 					# of frames and would turn the cue into a machine gun.
 					self.rotated_last = False
@@ -381,7 +418,7 @@ class Core:
 				self.shift_frame = self.shift_delay + 1
 				if self.entry_flag:
 					self.newshape.translate(( 1, 0))
-					self.finesse_inputs += 1
+					self.note_input('right')
 					self.rotated_last = False
 					env.play_sound('move')
 			elif ctl.matches(self.user, 'softdrop', event.key): # Toggle soft drop
@@ -397,14 +434,14 @@ class Core:
 					self.wall_kick()
 					self.cut_das()
 					self.rotated_last = True
-					self.finesse_inputs += 1
+					self.note_input('ccw')
 					env.play_sound('rotate')
 				elif ctl.matches(self.user, 'rotate_cw', event.key): # Rotate CW
 					self.newshape.rotate(True)
 					self.wall_kick()
 					self.cut_das()
 					self.rotated_last = True
-					self.finesse_inputs += 1
+					self.note_input('cw')
 					env.play_sound('rotate')
 				elif ctl.matches(self.user, 'rotate_180', event.key): # Rotate 180
 					# Two clockwise steps, so the rotation maths stays in one place. The
@@ -414,7 +451,7 @@ class Core:
 					self.wall_kick()
 					self.cut_das()
 					self.rotated_last = True
-					self.finesse_inputs += 1
+					self.note_input('flip')
 					env.play_sound('rotate')
 
 				elif ctl.matches(self.user, 'harddrop', event.key): # Hard drop
@@ -754,6 +791,19 @@ class Core:
 		# lock meant the spin bonus never once applied. They are cleared on spawn.
 		self.begin_banner()
 		self.announce_spin()
+		# Everything about the placement that is known now. What it went on to clear
+		# is not, so the record is completed when the clearer has finished.
+		self.recorder.hold(
+			form=self.freeshape.form,
+			state=self.freeshape.state,
+			x=self.freeshape.pos[0],
+			y=self.freeshape.pos[1],
+			held=self.from_hold,
+			presses=list(self.input_log),
+			best=self.last_best,
+			judged=self.last_judged,
+			forced=self.last_forced,
+		)
 		self.grid.paste_shape(self.freeshape)
 		# Check if lines were cleared, and add the number of lines cleared to the total if any.
 		self.clearing = True
@@ -821,6 +871,13 @@ class Core:
 				self.user.state = 'save_menu'
 			self.save_menu.loss_bg.blit(env.screen, (0, 0))
 			self.loss_menu.render_loss(env.screen)
+			# Close the recording and put it on disk. Saved rather than offered,
+			# because the moment a run ends is the worst moment to ask someone
+			# whether they will want to look at it.
+			self.replay = self.recorder.finish(self.user)
+			if self.replay is not None:
+				rp.save(self.replay)
+			self.loss_menu.analysis_menu.show(self.replay)
 			pg.mixer.music.fadeout(2500)
 			env.play_sound('gameover')
 
@@ -1063,6 +1120,10 @@ class Core:
 						# A placement that cleared no lines cannot empty the board, since it
 						# just put a piece on it.
 						self.announce_perfect()
+					# The board has settled into whatever it is going to be, which is the
+					# first moment the placement can be written down in full.
+					self.recorder.commit(
+						self.user, self.grid, self.spin_label, self.spin_perfect)
 		# Refresh screen. There is not enough fast rendering to justify using update()
 		pg.display.flip()
 
@@ -1083,8 +1144,13 @@ def init (argv):
 		settings_menu = menu.SettingsMenu(user, controls_menu, handling_menu)
 		pause_menu = menu.PauseMenu(user, settings_menu)
 		save_menu = menu.SaveMenu(user)
-		loss_menu = menu.LossMenu(user, settings_menu)
-		main_menu = menu.MainMenu(user, score_menu, help_menu, settings_menu)
+		replay_menu = menu.ReplayMenu(user)
+		# The viewer is the replay screen's own, but the state machine dispatches on
+		# attribute name, so it needs one here as well.
+		replay_viewer = replay_menu.viewer
+		analysis_menu = menu.AnalysisMenu(user, replay_menu)
+		loss_menu = menu.LossMenu(user, settings_menu, analysis_menu)
+		main_menu = menu.MainMenu(user, score_menu, help_menu, settings_menu, replay_menu)
 		game = Core(user, pause_menu, save_menu, loss_menu)
 
 		def __str__(self):

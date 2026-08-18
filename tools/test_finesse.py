@@ -62,6 +62,22 @@ PLACEMENTS = {I: 17, O: 9, T: 34, S: 17, Z: 17, J: 34, L: 34}
 # turn, and a piece that needs no turning needs no more than two.
 LONGEST = {I: 2, O: 2, T: 3, S: 3, Z: 3, J: 3, L: 3}
 
+def walk(form, presses):
+    """Follow a route from spawn, one press at a time, and say where it ends up."""
+    state, x = fin.SPAWN_STATE, fin.SPAWN_X
+    for name in presses:
+        if name in ('cw', 'ccw', 'flip'):
+            state = (state + {'cw': 1, 'ccw': 3, 'flip': 2}[name]) % 4
+        elif name in ('left', 'right'):
+            x += -1 if name == 'left' else 1
+        else:
+            step = -1 if name == 'das_left' else 1
+            while fin.fits(form, state, x + step):
+                x += step
+        assert fin.fits(form, state, x), 'route left the board'
+    return fin.placement(form, state, x)
+
+
 for form in range(7):
     table = fin.table(form)
     check(
@@ -69,10 +85,21 @@ for form in range(7):
         len(table) == PLACEMENTS[form],
         '{} against {}'.format(len(table), PLACEMENTS[form])
     )
+    worst = max(len(r) for r in table.values())
     check(
         '{} never needs more than {} presses'.format(NAMES[form], LONGEST[form]),
-        max(table.values()) == LONGEST[form],
-        'worst is {}'.format(max(table.values()))
+        worst == LONGEST[form], 'worst is {}'.format(worst)
+    )
+    # A route is advice the replay hands the player, so it has to actually work:
+    # walked press by press from spawn, it must arrive at the placement it is
+    # filed under. A route that is merely the right length would still be wrong.
+    astray = [
+        fin.describe(r) for key, r in table.items()
+        if walk(form, r) != key
+    ]
+    check(
+        '{} routes arrive where they are filed'.format(NAMES[form]),
+        not astray, str(astray[:3])
     )
 
 check(
