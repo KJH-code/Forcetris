@@ -502,10 +502,11 @@ hold, the forced drop timer, locking, line clears, the finesse retry, and the
 scoring: spins, back to back, combos and attack.
 
 With SDL2 installed, the same build now produces `forcetris`, a playable game
-on that core: a clean dark board, mouse-driven menus, the forced drop meter,
-spin and combo banners — and a stat layout editor where every figure (PPS,
-APM, APS, VS, finesse, back to back, combo, and more) is a panel you tick on
-and drag wherever you want it, starting from presets, persisted between runs.
+on that core: a clean dark board, mouse-driven menus, rebindable keys, the
+forced drop meter, spin and combo banners — and a stat layout editor where
+every figure (PPS, APM, APS, VS, finesse, back to back, combo, and more) is a
+panel you tick on and drag wherever you want it, starting from presets,
+persisted between runs.
 
 ```bash
 sudo apt install libsdl2-dev    # or vcpkg install sdl2 on Windows

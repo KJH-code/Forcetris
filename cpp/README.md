@@ -29,7 +29,11 @@ cmake --build cpp/build -j
 ```
 
 Arrows move, `Z`/`X`/`A` turn, space drops, down soft drops, shift or `C`
-holds, escape pauses. Everything else is the mouse.
+holds, escape pauses. Everything else is the mouse — and all of it except
+escape is rebindable: the settings screen lists every action, a click on a
+bound key unbinds it, and `+` grabs the next key you press. An action can
+hold any number of keys, but a key serves one action - binding it somewhere
+new takes it away from where it was, so nothing fires twice.
 
 The stat panels beside the board are the point: pause → *Edit stat layout*
 gives every stat a checkbox and makes the panels draggable, so PPS, APM, APS,
@@ -39,7 +43,8 @@ arrangement and all settings persist in a plain text file under SDL's
 per-user pref directory (`FORCETRIS_GUI_CONFIG` overrides the path).
 
 Settings — DAS/ARR/DCD/SDF/ARE, the forced drop timer, spin rule, finesse
-rule, kicks — mirror the Python game's and apply from the next game.
+rule, kicks, and the key bindings — mirror the Python game's. Handling
+applies from the next game; keys apply at once.
 
 On Windows, install SDL2 through vcpkg (`vcpkg install sdl2`) or point
 `SDL2_DIR` at an unpacked SDL2 development package, then run the same CMake
@@ -122,7 +127,7 @@ entry went undetected. The seeded rubble boards exist because of that.
 
 ## What it does not have
 
-No audio, no replay files, no rebindable keys yet. The Python game remains
+No audio, no replay files yet. The Python game remains
 the reference implementation and keeps all of those. The sim plays free mode
 with naive clearing, which is the trainer's default; the cascade clear modes
 and arcade's garbage ramp are not ported.

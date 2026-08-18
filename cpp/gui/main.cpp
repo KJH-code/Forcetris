@@ -63,6 +63,7 @@ struct App {
 	bool editing = false;        // The stat layout editor is live.
 	bool show_settings = false;
 	bool place_panels = false;   // Push saved positions into ImGui this frame.
+	std::string rebinding;       // Action waiting for its next key, if any.
 	std::mt19937 seeds{std::random_device{}()};
 	bool quit = false;
 };
@@ -77,20 +78,30 @@ void start_game (App& app) {
 
 // --- Input. ----------------------------------------------------------------
 
-std::optional<Key> key_for (SDL_Scancode code) {
-	switch (code) {
-		case SDL_SCANCODE_LEFT: return Key::Left;
-		case SDL_SCANCODE_RIGHT: return Key::Right;
-		case SDL_SCANCODE_DOWN: return Key::Soft;
-		case SDL_SCANCODE_SPACE: return Key::Hard;
-		case SDL_SCANCODE_LSHIFT:
-		case SDL_SCANCODE_C: return Key::Hold;
-		case SDL_SCANCODE_Z: return Key::Ccw;
-		case SDL_SCANCODE_UP:
-		case SDL_SCANCODE_X: return Key::Cw;
-		case SDL_SCANCODE_A: return Key::Flip;
-		default: return std::nullopt;
+std::optional<Key> key_for (const Config& config, SDL_Scancode code) {
+	for (const ActionDef& action : all_actions()) {
+		const auto found = config.keys.find(action.id);
+		if (found == config.keys.end()) {
+			continue;
+		}
+		for (const int bound : found->second) {
+			if (bound == code) {
+				return action.key;
+			}
+		}
 	}
+	return std::nullopt;
+}
+
+// The next key pressed becomes the binding being waited for. A key is bound
+// to one action at a time, so it is taken away from wherever it was.
+void take_binding (App& app, SDL_Scancode code) {
+	for (auto& [action, codes] : app.config.keys) {
+		codes.erase(std::remove(codes.begin(), codes.end(), static_cast<int>(code)),
+			codes.end());
+	}
+	app.config.keys[app.rebinding].push_back(code);
+	app.rebinding.clear();
 }
 
 void handle_event (App& app, const SDL_Event& event) {
@@ -107,6 +118,15 @@ void handle_event (App& app, const SDL_Event& event) {
 		// The sim runs its own DAS; the OS keyboard repeat is not part of it.
 		return;
 	}
+	if (down && !app.rebinding.empty()) {
+		// Escape stays the pause key, so it backs out rather than binding.
+		if (event.key.keysym.scancode != SDL_SCANCODE_ESCAPE) {
+			take_binding(app, event.key.keysym.scancode);
+		} else {
+			app.rebinding.clear();
+		}
+		return;
+	}
 	if (down && event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
 		if (app.screen == Screen::Game) {
 			if (app.editing) {
@@ -121,7 +141,7 @@ void handle_event (App& app, const SDL_Event& event) {
 		|| ImGui::GetIO().WantCaptureKeyboard) {
 		return;
 	}
-	if (const auto key = key_for(event.key.keysym.scancode)) {
+	if (const auto key = key_for(app.config, event.key.keysym.scancode)) {
 		app.session->key(*key, down);
 	}
 }
@@ -342,14 +362,53 @@ void draw_settings (App& app) {
 	ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);
 	ImGui::Checkbox("Wall kicks", &app.config.kicks);
 	ImGui::Separator();
-	ImGui::TextDisabled("Keys: arrows move, Z/X/A turn, space drops,\n"
-		"down soft drops, shift or C holds, escape pauses.");
+	ImGui::TextUnformatted("Keys");
+	for (const ActionDef& action : all_actions()) {
+		ImGui::PushID(action.id);
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted(action.label);
+		ImGui::SameLine(140);
+		std::vector<int>& codes = app.config.keys[action.id];
+		int remove_at = -1;
+		for (size_t i = 0; i < codes.size(); ++i) {
+			ImGui::PushID(static_cast<int>(i));
+			const char* name = SDL_GetScancodeName(static_cast<SDL_Scancode>(codes[i]));
+			if (ImGui::SmallButton(name != nullptr && *name != '\0' ? name : "?")) {
+				remove_at = static_cast<int>(i);
+			}
+			if (ImGui::IsItemHovered()) {
+				ImGui::SetTooltip("Click to unbind");
+			}
+			ImGui::PopID();
+			ImGui::SameLine();
+		}
+		if (remove_at >= 0) {
+			codes.erase(codes.begin() + remove_at);
+		}
+		if (app.rebinding == action.id) {
+			ImGui::TextColored(ImVec4(1.f, 0.82f, 0.29f, 1.f), "press a key...");
+		} else if (ImGui::SmallButton("+")) {
+			// The next key pressed lands here; escape backs out. A key taken
+			// from another action leaves it, so nothing fires twice.
+			app.rebinding = action.id;
+		}
+		ImGui::PopID();
+	}
+	if (ImGui::Button("Reset keys")) {
+		app.config.keys = default_keys();
+		app.rebinding.clear();
+	}
+	ImGui::Separator();
+	ImGui::TextDisabled("Escape pauses and cannot be bound.");
 	ImGui::TextDisabled("Handling applies from the next game.");
 	if (ImGui::Button("Save")) {
 		save_config(app.config, app.config_file);
 		app.show_settings = false;
 	}
 	ImGui::End();
+	if (!app.show_settings) {
+		app.rebinding.clear();
+	}
 }
 
 void draw_summary (const Session& session) {
@@ -501,12 +560,24 @@ int run (bool smoke, long smoke_frames) {
 		}
 
 		if (smoke) {
-			// Button mashing at a fixed seed: the point is that the whole loop
-			// runs, draws and shuts down without a display or a player.
+			// Button mashing at a fixed seed, pushed as real SDL key events so
+			// the run goes through the binding lookup and not around it. The
+			// point is that the whole loop runs, draws and shuts down without
+			// a display or a player.
 			if (frames % 3 == 0) {
-				const Key keys[] = {Key::Left, Key::Right, Key::Soft, Key::Hard,
-					Key::Hold, Key::Ccw, Key::Cw, Key::Flip};
-				app.session->key(keys[mash() % 8], mash() % 4 != 0);
+				const auto& actions = all_actions();
+				const auto& codes = app.config.keys[actions[mash() % actions.size()].id];
+				if (!codes.empty()) {
+					SDL_Event pressed{};
+					const bool down = mash() % 4 != 0;
+					pressed.type = down ? SDL_KEYDOWN : SDL_KEYUP;
+					pressed.key.state = down ? SDL_PRESSED : SDL_RELEASED;
+					pressed.key.keysym.scancode =
+						static_cast<SDL_Scancode>(codes[mash() % codes.size()]);
+					pressed.key.keysym.sym =
+						SDL_GetKeyFromScancode(pressed.key.keysym.scancode);
+					SDL_PushEvent(&pressed);
+				}
 			}
 			behind = 0.02;
 		} else {

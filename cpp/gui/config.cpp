@@ -11,6 +11,34 @@
 namespace forcetris {
 namespace gui {
 
+const std::vector<ActionDef>& all_actions () {
+	static const std::vector<ActionDef> actions = {
+		{"left", "Move left", Key::Left},
+		{"right", "Move right", Key::Right},
+		{"soft", "Soft drop", Key::Soft},
+		{"hard", "Hard drop", Key::Hard},
+		{"hold", "Hold", Key::Hold},
+		{"ccw", "Rotate CCW", Key::Ccw},
+		{"cw", "Rotate CW", Key::Cw},
+		{"flip", "Rotate 180", Key::Flip},
+	};
+	return actions;
+}
+
+std::map<std::string, std::vector<int>> default_keys () {
+	// The Python game's defaults, scancode for scancode.
+	return {
+		{"left", {SDL_SCANCODE_LEFT}},
+		{"right", {SDL_SCANCODE_RIGHT}},
+		{"soft", {SDL_SCANCODE_DOWN}},
+		{"hard", {SDL_SCANCODE_SPACE}},
+		{"hold", {SDL_SCANCODE_LSHIFT, SDL_SCANCODE_C}},
+		{"ccw", {SDL_SCANCODE_Z}},
+		{"cw", {SDL_SCANCODE_X, SDL_SCANCODE_UP}},
+		{"flip", {SDL_SCANCODE_A}},
+	};
+}
+
 SimConfig Config::sim () const {
 	SimConfig config;
 	config.das_ms = das;
@@ -66,6 +94,31 @@ Config load_config (const std::string& path) {
 		else if (key == "finesse") in >> config.finesse_rule;
 		else if (key == "spins") in >> config.spin_rule;
 		else if (key == "preset") in >> config.preset;
+		else if (key == "key") {
+			// The whole line is that action's binding: an action listed with
+			// no codes is deliberately unbound.
+			std::string action;
+			in >> action;
+			bool known = false;
+			for (const ActionDef& def : all_actions()) {
+				if (action == def.id) {
+					known = true;
+					break;
+				}
+			}
+			if (known) {
+				std::vector<int> codes;
+				int code = 0;
+				while (in >> code) {
+					if (code > 0 && code < SDL_NUM_SCANCODES) {
+						codes.push_back(code);
+					}
+				}
+				config.keys[action] = codes;
+			} else {
+				config.unknown.push_back(line);
+			}
+		}
 		else if (key == "stat") {
 			if (!saw_stat) {
 				config.stats.clear();
@@ -102,6 +155,16 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "finesse " << config.finesse_rule << "\n";
 	out << "spins " << config.spin_rule << "\n";
 	out << "preset " << config.preset << "\n";
+	for (const ActionDef& action : all_actions()) {
+		out << "key " << action.id;
+		const auto found = config.keys.find(action.id);
+		if (found != config.keys.end()) {
+			for (const int code : found->second) {
+				out << " " << code;
+			}
+		}
+		out << "\n";
+	}
 	for (const auto& [id, spot] : config.stats) {
 		out << "stat " << id << " " << (spot.shown ? 1 : 0)
 		    << " " << spot.x << " " << spot.y << "\n";

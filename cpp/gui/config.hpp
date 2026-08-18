@@ -25,6 +25,20 @@ struct StatSpot {
 	float y = 0.f;
 };
 
+// One rebindable action: the id the config file stores, the label the
+// settings screen shows, and the key the sim understands.
+struct ActionDef {
+	const char* id;
+	const char* label;
+	Key key;
+};
+
+const std::vector<ActionDef>& all_actions ();
+
+// The out-of-the-box bindings, as SDL scancodes - several keys may share an
+// action, the way the Python game's controls do.
+std::map<std::string, std::vector<int>> default_keys ();
+
 struct Config {
 	// The handling, in the same units the Python settings menu shows.
 	int das = 140;
@@ -39,6 +53,10 @@ struct Config {
 
 	// The stat panels, keyed by the stat ids stats.cpp registers.
 	std::map<std::string, StatSpot> stats;
+
+	// The key bindings, keyed by action id. An action may hold any number of
+	// scancodes, including none - escape stays reserved for the pause menu.
+	std::map<std::string, std::vector<int>> keys = default_keys();
 
 	// Which named preset the layout started from, for the settings screen.
 	std::string preset = "tetrastats";
