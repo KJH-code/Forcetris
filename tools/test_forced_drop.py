@@ -262,6 +262,30 @@ check(
     'cwd left with {} entries'.format(len(os.listdir(os.getcwd())))
 )
 
+# --- A spawn that would complete a line. --------------------------------------
+# eval_block decides whether a blocked spawn is a loss, with an exemption for a
+# spawn that could clear a line. The exemption's column table was two columns
+# out of register with the board, which made it dead code: a trapped spawn was
+# a loss even when locking it would have cleared the row and opened the board
+# back up. Built here: row 1 full except exactly where the T lands, row 2 full,
+# both sides walled - trapped by every other measure, and one lock from a clear.
+from engine.shapes import Block as _Block
+
+core, clock, log = build(0.0)
+for _ in range(40):
+    core.run()
+    if core.entry_flag:
+        break
+for x in range(10):
+    if x not in (3, 4, 5):   # a T's row-one cells at spawn
+        core.grid.cells[1][x] = _Block([x, 1], 7, fallen=True)
+    core.grid.cells[2][x] = _Block([x, 2], 7, fallen=True)
+core.set_shape(2)
+check(
+    'a spawn that would complete a line is not a loss',
+    core.user.state != 'loss_menu', core.user.state
+)
+
 print()
 if FAILED:
     print('{} check(s) failed: {}'.format(len(FAILED), ', '.join(FAILED)))

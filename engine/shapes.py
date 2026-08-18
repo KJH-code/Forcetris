@@ -414,6 +414,9 @@ class Grid (env.AnimatedSprite):
 					self.csprts.append(ClearSprite(bottomleft=(self.rect.centerx - 125, self.rect.bottom - 20 + 25*(i-21))))
 					# If at least one block is grey between the first two visible blocks, it must be a garbage row.
 					garbagerow = env.cond_any(self[i][:2], lambda b:b.color == 7)
+					# Digging a garbage row out is the downstack half of the VS score.
+					if garbagerow:
+						self.user.downstack += 1
 					# Increment the cleared lines counter.
 					self.user.line_list[-1] += 1
 					cleared = True

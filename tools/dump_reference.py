@@ -27,9 +27,10 @@ from argparse import Namespace
 
 import pygame as pg
 import engine.game as G
+import engine.attack as atk
 import engine.finesse as fin
 import engine.replay as rp
-from engine.shapes import Block
+from engine.shapes import Block, Shape
 
 pg.key.get_focused = lambda: True
 
@@ -166,6 +167,21 @@ def main (path):
                 len(presses),
                 ' '.join(presses) if presses else '-'))
 
+    # The attack table, over its whole input space. Small enough to enumerate,
+    # so nothing about which entries matter has to be guessed.
+    for lines in range(6):
+        for spin in (atk.NOT_SPIN, atk.SPIN_MINI, atk.SPIN_FULL):
+            for b2b in (0, 1):
+                for combo in range(15):
+                    for perfect in (0, 1):
+                        out.append('attack {} {} {} {} {} {}'.format(
+                            lines, spin, b2b, combo, perfect,
+                            atk.attack_for(lines, spin, bool(b2b), combo, bool(perfect))))
+    for attack_n, seconds in ((0, 0.), (7, 30.), (63, 118.5), (200, 60.)):
+        out.append('rate {} 4 {!r} {!r} {!r}'.format(
+            attack_n, seconds, atk.apm(attack_n, seconds),
+            atk.vs_score(attack_n, 4, seconds)))
+
     # Rotation, against boards that make the kicks work for it.
     for which in BOARDS:
         build_board(core, which)
@@ -205,6 +221,33 @@ def main (path):
                                     which, kicks, form, state, column, depth, turns,
                                     landed.state, landed.pos[0], landed.pos[1]))
     user.enablekicks = True
+
+    # Spin verdicts, over a few of the boards above. One row per lockable
+    # position, with the verdict under every rule with and without a kick:
+    # '-' for no spin, 'M' for a mini, 'F' for a full one.
+    kept_rule = user.spinrule
+    for which in ('wall', 'well', 'comb', 'mess0', 'mess1'):
+        build_board(core, which)
+        for form in range(7):
+            for state in range(4):
+                for column in range(-1, 11):
+                    for depth in (1, 5, 8, 11, 14, 17, 19, 20, 21):
+                        core.freeshape = Shape(form, state, [column, depth])
+                        if core.check_collision(core.freeshape):
+                            continue
+                        core.rotated_last = True
+                        marks = []
+                        for rule in range(4):
+                            user.spinrule = rule
+                            for kicked in (False, True):
+                                user.twist_flag = kicked
+                                spun = core.eval_spin()
+                                marks.append(
+                                    '-' if spun is None else 'F' if spun[1] else 'M')
+                        out.append('spin {} {} {} {} {} {}'.format(
+                            which, form, state, column, depth, ''.join(marks)))
+    user.spinrule = kept_rule
+    user.twist_flag = False
 
     # Line clearing, and what a board looks like after a piece lands in it.
     for which in BOARDS:

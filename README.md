@@ -275,6 +275,7 @@ name.
 | --- | --- |
 | Score, Pieces, Lines, Time | with pieces per second beside the count |
 | Finesse, Faults | the percentage, and how many placements it came from |
+| Attack, VS | what the run would have sent, with APM, and the VS score |
 | Key presses | what the run cost, and per piece |
 | **Without faults** | what it would have cost made cleanly |
 | Wasted | the difference |
@@ -346,6 +347,24 @@ there is no telling what its fields mean.
 The snapshots keep only from the highest occupied row down, which is most of the size of a
 file, since most of a Tetris board is empty most of the time. The newest 30 replays are
 kept and older ones are pruned. Set `FORCETRIS_REPLAYS` to keep them somewhere else.
+
+## Attack, APM and VS
+
+Forcetris has no opponent, but the numbers TETR.IO players train by — APM and VS — are
+made of the garbage a placement *would* send, so every placement is scored by TETR.IO's
+table: quads send four, spins double their lines, back to back adds one, combos climb the
+classic combo ladder, and a perfect clear adds ten on top. Under the all-spin rules a
+full spin of any piece uses the spin line, which is what all-spin means competitively.
+
+| | |
+| --- | --- |
+| APM | attack per minute |
+| VS | attack plus garbage rows dug out, per hundred seconds |
+
+The HUD shows the running total and APM under the combo counters while you play; the
+analysis screen shows the totals, and the replay names what each placement sent. Garbage
+only exists in arcade mode, so in free mode VS is simply attack per second times a
+hundred — the number still moves the way it would, it just has no digging in it.
 
 ## Sound
 
@@ -455,7 +474,7 @@ pygame's SDL2 built there is its own project. The browser build is the supported
 
 ## Tests
 
-All eleven suites run headlessly — no display, sound card, or browser needed.
+All twelve suites run headlessly — no display, sound card, or browser needed.
 
 ```bash
 python tools/test_forced_drop.py   # the timer rules above, against a fake clock
@@ -468,6 +487,7 @@ python tools/test_spins.py         # spin detection under each rule, and the ban
 python tools/test_settings.py      # the saved profile, including an actual relaunch
 python tools/test_finesse.py       # the minimums, the counting, and what must not be judged
 python tools/test_replay.py        # recording, the file, and that the fix moves nothing
+python tools/test_attack.py        # the attack table, and the game feeding it
 ```
 
 They write to a temporary profile rather than the real one, so running them will not
@@ -475,15 +495,24 @@ disturb your own settings.
 
 ## The C++ core
 
-A rewrite is under way, one piece at a time, and the first piece is in `cpp/`:
-the board, the rotation system with its kick tables, and the finesse search.
+A rewrite is under way, one piece at a time, in `cpp/`: the board, the rotation
+system with its kick tables, the finesse search, spin detection, the attack
+table — and the game loop itself, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE,
+hold, the forced drop timer, locking, line clears and the finesse retry.
 **The game you play is still the Python one** — nothing calls into the C++ yet.
 
-It exists to be graded rather than trusted. The Python side has ten test suites
-behind it, so instead of writing a second set of assertions the C++ is held to
-the answers the tested implementation actually gives — every piece's cells,
-every finesse route, around 130,000 rotations over ten boards with kicks on and
-off, and where every piece falls.
+It exists to be graded rather than trusted. Instead of a second set of
+assertions the C++ is held to the answers the tested Python engine actually
+gives, two ways:
+
+- `equivalence` — every piece's cells, every finesse route, ~130,000 rotations
+  over ten boards with kicks on and off, every attack table entry, ~4,600 spin
+  verdicts, and where every piece falls.
+- `trace` — eleven scripted games are played through the Python engine, inputs
+  frame-stamped, and the sim has to reproduce them move for move: every
+  position the piece stands in, every lock and its frame, the loss, the final
+  board. A one-frame timing slip anywhere shifts everything after it, so
+  agreement means the loop's timing is right, not just its outcomes.
 
 ```bash
 cmake -S cpp -B cpp/build && cmake --build cpp/build -j

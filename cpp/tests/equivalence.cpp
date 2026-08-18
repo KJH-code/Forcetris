@@ -13,7 +13,11 @@
 #include <string>
 #include <vector>
 
+#include <cmath>
+
+#include "forcetris/attack.hpp"
 #include "forcetris/board.hpp"
+#include "forcetris/spins.hpp"
 #include "forcetris/finesse.hpp"
 #include "forcetris/kicks.hpp"
 #include "forcetris/piece.hpp"
@@ -87,6 +91,9 @@ int main (int argc, char** argv) {
 	Section routes{"every finesse route is the same route"};
 	Section rotations{"every rotation lands in the same place"};
 	Section drops{"every piece falls to the same row"};
+	Section attacks{"every attack table entry sends the same garbage"};
+	Section rates{"APM and VS come out to the same numbers"};
+	Section spun{"every spin verdict is the same verdict"};
 
 	std::vector<std::string> board_rows;
 	std::string board_name;
@@ -229,6 +236,57 @@ int main (int argc, char** argv) {
 					+ std::to_string(got.y) + " against " + std::to_string(want_state) + " @"
 					+ std::to_string(want_x) + "," + std::to_string(want_y));
 			}
+		} else if (kind == "attack") {
+			int lines = 0, spin = 0, b2b = 0, combo = 0, perfect = 0, sent = 0;
+			in >> lines >> spin >> b2b >> combo >> perfect >> sent;
+			const int got = attack::attack_for(
+				lines, static_cast<attack::SpinKind>(spin), b2b != 0, combo, perfect != 0);
+			if (got == sent) {
+				attacks.report.ok();
+			} else {
+				attacks.report.bad("lines " + std::to_string(lines) + " spin "
+					+ std::to_string(spin) + " b2b " + std::to_string(b2b) + " combo "
+					+ std::to_string(combo) + " pc " + std::to_string(perfect) + ": got "
+					+ std::to_string(got) + " against " + std::to_string(sent));
+			}
+		} else if (kind == "rate") {
+			int attack_n = 0, downstack = 0;
+			double seconds = 0., want_apm = 0., want_vs = 0.;
+			in >> attack_n >> downstack >> seconds >> want_apm >> want_vs;
+			const double got_apm = attack::apm(attack_n, seconds);
+			const double got_vs = attack::vs_score(attack_n, downstack, seconds);
+			if (std::abs(got_apm - want_apm) < 1e-9 && std::abs(got_vs - want_vs) < 1e-9) {
+				rates.report.ok();
+			} else {
+				rates.report.bad("attack " + std::to_string(attack_n) + " over "
+					+ std::to_string(seconds) + "s: apm " + std::to_string(got_apm)
+					+ " vs " + std::to_string(got_vs));
+			}
+		} else if (kind == "spin") {
+			std::string which, marks;
+			int form = 0, state = 0, column = 0, depth = 0;
+			in >> which >> form >> state >> column >> depth >> marks;
+			const Board* board = board_named(which);
+			if (board == nullptr || marks.size() != 8) {
+				spun.report.bad("bad record for board " + which);
+				continue;
+			}
+			const Piece piece{form, state, column, depth};
+			std::string got;
+			for (int rule = 0; rule < 4; ++rule) {
+				for (int kicked = 0; kicked < 2; ++kicked) {
+					const auto verdict = spins::judge(
+						*board, piece, static_cast<spins::Rule>(rule), true, kicked != 0);
+					got += !verdict.has_value() ? '-' : verdict->full ? 'F' : 'M';
+				}
+			}
+			if (got == marks) {
+				spun.report.ok();
+			} else {
+				spun.report.bad(which + " form " + std::to_string(form) + " state "
+					+ std::to_string(state) + " at " + std::to_string(column) + ","
+					+ std::to_string(depth) + ": got " + got + " against " + marks);
+			}
 		} else if (kind == "drop") {
 			std::string which;
 			int form = 0, column = 0, want_x = 0, want_y = 0;
@@ -251,7 +309,7 @@ int main (int argc, char** argv) {
 	}
 
 	int failed = 0;
-	for (const Section* section : {&geometry, &shapes, &counts, &routes, &rotations, &drops}) {
+	for (const Section* section : {&geometry, &shapes, &counts, &routes, &rotations, &drops, &attacks, &rates, &spun}) {
 		const Report& report = section->report;
 		const bool good = report.failed == 0 && report.checked > 0;
 		std::cout << (good ? "PASS " : "FAIL ") << section->name << " -- "

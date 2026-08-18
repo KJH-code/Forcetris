@@ -52,7 +52,8 @@ class User:
 		'hard_flag', 'twist_flag', 'tspin_flag',
 		'score', 'last_score', 'lines_cleared', 'level', 'timer',
 		'line_list', 'combo_ctr', 'current_combo', 'b2b',
-		'finesse_judged', 'finesse_faults', 'finesse_wasted'
+		'finesse_judged', 'finesse_faults', 'finesse_wasted',
+		'attack_sent', 'downstack'
 	)
 	# Score data.
 	drop_score = 1. # The base score added when a block lands.
@@ -167,6 +168,9 @@ class User:
 		self.b2b = 0 # Consecutive difficult clears: quads, and anything out of a spin.
 		self.combo_ctr = 0 # Current combo number.
 		self.current_combo = 1. # The current combo multiplier.
+
+		self.attack_sent = 0 # Garbage this game would have sent, by the TETR.IO table.
+		self.downstack = 0 # Garbage rows dug out, the other half of VS.
 
 		self.finesse_judged = 0 # Placements finesse had an opinion about.
 		self.finesse_faults = 0 # How many of those took more presses than they needed.

@@ -922,7 +922,7 @@ class AnalysisMenu (env.Menu):
 	and what it would have cost had every placement been made in the fewest.
 	"""
 	def __init__ (self, user, replay_menu):
-		bg = pg.Surface((470, 470))
+		bg = pg.Surface((470, 540))
 		bg.fill(0x203040)
 		super().__init__(user, bg, center=env.screct.center)
 		self.replay_menu = replay_menu
@@ -931,13 +931,18 @@ class AnalysisMenu (env.Menu):
 		self.stats = None
 		self.fixed = None
 		self.smallfont = pg.font.SysFont(None, 21)
+		self.row_top = 44
+		self.row_step = 23
 
 		hmargin = 20
 		height = 34
 		width = self.rect.w - 2 * hmargin
+		# Below the last stat row, which the layout check in tools/test_replay.py
+		# holds in register with the row list.
+		buttons_top = 448
 		self.selections = [[
-			env.MenuOption(self, 'watch', 'Watch Replay', (hmargin, 386), (width, height)),
-			env.MenuOption(self, 'back', 'Back', (hmargin, 386 + height + 6), (width, height))]]
+			env.MenuOption(self, 'watch', 'Watch Replay', (hmargin, buttons_top), (width, height)),
+			env.MenuOption(self, 'back', 'Back', (hmargin, buttons_top + height + 6), (width, height))]]
 
 	def show (self, replay):
 		# Handed the finished recording when a game ends. A game too short to be
@@ -980,6 +985,8 @@ class AnalysisMenu (env.Menu):
 			('Without faults', '{}  ({:.2f}/piece)'.format(f['presses'], f['ppp'])),
 			('Wasted', '{} press{}'.format(s['wasted'], '' if s['wasted'] == 1 else 'es')),
 			('', ''),
+			('Attack', '{}  ({:.1f} APM)'.format(s['attack'], s['apm'])),
+			('VS', '{:.1f}'.format(s['vs'])),
 			('Clears', ' '.join(
 				'{}x{}'.format(count, rp.CLEAR_NAMES.get(size, '{}L'.format(size)))
 				for size, count in sorted(clears.items())) or 'none'),
@@ -996,11 +1003,10 @@ class AnalysisMenu (env.Menu):
 				'That run was too short to record.', 0xC0C0C0, surf,
 				midtop=(self.rect.w / 2, 60))
 			return
-		top = 44
 		for i, (name, value) in enumerate(self.rows()):
 			if not name:
 				continue
-			y = top + i * 23
+			y = self.row_top + i * self.row_step
 			self.render_text(name, 0xA8C0D8, surf, topleft=(24, y))
 			self.render_text(value, 0xFFFFFF, surf, topright=(self.rect.w - 24, y))
 
@@ -1416,6 +1422,8 @@ class ReplayViewer (env.Menu):
 				' + PC' if place.perfect else ''), 0xFFD24A))
 		if place.spin:
 			lines.append(('Spin', place.spin, 0xFFD24A))
+		if place.attack:
+			lines.append(('Attack', '+{}'.format(place.attack), 0xFFD24A))
 		lines.append(('Score', '{}'.format(place.score), 0xFFFFFF))
 
 		for i, (name, value, colour) in enumerate(lines):

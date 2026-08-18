@@ -28,6 +28,7 @@ try:
 	import time
 	import datetime
 	import engine.finesse as fin
+	import engine.attack as atk
 except ImportError:
 	print("A module must've shat itself:")
 	raise
@@ -89,7 +90,7 @@ class Placement:
 	__slots__ = (
 		'form', 'state', 'x', 'y', 'held', 'presses', 'trail', 'best', 'judged',
 		'forced', 'lines', 'spin', 'perfect', 'combo', 'b2b', 'score', 'elapsed',
-		'rows', 'queue', 'stored',
+		'rows', 'queue', 'stored', 'attack',
 	)
 
 	def __init__ (self, **fields):
@@ -192,6 +193,10 @@ class Replay:
 			for p in self.placements
 		)
 		seconds = self.meta.get('seconds', 0.) or 0.
+		# Attack is what it is however the presses went: the corrected view changes
+		# the journey, never the placements, so these do not take `fixed`.
+		attack = sum(p.attack or 0 for p in self.placements)
+		downstack = self.meta.get('downstack', 0) or 0
 		clears = {}
 		spins = 0
 		perfects = 0
@@ -219,6 +224,9 @@ class Replay:
 			'perfects': perfects,
 			'best_b2b': max([p.b2b or 0 for p in self.placements] or [0]),
 			'best_combo': max([p.combo or 0 for p in self.placements] or [0]),
+			'attack': attack,
+			'apm': atk.apm(attack, seconds),
+			'vs': atk.vs_score(attack, downstack, seconds),
 		}
 
 	def to_dict (self):
@@ -279,7 +287,7 @@ class Recorder:
 			0. if self.started is None else time.perf_counter() - self.started, 2)
 		self.pending = fields
 
-	def commit (self, user, grid, spin='', perfect=False):
+	def commit (self, user, grid, spin='', perfect=False, attack=0):
 		# Called once the line clearer has finished and the board has settled.
 		if self.pending is None:
 			return
@@ -288,6 +296,7 @@ class Recorder:
 		self.placements.append(Placement(
 			lines=sum(user.line_list) if user.line_list else 0,
 			spin=spin,
+			attack=attack,
 			perfect=bool(perfect),
 			combo=max(0, user.combo_ctr - 1),
 			b2b=max(0, user.b2b - 1),
@@ -304,6 +313,7 @@ class Recorder:
 			return None
 		self.meta['score'] = user.score
 		self.meta['lines'] = user.lines_cleared
+		self.meta['downstack'] = user.downstack
 		self.meta['seconds'] = round(
 			0. if self.started is None else time.perf_counter() - self.started, 2)
 		return Replay(dict(self.meta), list(self.placements))

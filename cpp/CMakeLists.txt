@@ -19,6 +19,9 @@ add_library(forcetris_core
 	src/board.cpp
 	src/kicks.cpp
 	src/finesse.cpp
+	src/attack.cpp
+	src/spins.cpp
+	src/sim.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
 target_compile_options(forcetris_core PRIVATE -Wall -Wextra -Wpedantic)
@@ -26,6 +29,10 @@ target_compile_options(forcetris_core PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(equivalence tests/equivalence.cpp)
 target_link_libraries(equivalence PRIVATE forcetris_core)
 target_compile_options(equivalence PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(trace tests/trace.cpp)
+target_link_libraries(trace PRIVATE forcetris_core)
+target_compile_options(trace PRIVATE -Wall -Wextra -Wpedantic)
 
 enable_testing()
 # The reference is generated rather than committed, so the check is always
@@ -35,4 +42,11 @@ add_test(NAME equivalence
 		-DPYTHON=python3
 		-DROOT=${CMAKE_CURRENT_SOURCE_DIR}/..
 		-DBINARY=$<TARGET_FILE:equivalence>
+		-P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_equivalence.cmake)
+add_test(NAME trace
+	COMMAND ${CMAKE_COMMAND}
+		-DPYTHON=python3
+		-DROOT=${CMAKE_CURRENT_SOURCE_DIR}/..
+		-DBINARY=$<TARGET_FILE:trace>
+		-DDUMPER=dump_trace.py
 		-P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_equivalence.cmake)

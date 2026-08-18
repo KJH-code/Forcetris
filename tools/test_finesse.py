@@ -499,6 +499,7 @@ STACKED = (
     ('faults', core.grid.rect.y + 400),
     ('b2b', core.grid.rect.y + 420),
     ('combo', core.grid.rect.y + 450),
+    ('attack', core.grid.rect.y + 480),
 )
 line = core.font.get_height()
 overlap = [

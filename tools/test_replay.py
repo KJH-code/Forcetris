@@ -243,6 +243,37 @@ check(
     'played {} against shown {}'.format(played_next, shown_next)
 )
 
+# --- Holding while no piece is in play. --------------------------------------
+# The base game let the first hold be pressed during the spawn gap or a line
+# clear, and took a *copy* of the queue head into storage - the same piece then
+# spawned as well, quietly duplicating it. The queue head has to actually leave.
+new_game()
+user.are = 200   # a spawn gap wide enough to press a key in
+core.apply_handling()
+tap(pg.K_SPACE)  # lock the piece in play, opening the gap
+head, second = core.nextshapes[0].form, core.nextshapes[1].form
+for _ in range(3):
+    core.run()   # into the gap: no piece in play
+check('the gap is real', not core.entry_flag)
+tap(pg.K_LSHIFT)
+check(
+    'a first hold in the gap takes the queue head into storage',
+    core.storedshape.form == head, 'IOTSZJL'[core.storedshape.form]
+)
+check(
+    'and off the queue, so it does not also spawn',
+    core.nextshapes[0].form == second and core.nextshapes[0].form != head
+    or second == head,   # a bag can repeat across its seam
+    '{} against {}'.format(core.nextshapes[0].form, second)
+)
+settle()
+check(
+    'the piece that spawns is the one behind it',
+    core.freeshape.form == second, 'IOTSZJL'[core.freeshape.form]
+)
+user.are = 0
+core.apply_handling()
+
 # --- A whole game, then the file. -------------------------------------------
 new_game()
 for _ in range(8):
@@ -425,6 +456,24 @@ user.state = 'analysis_menu'
 analysis.return_state = 'loss_menu'
 analysis.run()
 check('it draws without falling over', True)
+
+# The rows are placed by arithmetic and the buttons by hand, so a row added to
+# the list without moving the buttons paints stats over Watch Replay. Caught
+# here rather than by whoever plays the next game.
+rows_end = analysis.row_top + len(analysis.rows()) * analysis.row_step
+first_button = min(opt.rect.y for opt in analysis.selections[0]) - analysis.rect.y
+check(
+    'the stat rows stop above the buttons',
+    rows_end <= first_button,
+    'rows end {} but a button starts {}'.format(rows_end, first_button)
+)
+buttons_end = max(
+    opt.rect.y + opt.rect.h for opt in analysis.selections[0]) - analysis.rect.y
+check(
+    'and the buttons still fit on the panel',
+    buttons_end <= analysis.rect.h,
+    '{} past {}'.format(buttons_end, analysis.rect.h)
+)
 
 analysis.show(None)
 check('a game too short leaves it with nothing to show', analysis.stats is None)

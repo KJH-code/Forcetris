@@ -1,7 +1,10 @@
-# Dump what the Python engine does, then grade the C++ core against it.
-set(REFERENCE "${CMAKE_CURRENT_BINARY_DIR}/reference.txt")
+# Dump what the Python engine does, then grade the C++ side against it.
+if (NOT DUMPER)
+	set(DUMPER dump_reference.py)
+endif()
+set(REFERENCE "${CMAKE_CURRENT_BINARY_DIR}/${DUMPER}.out")
 execute_process(
-	COMMAND "${PYTHON}" "${ROOT}/tools/dump_reference.py" "${REFERENCE}"
+	COMMAND "${PYTHON}" "${ROOT}/tools/${DUMPER}" "${REFERENCE}"
 	RESULT_VARIABLE dumped
 	OUTPUT_VARIABLE dump_out
 	ERROR_VARIABLE dump_err)

@@ -13,6 +13,7 @@ try:
 	import engine.userstate as us
 	import engine.finesse as fin
 	import engine.replay as rp
+	import engine.attack as atk
 	from engine.shapes import (Shape, Grid)
 	from engine.sortedcollections import SortedCollection as SC
 except ImportError:
@@ -251,9 +252,17 @@ class Core:
 		if self.storedshape.form > 6:
 			# The piece pulled out of the queue goes through set_shape, which starts
 			# its forced drop timer from scratch on its own.
-			self.storedshape = Shape(
-				self.newshape.form if self.entry_flag else self.nextshapes[0].form, 0)
-			self.next_shape()
+			if self.entry_flag:
+				self.storedshape = Shape(self.newshape.form, 0)
+				self.next_shape()
+			else:
+				# No piece in play, so the one taken into storage comes off the queue
+				# - and has to actually leave it. Taking a copy left the same piece
+				# to spawn as well, so a first hold pressed during the spawn gap or a
+				# line clear duplicated it.
+				self.storedshape = Shape(self.nextshapes.pop(0).form, 0)
+				if len(self.nextshapes) < 7:
+					self.nextshapes.extend(self.gen_shapelist())
 			return True
 		else:
 			# If storage already has a tetrimino, swap with current active one.
@@ -839,16 +848,14 @@ class Core:
 		# If the shape did not spawn on top of blocks, see if it can move.
 		if not obstructed:
 			trapped = True
-			# Test if a line clear would be caused by the shape's initial position.
-			# I: XXXX O: OXXO T: XXXO S: XXOO Z: OXXO J: XXXO L: XXXO
-			f = self.freeshape.form
-			# Horizontal length of second row of the block - 1
-			rlen = 3 if f == 0 else 2 if f == 2 or f > 4 else 1
-			# Leftmost block
-			bcell = 6 if f == 1 or f == 4 else 5
-			# If a line could be cleared by the shape's initial position, don't care if it's blocked.
-			for i in range(2, 12):
-				if (i < bcell or i > bcell + rlen) and self.grid[1][i] is None:
+			# A blocked spawn that would complete a line is not a loss: the line
+			# clears and the game goes on. The columns the piece itself covers are
+			# read off the piece, because the old hand-kept table was two columns
+			# out of register with the board - which made this exemption dead code,
+			# never once granted, rather than wrong.
+			covered = {pos[0] for pos in self.freeshape.poslist if pos[1] == 1}
+			for i in range(len(self.grid[0])):
+				if i not in covered and self.grid[1][i] is None:
 					break
 			else: trapped = False
 			if trapped: # Can it move down?
@@ -962,6 +969,15 @@ class Core:
 			self.render_text('Forced Drop:', 0xFFFFFF, topleft=(lalign, talign + spacing * 8))
 			self.render_text('{:.2f}s'.format(left), color, topright=(ralign, talign + spacing * 9))
 
+		# What the run would have sent, and the pace it is being sent at. APM reads
+		# from the same timer the HUD already shows, so the two cannot disagree.
+		if self.user.attack_sent > 0 and self.user.gametype != 'timed':
+			self.render_text(
+				'ATK {}  {:.0f} APM'.format(
+					self.user.attack_sent,
+					atk.apm(self.user.attack_sent, self.user.timer / 1000.)),
+				0xB0E0B0, midtop=(637, self.grid.rect.y + 480)
+			)
 		# Back to back and combo, kept beside the queue for as long as they run.
 		if self.user.b2b > 1:
 			self.render_text('B2B x{}'.format(self.user.b2b - 1), 0xFFC040, midtop=(637, self.grid.rect.y + 420))
@@ -1131,10 +1147,20 @@ class Core:
 						# A placement that cleared no lines cannot empty the board, since it
 						# just put a piece on it.
 						self.announce_perfect()
+					# What this placement would have sent, by the table TETR.IO uses. The
+					# chain counters are final by now, which is what the bonuses read.
+					sent = atk.attack_for(
+						sum(self.user.line_list) if self.user.line_list else 0,
+						atk.spin_kind(self.spin_label),
+						self.user.b2b > 1,
+						max(0, self.user.combo_ctr - 1),
+						self.spin_perfect,
+					)
+					self.user.attack_sent += sent
 					# The board has settled into whatever it is going to be, which is the
 					# first moment the placement can be written down in full.
 					self.recorder.commit(
-						self.user, self.grid, self.spin_label, self.spin_perfect)
+						self.user, self.grid, self.spin_label, self.spin_perfect, sent)
 		# Refresh screen. There is not enough fast rendering to justify using update()
 		pg.display.flip()
 
