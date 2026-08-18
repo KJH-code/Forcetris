@@ -108,6 +108,24 @@ check(
     str(sorted(saved))
 )
 
+# The forced drop switched off on the mode screen, with its budget parked behind
+# the switch. Both halves have to come back or the switch loses the number.
+user.forced_delay = 0.
+user.forced_hold = 0.65
+ctl.save(user)
+switched = reload_into_fresh_user()
+check(
+    'a forced drop switched off stays off across a restart',
+    switched.forced_delay == 0., str(switched.forced_delay)
+)
+check(
+    'the budget behind the switch comes back with it',
+    switched.forced_hold == 0.65 and switched.toggle_forced() and switched.forced_delay == 0.65,
+    '{} / {}'.format(switched.forced_hold, switched.forced_delay)
+)
+user.forced_delay, user.forced_hold = 0.35, 0.35
+ctl.save(user)
+
 restarted = reload_into_fresh_user()
 mismatched = [
     name for name, clean in ctl.SETTINGS

@@ -4,6 +4,14 @@
 # A value of 0 turns the forced drop off and leaves plain Tetris behind.
 DEFAULT_FORCED_DELAY = 1.0
 
+# Line clearing. The base game defaulted to a cascade, where blocks left hanging
+# by a clear fall into the gap and can set off further clears. No guideline game
+# does that and TETR.IO certainly does not, so a trainer for it has to clear the
+# way the thing it trains for clears: rows vanish, everything above drops by the
+# number of rows that went, and nothing cascades.
+CLEAR_NAIVE, CLEAR_STICKY, CLEAR_LINKED = range(3)
+DEFAULT_CLEARTYPE = CLEAR_NAIVE
+
 # Music volume as a 0.0 to 1.0 fraction. The command line takes it as a percentage,
 # to match the way the settings menu shows it.
 DEFAULT_VOLUME = 1.0
@@ -39,7 +47,7 @@ class User:
 	In this case, it tracks tetris difficulty values and handles score data.
 	"""
 	__slots__ = (
-		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'volume', 'sfx_volume', 'keys', 'das', 'arr', 'dcd', 'sdf', 'are', 'spinrule',
+		'state', 'gametype', 'resetgame', 'debug', 'forced_delay', 'forced_hold', 'volume', 'sfx_volume', 'keys', 'das', 'arr', 'dcd', 'sdf', 'are', 'spinrule',
 		'cleartype', 'enablekicks', 'showghost', 'linktiles', 'finesse',
 		'hard_flag', 'twist_flag', 'tspin_flag',
 		'score', 'last_score', 'lines_cleared', 'level', 'timer',
@@ -63,9 +71,8 @@ class User:
 		self.gametype = 'free'
 		self.resetgame = False # True if the game needs to be reset.
 		# Eventually will be modifiable in the Options Menu.
-		# Default settings are good for Modern Tetris.
-		# Retro Tetris would use cleartype 0, enablekicks, showghost, and linktiles False.
-		self.cleartype = 2 # Determines line clear type, refer to Grid.clear_lines().
+		# Retro Tetris would use enablekicks, showghost, and linktiles False.
+		self.cleartype = DEFAULT_CLEARTYPE # Determines line clear type, refer to Grid.clear_lines().
 		self.spinrule = DEFAULT_SPINRULE # Which rotations count as spins.
 		self.finesse = DEFAULT_FINESSE # What happens on a wasted key press.
 		self.enablekicks = True # Determines if wall kicks are allowed.
@@ -114,6 +121,7 @@ class User:
 			# them and before the command line gets the last word.
 			self.debug = False
 			self.forced_delay = DEFAULT_FORCED_DELAY
+			self.forced_hold = DEFAULT_FORCED_DELAY
 			self.volume = DEFAULT_VOLUME
 			self.sfx_volume = DEFAULT_SFX_VOLUME
 			return
@@ -123,11 +131,29 @@ class User:
 		if getattr(argv, 'forced_delay', None) is not None:
 			# Seconds a piece is allowed to stay in play before it is dropped for the player.
 			self.forced_delay = max(0., argv.forced_delay)
+			if self.forced_delay > 0.:
+				self.forced_hold = self.forced_delay
 		if getattr(argv, 'volume', None) is not None:
 			# Taken as a percentage on the command line, kept as a fraction here.
 			self.volume = min(1., max(0., argv.volume / 100.))
 		if getattr(argv, 'sfx_volume', None) is not None:
 			self.sfx_volume = min(1., max(0., argv.sfx_volume / 100.))
+
+	def toggle_forced (self):
+		"""Turn the forced drop off and back on without losing the budget.
+
+		A budget of zero is how the engine is told there is no timer, so an honest
+		toggle has to put the number somewhere while it is off. Anything that sets a
+		real delay - the settings menu, the command line - keeps this in step, so
+		switching back on returns the last budget actually played with rather than
+		whatever the game shipped with.
+		"""
+		if self.forced_delay > 0.:
+			self.forced_hold = self.forced_delay
+			self.forced_delay = 0.
+		else:
+			self.forced_delay = self.forced_hold if self.forced_hold > 0. else DEFAULT_FORCED_DELAY
+		return self.forced_delay > 0.
 
 	def reset (self):
 		# Reset data when starting a new game.

@@ -58,6 +58,22 @@ arrow keys to move, `Z` or `Enter` to confirm, `X` or `Esc` to go back, always.
 | Left Shift | Hold |
 | Escape | Pause |
 
+## Starting a game
+
+**Start Game** picks the mode and, on the same screen, whether the forced drop timer is
+running at all. Up and Down pick a row, `Z` starts the mode you are on.
+
+| Row | Does |
+| --- | --- |
+| Arcade / Timed / Free | `Z` starts that mode |
+| Forced Drop | Left, Right or `Z` switches the timer on and off |
+
+Whether the timer is running is the difference between practice and a plain game, so it
+sits where that decision is actually made rather than two screens deep. Only the switch
+lives here — the length of the budget is **Game Settings**' job, and switching the timer
+back on returns the last budget you played with rather than the one the game shipped
+with. It is remembered across restarts like everything else.
+
 ## Game Settings
 
 **Game Settings** on the main menu — also reachable from the pause menu and the game
@@ -70,7 +86,7 @@ row, Left and Right change it, and holding the key repeats.
 | Ghost Piece | On / Off |
 | Wall Kicks | On / Off |
 | Linked Tiles | On / Off |
-| Line Clears | Naive / Sticky Cascade / Linked Cascade |
+| Line Clears | Naive / Sticky Cascade / Linked Cascade. Defaults to Naive |
 | Spins | Off / T-Spin / All-Spin / All-Spin + Mini |
 | Finesse | Off / Count / Retry |
 | Music | Off, then 5% to 100% in 5% steps |
@@ -82,6 +98,16 @@ Changes apply immediately, including to the piece already falling and to the mus
 playing behind the pause menu, so you can pause mid-run, shave 0.05s off, and feel it on
 the very next piece. They are also saved as you make them — see
 [Saved settings](#saved-settings).
+
+**Line Clears** defaults to Naive: rows vanish, everything above drops by the number of
+rows that went, and nothing cascades. That is how TETR.IO and every other guideline game
+clears, so it is what a trainer for one has to do. The base game defaulted to a cascade,
+where blocks left hanging fall into the gap and can set off further clears; both cascade
+modes are still there under the same row if you want them.
+
+If you have played before, the settings you already saved are yours and are left alone —
+this default only applies to a profile that does not exist yet. **Line Clears** in the
+menu switches it either way.
 
 ## Controls and handling
 
@@ -273,6 +299,8 @@ python tools/make_sounds.py
 
 ## How the timer behaves
 
+- **It can be switched off entirely**, from the mode screen or by setting the delay to
+  Off in the settings. With it off this is plain Tetris, and nothing below applies.
 - **It starts when a piece spawns**, not when it becomes movable.
 - **Holding restarts it.** The swapped-in piece gets a full budget. Since the base game
   only allows one hold per piece, this caps out at two budgets per piece — hold is an

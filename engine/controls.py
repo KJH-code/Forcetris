@@ -35,6 +35,7 @@ LEGACY = None if os.environ.get('FORCETRIS_CONFIG') else os.path.join(ROOT, 'dat
 # put the game into a state its own menus cannot express.
 SETTINGS = (
 	('forced_delay', lambda v: max(0., min(60., float(v)))),
+	('forced_hold', lambda v: max(0., min(60., float(v)))),
 	('volume', lambda v: max(0., min(1., float(v)))),
 	('sfx_volume', lambda v: max(0., min(1., float(v)))),
 	('cleartype', lambda v: max(0, min(2, int(v)))),

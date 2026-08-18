@@ -77,34 +77,81 @@ class PlayMenu (env.Menu):
 	way to get the highest score in five minutes!
 
 	Free Mode is a casual mode of play that doesn't stress the player. Good for newbies!
+
+	The forced drop timer sits on this screen as well as in the settings, because
+	whether it is running is the difference between practice and a plain game, and
+	that is a decision made on the way in rather than one buried two screens deep.
+	It only toggles here - the length of the budget is the settings menu's job.
 	"""
+	# The three modes, then the switch that decides what kind of run this is.
+	modes = ('arcade', 'timed', 'free')
+	rows = modes + ('timer',)
+
+	labels = {
+		'arcade': 'Arcade Mode',
+		'timed': 'Timed Mode',
+		'free': 'Free Mode',
+	}
 
 	def __init__(self, user):
-		bg = pg.Surface((620, 300))
-		bg.fill(0x00FF40)
-		super().__init__(user, bg, midtop=(env.screct.width / 2, 250))
-
 		hmargin = 20
-		spacing = 14
-		tmargin = 20
-		height = 80
+		tmargin = 56
+		spacing = 12
+		height = 60
+		# Sized from the row list, so a row added here cannot push the hint line off
+		# the bottom of the panel.
+		bg = pg.Surface((620, tmargin + len(self.rows) * (spacing + height) + 22))
+		bg.fill(0x00FF40)
+		super().__init__(user, bg, center=env.screct.center)
 
-		self.selections = [
-			[env.MenuOption(self, 'arcade', 'Arcade Mode', (hmargin, tmargin), ((self.rect.w - (2 * (spacing + hmargin))) / 3, height))],
-			[env.MenuOption(self, 'timed', 'Timed Mode', (hmargin + spacing + (self.rect.w - (2 * (spacing + hmargin))) / 3, tmargin), ((self.rect.w - (2 * (spacing + hmargin))) / 3, height))],
-			[env.MenuOption(self, 'free', 'Free Mode', (hmargin + 2 * spacing + (2 * (self.rect.w - (2 * (spacing + hmargin))) / 3), tmargin), ((self.rect.w - (2 * (spacing + hmargin))) / 3, height))]]
+		width = self.rect.w - 2 * hmargin
+		self.selections = [[
+			env.MenuOption(self, action, '', (hmargin, tmargin + i * (spacing + height)), (width, height))
+			for i, action in enumerate(self.rows)]]
+		self.set_labels()
+
+	def label (self, action):
+		# The text drawn on a row, value included.
+		if action == 'timer':
+			return 'Forced Drop:  ' + (
+				'{:.2f}s'.format(self.user.forced_delay) if self.user.forced_delay > 0. else 'Off')
+		return self.labels[action]
+
+	def set_labels (self):
+		for option in self.selections[0]:
+			option.text = self.font.render(self.label(option.action), 0, pg.Color(255, 255, 255))
+			option.text_rect = option.text.get_rect(center=option.rect.center)
+		# What the timer row currently reads, so run() can tell when it has gone stale.
+		self.shown_delay = self.user.forced_delay
+
+	def eval_move (self, coord, movedir):
+		# Sideways on the timer row switches it rather than moving the cursor, which
+		# is how every other screen in the game spells "change this value".
+		if coord == 0 and self.selected.action == 'timer':
+			if not self.moved:
+				self.user.toggle_forced()
+				ctl.save(self.user)
+				self.set_labels()
+				self.moved = True
+			return
+		if coord == 0:
+			# Nothing to the left or right of a mode button. Left as a no-op rather
+			# than wrapping, since one column wrapping onto itself just flickers.
+			return
+		super().eval_move(coord, movedir)
 
 	def eval_input (self):
 		event = super().eval_input()
 		if event.type == pg.KEYDOWN:
 			if event.key == pg.K_z or event.key == pg.K_RETURN:
-				if self.selected.action == 'arcade':
-					self.user.gametype = 'arcade'
-				elif self.selected.action == 'timed':
-					self.user.gametype = 'timed'
-				elif self.selected.action == 'free':
-					self.user.gametype = 'free'
-
+				if self.selected.action == 'timer':
+					# Confirm works here too, so the row can be used without knowing
+					# that the arrow keys are what change a value.
+					self.user.toggle_forced()
+					ctl.save(self.user)
+					self.set_labels()
+					return
+				self.user.gametype = self.selected.action
 				self.user.state = 'game'
 				self.user.resetgame = True
 				env.restart_music()
@@ -112,10 +159,22 @@ class PlayMenu (env.Menu):
 			elif event.key == pg.K_x or event.key == pg.K_ESCAPE:
 				self.user.state = 'main_menu'
 
+	@env.Menu.render
+	def display_hint (self, surf):
+		self.render_text('Start Game', 0xFFFFFF, surf, midtop=(self.rect.w / 2, 15))
+		hint = ('LEFT / RIGHT to switch, X to go back' if self.selected.action == 'timer'
+			else 'Z to start, X to go back')
+		self.render_text(hint, 0xE0FFE0, surf, midbottom=(self.rect.w / 2, self.rect.h - 8))
+
 	def run (self):
 		self.menu_bg.draw(env.screen)
 		self.draw(env.screen)
+		# The settings menu can change the delay while this screen is not looking, so
+		# the row is re-rendered when the number behind it has moved on.
+		if self.shown_delay != self.user.forced_delay:
+			self.set_labels()
 		super().run()
+		self.display_hint()
 		pg.display.flip()
 
 class HelpMenu (env.Menu):
@@ -311,6 +370,9 @@ class SettingsMenu (env.Menu):
 			# Rounded because repeatedly adding 0.05 drifts off the step grid.
 			delay = round(self.user.forced_delay + movedir * self.delay_step, 2)
 			self.user.forced_delay = min(self.delay_max, max(0., delay))
+			if self.user.forced_delay > 0.:
+				# What the toggle on the mode screen switches back on.
+				self.user.forced_hold = self.user.forced_delay
 		elif action == 'ghost':
 			self.user.showghost = not self.user.showghost
 		elif action == 'kicks':

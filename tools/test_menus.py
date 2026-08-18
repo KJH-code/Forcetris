@@ -24,6 +24,7 @@ os.chdir(tempfile.mkdtemp())
 import pygame as pg
 import engine.game as G
 import engine.environment as env
+import engine.userstate as us
 
 # The dummy video driver never reports keyboard focus, which the game reads as a
 # lost window and turns into a pause on every single frame. Nothing here is
@@ -307,10 +308,112 @@ for given, expected in ((100., 1.0), (60., 0.6), (0., 0.0), (-5., 0.0), (400., 1
         'got {:.2f}'.format(user.volume)
     )
 
+
+# --- The mode screen starts modes, and carries the timer switch. ------------
+play = tetris.play_menu
+
+for action, gametype in (('arcade', 'arcade'), ('timed', 'timed'), ('free', 'free')):
+    goto_main()
+    user.state = 'play_menu'
+    check('the mode screen has a {} row'.format(action), goto_row(play, action), play.selected.action)
+    press(play, pg.K_RETURN)
+    check(
+        '{} starts a {} game'.format(action, gametype),
+        user.state == 'game' and user.gametype == gametype,
+        '{} / {}'.format(user.state, user.gametype)
+    )
+
+user.state = 'play_menu'
+check('the mode screen has a timer row', goto_row(play, 'timer'), play.selected.action)
+
+# The switch, and the thing that makes it a switch rather than a way of losing
+# the number: the budget has to come back.
+user.forced_delay = 0.75
+# Deliberately stale, so the budget can only come back if switching off is what
+# put it there. Seeding both halves would let a toggle that forgets still pass.
+user.forced_hold = 0.05
+play.set_labels()
+press(play, pg.K_LEFT)
+check('the timer row switches the forced drop off', user.forced_delay == 0., str(user.forced_delay))
+check('switching off does not start the game', user.state == 'play_menu', user.state)
+check('the row says so', 'Off' in play.label('timer'), play.label('timer'))
+press(play, pg.K_RIGHT)
+check(
+    'switching back on returns the budget that was set',
+    user.forced_delay == 0.75, str(user.forced_delay)
+)
+check('the row says that too', '0.75s' in play.label('timer'), play.label('timer'))
+
+# Confirm has to work on that row as well, or a player who never presses the
+# arrow keys there is stuck with whatever it happened to be.
+press(play, pg.K_RETURN)
+check(
+    'confirm switches the row rather than starting a game',
+    user.forced_delay == 0. and user.state == 'play_menu',
+    '{} / {}'.format(user.forced_delay, user.state)
+)
+press(play, pg.K_RETURN)
+
+# Holding the key must not flap the switch back and forth every frame.
+pg.event.clear()
+pg.event.post(pg.event.Event(pg.KEYDOWN, key=pg.K_LEFT))
+for _ in range(8):
+    play.run()
+    pg.event.clear()
+check('holding the key switches it once, not once a frame', user.forced_delay == 0., str(user.forced_delay))
+pg.event.post(pg.event.Event(pg.KEYUP, key=pg.K_LEFT))
+play.run()
+pg.event.clear()
+press(play, pg.K_RIGHT)
+
+# A budget set in the settings menu is what the switch turns back on, and the
+# row has to show it even though the two screens never talk to each other.
+goto_main()
+user.state = 'settings_menu'
+goto_row(tetris.settings_menu, 'delay')
+press(tetris.settings_menu, pg.K_LEFT, 4)
+tuned = user.forced_delay
+user.state = 'play_menu'
+goto_row(play, 'timer')
+play.run()
+check(
+    'the row follows a budget changed in the settings menu',
+    '{:.2f}s'.format(tuned) in play.label('timer'),
+    '{} against {}'.format(play.label('timer'), tuned)
+)
+press(play, pg.K_LEFT)
+press(play, pg.K_RIGHT)
+check(
+    'and that is the budget the switch brings back',
+    user.forced_delay == tuned, '{} against {}'.format(user.forced_delay, tuned)
+)
+
+# Left and right on a mode row must not wrap the cursor sideways: there is only
+# one column, so it would just flicker.
+goto_row(play, 'free')
+press(play, pg.K_LEFT)
+press(play, pg.K_RIGHT)
+check('sideways on a mode row does nothing', play.selected.action == 'free', play.selected.action)
+
+goto_main()
+
+# --- The defaults a new player gets. ----------------------------------------
+fresh = us.User()
+check(
+    'line clears default to naive, the way every guideline game clears',
+    fresh.cleartype == us.CLEAR_NAIVE,
+    tetris.settings_menu.clear_names[fresh.cleartype]
+)
+check(
+    'the forced drop starts on, with a budget behind the switch',
+    fresh.forced_delay > 0. and fresh.forced_hold == fresh.forced_delay,
+    '{} / {}'.format(fresh.forced_delay, fresh.forced_hold)
+)
+
 # --- Nothing may be laid out past the panel it belongs to. ------------------
 # Adding a row is easy; noticing that it pushed the hint line on top of the last
 # one is not, and no behavioural check would catch it.
-for name in ('settings_menu', 'controls_menu', 'handling_menu', 'help_menu', 'main_menu', 'pause_menu'):
+for name in ('settings_menu', 'controls_menu', 'handling_menu', 'help_menu', 'main_menu', 'pause_menu', 'play_menu'):
     menu = getattr(tetris, name)
     rows = [option for column in menu.selections for option in column]
     # Menus that print a hint along the bottom need that strip left clear. Asked of
