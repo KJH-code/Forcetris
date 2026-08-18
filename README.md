@@ -420,13 +420,19 @@ host (GitHub Pages will do).
 are WAV, which browsers play fine and which totals well under a megabyte, so the warning
 does not apply here.
 
+`pygbag.ini` keeps the test suite, the screenshots folder and the runtime save folder out
+of the bundle — pygbag packages the whole directory otherwise, and none of the three can
+do anything in a tab. The build is about 2.2MB, most of which is the music. It is picked
+up automatically; there is no flag to pass.
+
 Two things differ in the browser:
 
 - **There is no command line.** The build runs on the defaults, so set the delay and the
   volumes in **Game Settings** instead.
 - **Nothing survives a reload.** The page gets an in-memory filesystem, so high scores,
   settings and replays alike are written and then thrown away when the tab closes. The
-  analysis screen still works within a session.
+  analysis screen and the replay viewer both still work within a session, and a write the
+  filesystem refuses is shrugged off rather than taking the tab down.
 
 Audio will not start until you have pressed a key, which browsers require. Since the
 music starts when you pick a mode, this happens on its own.
