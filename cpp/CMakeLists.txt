@@ -23,8 +23,11 @@ add_library(forcetris_core
 	src/attack.cpp
 	src/spins.cpp
 	src/sim.cpp
+	src/replay.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
+# nlohmann/json.hpp, vendored, for the replay files.
+target_include_directories(forcetris_core SYSTEM PRIVATE third_party)
 target_compile_options(forcetris_core PRIVATE -Wall -Wextra -Wpedantic)
 
 add_executable(equivalence tests/equivalence.cpp)
@@ -34,6 +37,10 @@ target_compile_options(equivalence PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(trace tests/trace.cpp)
 target_link_libraries(trace PRIVATE forcetris_core)
 target_compile_options(trace PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(replaycheck tests/replaycheck.cpp)
+target_link_libraries(replaycheck PRIVATE forcetris_core)
+target_compile_options(replaycheck PRIVATE -Wall -Wextra -Wpedantic)
 
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
@@ -61,8 +68,11 @@ if (SDL2_FOUND)
 		gui/session.cpp
 		gui/stats.cpp
 		gui/config.cpp
+		gui/audio.cpp
 	)
 	target_link_libraries(forcetris PRIVATE forcetris_core imgui)
+	# stb_vorbis, vendored, for the music.
+	target_include_directories(forcetris SYSTEM PRIVATE third_party/stb)
 	target_compile_options(forcetris PRIVATE -Wall -Wextra -Wpedantic)
 	if (TARGET SDL2::SDL2main)
 		target_link_libraries(forcetris PRIVATE SDL2::SDL2main)
@@ -87,10 +97,15 @@ add_test(NAME trace
 		-DBINARY=$<TARGET_FILE:trace>
 		-DDUMPER=dump_trace.py
 		-P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_equivalence.cmake)
+# A replay file written by either engine has to mean the same thing to the
+# other; the two dump the same file field by field and must agree.
+add_test(NAME replay_cross
+	COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/../tools/replay_cross.py
+		$<TARGET_FILE:replaycheck>)
 if (SDL2_FOUND)
 	# The whole window run headlessly under scripted-random input: proves the
 	# loop, the drawing and the shutdown hold together with no display.
 	add_test(NAME gui_smoke COMMAND forcetris)
 	set_tests_properties(gui_smoke PROPERTIES ENVIRONMENT
-		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-gui.cfg")
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-replays")
 endif()

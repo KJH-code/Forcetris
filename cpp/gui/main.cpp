@@ -10,7 +10,9 @@
 // with scripted-random input and exits, which is how the build is tested on
 // machines with no display.
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
+#include <ctime>
 #include <optional>
 #include <random>
 #include <string>
@@ -21,7 +23,9 @@
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_sdlrenderer2.h"
 
+#include "audio.hpp"
 #include "config.hpp"
+#include "forcetris/replay.hpp"
 #include "session.hpp"
 #include "stats.hpp"
 
@@ -50,14 +54,31 @@ const SDL_Color kFormColors[8] = {
 	{122, 122, 122, 255},  // garbage
 };
 
-enum class Screen { Menu, Game, Over };
+enum class Screen { Menu, Game, Over, Replays, Viewer };
+
+// A replay being watched: which placement, which stop along its journey.
+struct Viewing {
+	replay::Replay game;
+	int index = 0;
+	int step = 0;
+	bool playing = true;
+	int speed = 1;
+	bool fixed = false;      // Walk the finesse routes instead of the trails.
+	double carry = 0.;
+	Screen back = Screen::Menu;
+};
 
 struct App {
 	SDL_Window* window = nullptr;
 	SDL_Renderer* renderer = nullptr;
 	Config config;
 	std::string config_file;
+	std::string root;
+	Audio audio;
 	std::optional<Session> session;
+	std::optional<replay::Replay> last_replay;
+	std::vector<replay::Replay> shelf;   // The browser's listing.
+	std::optional<Viewing> viewing;
 	Screen screen = Screen::Menu;
 	bool paused = false;
 	bool editing = false;        // The stat layout editor is live.
@@ -68,12 +89,53 @@ struct App {
 	bool quit = false;
 };
 
+replay::Meta meta_for (const Config& config) {
+	replay::Meta meta;
+	char stamp[32] = "";
+	const std::time_t now = std::time(nullptr);
+	if (std::tm* local = std::localtime(&now)) {
+		std::strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%S", local);
+	}
+	meta.played = stamp;
+	meta.gametype = "free";
+	meta.forced_delay = config.forced_delay;
+	meta.finesse = config.finesse_rule;
+	meta.spinrule = config.spin_rule;
+	meta.cleartype = 0;
+	meta.das = config.das;
+	meta.arr = config.arr;
+	meta.dcd = config.dcd;
+	meta.sdf = config.sdf;
+	meta.are = config.are;
+	return meta;
+}
+
 void start_game (App& app) {
-	app.session.emplace(app.config.sim(), app.seeds());
+	app.session.emplace(app.config.sim(), app.seeds(), meta_for(app.config));
 	app.screen = Screen::Game;
 	app.paused = false;
 	app.editing = false;
 	app.place_panels = true;
+	app.audio.start_music();
+}
+
+void end_game (App& app) {
+	// Saved rather than offered, the way the Python game does it: the moment
+	// a run ends is the worst moment to ask someone whether they will want
+	// to look at it.
+	app.screen = Screen::Over;
+	app.audio.fade_music(2.5);
+	app.last_replay = app.session->finish();
+	if (app.last_replay.has_value()) {
+		replay::save(*app.last_replay, replay::folder(app.root));
+	}
+}
+
+void watch (App& app, replay::Replay game, Screen back) {
+	app.viewing.emplace();
+	app.viewing->game = std::move(game);
+	app.viewing->back = back;
+	app.screen = Screen::Viewer;
 }
 
 // --- Input. ----------------------------------------------------------------
@@ -134,6 +196,11 @@ void handle_event (App& app, const SDL_Event& event) {
 			} else {
 				app.paused = !app.paused;
 			}
+		} else if (app.screen == Screen::Viewer && app.viewing.has_value()) {
+			app.screen = app.viewing->back;
+			app.viewing.reset();
+		} else if (app.screen == Screen::Replays) {
+			app.screen = Screen::Menu;
 		}
 		return;
 	}
@@ -362,6 +429,18 @@ void draw_settings (App& app) {
 	ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);
 	ImGui::Checkbox("Wall kicks", &app.config.kicks);
 	ImGui::Separator();
+	ImGui::TextUnformatted("Sound");
+	int sfx = static_cast<int>(std::lround(app.config.sfx_volume * 100.f));
+	if (ImGui::SliderInt("Effects (%)", &sfx, 0, 100)) {
+		app.config.sfx_volume = sfx / 100.f;
+		app.audio.set_sfx_volume(app.config.sfx_volume);
+	}
+	int music = static_cast<int>(std::lround(app.config.music_volume * 100.f));
+	if (ImGui::SliderInt("Music (%)", &music, 0, 100)) {
+		app.config.music_volume = music / 100.f;
+		app.audio.set_music_volume(app.config.music_volume);
+	}
+	ImGui::Separator();
 	ImGui::TextUnformatted("Keys");
 	for (const ActionDef& action : all_actions()) {
 		ImGui::PushID(action.id);
@@ -434,6 +513,182 @@ void draw_summary (const Session& session) {
 	}
 }
 
+// --- The replay viewer: a re-enactment, never a re-simulation. ------------
+
+void advance_viewer (App& app) {
+	// One 20ms tick of watching: a stop every 0.16 seconds at single speed.
+	Viewing& show = *app.viewing;
+	if (!show.playing || show.game.placements.empty()) {
+		return;
+	}
+	show.carry += 0.02 * show.speed;
+	while (show.carry >= 0.16) {
+		show.carry -= 0.16;
+		const auto stops = show.game.placements[show.index].steps(show.fixed);
+		if (show.step + 1 < static_cast<int>(stops.size())) {
+			++show.step;
+		} else if (show.index + 1 < static_cast<int>(show.game.placements.size())) {
+			++show.index;
+			show.step = 0;
+		} else {
+			show.playing = false;
+		}
+	}
+}
+
+void draw_row_strings (App& app, const std::vector<std::string>& rows) {
+	SDL_Renderer* renderer = app.renderer;
+	fill(renderer, kBoardX - 3, kBoardY - 3, kBoardW + 6, kBoardH + 6, {32, 40, 53, 255});
+	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {14, 18, 24, 255});
+	for (size_t y = 0; y < rows.size() && y < kHeight; ++y) {
+		for (size_t x = 0; x < rows[y].size() && x < kWidth; ++x) {
+			const char cell = rows[y][x];
+			if (cell >= '0' && cell <= '7') {
+				draw_cell(renderer, kBoardX + static_cast<int>(x) * kCell,
+					kBoardY + static_cast<int>(y) * kCell, kFormColors[cell - '0']);
+			}
+		}
+	}
+}
+
+void draw_viewer (App& app) {
+	Viewing& show = *app.viewing;
+	if (show.game.placements.empty()) {
+		return;
+	}
+	show.index = std::clamp(
+		show.index, 0, static_cast<int>(show.game.placements.size()) - 1);
+	const replay::Placement& place = show.game.placements[show.index];
+	const auto stops = place.steps(show.fixed);
+	show.step = std::clamp(show.step, 0, static_cast<int>(stops.size()) - 1);
+
+	// The board the placement was made onto, with the piece walking over it.
+	draw_row_strings(app, replay::padded(show.game.before(show.index)));
+	const auto& stop = stops[show.step];
+	const Piece piece{place.form, stop[0], stop[1], stop[2]};
+	if (place.form >= 0 && place.form <= 6) {
+		for (const Offset cell : cells_of(piece)) {
+			if (cell.y >= 0 && cell.y < kHeight) {
+				draw_cell(app.renderer, kBoardX + cell.x * kCell,
+					kBoardY + cell.y * kCell, kFormColors[place.form]);
+			}
+		}
+	}
+
+	// What the player could see at the time: the hold box and the previews.
+	fill(app.renderer, kBoardX - 122, kBoardY, 104, 86, {20, 26, 34, 255});
+	draw_preview(app.renderer, place.stored, kBoardX - 122 + 16, kBoardY + 12, 18);
+	for (size_t slot = 0; slot < place.queue.size() && slot < 3; ++slot) {
+		fill(app.renderer, kBoardX + kBoardW + 18,
+			kBoardY + static_cast<int>(slot) * 92, 104, 86, {20, 26, 34, 255});
+		draw_preview(app.renderer, place.queue[slot],
+			kBoardX + kBoardW + 18 + 16,
+			kBoardY + static_cast<int>(slot) * 92 + 12, 18);
+	}
+
+	// The placement, in words.
+	ImGui::SetNextWindowPos(ImVec2(kBoardX + kBoardW + 140.f, kBoardY));
+	ImGui::Begin("viewer info", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_NoSavedSettings);
+	ImGui::Text("Placement %d of %d", show.index + 1,
+		static_cast<int>(show.game.placements.size()));
+	std::string presses;
+	for (const std::string& press : place.presses_shown(show.fixed)) {
+		presses += (presses.empty() ? "" : " ") + press;
+	}
+	ImGui::TextColored(ImVec4(0.59f, 0.65f, 0.73f, 1.f), "Presses: %s",
+		presses.empty() ? "none" : presses.c_str());
+	if (place.judged && place.best.has_value()) {
+		ImGui::TextColored(ImVec4(0.59f, 0.65f, 0.73f, 1.f),
+			"Best: %d press%s%s", *place.best, *place.best == 1 ? "" : "es",
+			place.wasted() > 0 && !show.fixed ? "  (wasted)" : "");
+	}
+	if (!place.spin.empty()) {
+		ImGui::TextColored(ImVec4(1.f, 0.82f, 0.29f, 1.f), "%s", place.spin.c_str());
+	}
+	if (place.lines > 0) {
+		ImGui::Text("Cleared %d", place.lines);
+	}
+	if (place.perfect) {
+		ImGui::TextColored(ImVec4(1.f, 0.82f, 0.29f, 1.f), "PERFECT CLEAR");
+	}
+	if (place.attack > 0) {
+		ImGui::Text("Attack +%d", place.attack);
+	}
+	ImGui::Text("Score %d", place.score);
+	ImGui::Text("At %.2fs", place.elapsed);
+	ImGui::End();
+
+	// The controls, mouse-first.
+	ImGui::SetNextWindowPos(ImVec2(kBoardX - 3.f, kBoardY + kBoardH + 26.f));
+	ImGui::Begin("viewer controls", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_NoSavedSettings);
+	if (ImGui::Button(show.playing ? "Pause" : "Play")) {
+		show.playing = !show.playing;
+		if (show.playing && show.index + 1 == static_cast<int>(show.game.placements.size())
+			&& show.step + 1 == static_cast<int>(stops.size())) {
+			show.index = 0;
+			show.step = 0;
+		}
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("|<")) {
+		show.index = std::max(0, show.index - 1);
+		show.step = 0;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button(">|")) {
+		show.index = std::min(
+			static_cast<int>(show.game.placements.size()) - 1, show.index + 1);
+		show.step = 0;
+	}
+	ImGui::SameLine();
+	const char* speeds[] = {"1x", "2x", "4x"};
+	int gear = show.speed == 4 ? 2 : show.speed - 1;
+	ImGui::SetNextItemWidth(60);
+	if (ImGui::Combo("##speed", &gear, speeds, 3)) {
+		show.speed = gear == 2 ? 4 : gear + 1;
+	}
+	ImGui::SameLine();
+	if (ImGui::Checkbox("Perfect finesse", &show.fixed)) {
+		// The stops change under the piece, so start this placement over.
+		show.step = 0;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Back")) {
+		app.screen = show.back;
+		app.viewing.reset();
+	}
+	ImGui::End();
+}
+
+void draw_replays (App& app) {
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, 60),
+		ImGuiCond_Always, ImVec2(0.5f, 0.f));
+	ImGui::SetNextWindowSize(ImVec2(560, 0));
+	ImGui::Begin("Replays", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+	if (app.shelf.empty()) {
+		ImGui::TextDisabled("No replays yet. Finish a game first.");
+	}
+	for (size_t i = 0; i < app.shelf.size(); ++i) {
+		ImGui::PushID(static_cast<int>(i));
+		ImGui::TextUnformatted(app.shelf[i].title().c_str());
+		ImGui::SameLine(430);
+		if (ImGui::SmallButton("Watch")) {
+			watch(app, app.shelf[i], Screen::Replays);
+		}
+		ImGui::PopID();
+	}
+	ImGui::Separator();
+	if (ImGui::Button("Back", ImVec2(120, 0))) {
+		app.screen = Screen::Menu;
+	}
+	ImGui::End();
+}
+
 void draw_menus (App& app) {
 	const ImVec2 middle(ImGui::GetIO().DisplaySize.x / 2,
 		ImGui::GetIO().DisplaySize.y / 2);
@@ -451,6 +706,10 @@ void draw_menus (App& app) {
 		ImGui::Spacing();
 		if (ImGui::Button("Play", ImVec2(220, 0))) {
 			start_game(app);
+		}
+		if (ImGui::Button("Replays", ImVec2(220, 0))) {
+			app.shelf = replay::listing(replay::folder(app.root));
+			app.screen = Screen::Replays;
 		}
 		if (ImGui::Button("Settings", ImVec2(220, 0))) {
 			app.show_settings = true;
@@ -491,6 +750,13 @@ void draw_menus (App& app) {
 		ImGui::Spacing();
 		draw_summary(*app.session);
 		ImGui::Spacing();
+		if (app.last_replay.has_value()) {
+			if (ImGui::Button("Watch replay", ImVec2(220, 0))) {
+				watch(app, *app.last_replay, Screen::Over);
+			}
+		} else {
+			ImGui::TextDisabled("Too short to record.");
+		}
 		if (ImGui::Button("Play again", ImVec2(220, 0))) {
 			start_game(app);
 		}
@@ -515,6 +781,15 @@ int run (bool smoke, long smoke_frames) {
 	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
 		SDL_Log("SDL_Init: %s", SDL_GetError());
 		return 1;
+	}
+	// No audio device is not a reason not to play; the mixer just stays shut.
+	if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
+		app.root = game_root();
+		app.audio.open(app.root);
+		app.audio.set_sfx_volume(app.config.sfx_volume);
+		app.audio.set_music_volume(app.config.music_volume);
+	} else {
+		app.root = game_root();
 	}
 	app.window = SDL_CreateWindow("Forcetris",
 		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1180, 700,
@@ -592,9 +867,19 @@ int run (bool smoke, long smoke_frames) {
 			behind -= 0.02;
 			if (app.screen == Screen::Game && !app.paused && !app.editing) {
 				if (!app.session->step()) {
-					app.screen = Screen::Over;
+					end_game(app);
 				}
 				++frames;
+			} else if (app.screen == Screen::Viewer && app.viewing.has_value()) {
+				advance_viewer(app);
+				if (smoke) {
+					++frames;
+				}
+			}
+		}
+		if (app.session.has_value()) {
+			for (const std::string& cue : app.session->take_cues()) {
+				app.audio.play(cue);
 			}
 		}
 
@@ -604,12 +889,21 @@ int run (bool smoke, long smoke_frames) {
 
 		SDL_SetRenderDrawColor(app.renderer, 12, 15, 20, 255);
 		SDL_RenderClear(app.renderer);
-		if (app.session.has_value() && app.screen != Screen::Menu) {
+		if (app.session.has_value()
+			&& (app.screen == Screen::Game || app.screen == Screen::Over)) {
 			draw_board(app);
 			draw_label("HOLD", kBoardX - 122.f, kBoardY - 22.f);
 			draw_label("NEXT", kBoardX + kBoardW + 18.f, kBoardY - 22.f);
 			draw_stat_panels(app);
 			draw_banner(app);
+		}
+		if (app.screen == Screen::Viewer && app.viewing.has_value()) {
+			draw_label("HOLD", kBoardX - 122.f, kBoardY - 22.f);
+			draw_label("NEXT", kBoardX + kBoardW + 18.f, kBoardY - 22.f);
+			draw_viewer(app);
+		}
+		if (app.screen == Screen::Replays) {
+			draw_replays(app);
 		}
 		if (app.editing) {
 			draw_layout_editor(app);
@@ -639,7 +933,15 @@ int run (bool smoke, long smoke_frames) {
 
 		if (smoke) {
 			if (app.screen == Screen::Over) {
-				start_game(app);
+				// With FORCETRIS_SMOKE_VIEW set the run ends in the replay
+				// viewer instead of another game, so the screenshot shows a
+				// recording being re-enacted.
+				if (std::getenv("FORCETRIS_SMOKE_VIEW") != nullptr
+					&& app.last_replay.has_value()) {
+					watch(app, *app.last_replay, Screen::Menu);
+				} else {
+					start_game(app);
+				}
 			}
 			if (frames >= smoke_frames) {
 				app.quit = true;

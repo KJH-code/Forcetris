@@ -14,8 +14,10 @@
 // point is that a replay or a trace means the same thing on both engines.
 #pragma once
 
+#include <array>
 #include <deque>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "forcetris/board.hpp"
@@ -70,6 +72,14 @@ struct Locked {
 	// have made the placement. `best` is -1 when the placement is not judgeable.
 	int inputs = 0;
 	int best = -1;
+	// What the recorder writes down about the journey: the presses by name,
+	// where the piece stood after each of them, whether it came out of the
+	// hold box, what the box held, and the previews the player could see.
+	std::vector<std::string> presses;
+	std::vector<std::array<int, 3>> trail;   // state, x, y after each press.
+	bool held = false;
+	int stored = -1;
+	std::array<int, 3> queue3{-1, -1, -1};
 	// Filled when the clear resolves.
 	bool scored = false;
 	int spin = 0;        // attack::SpinKind: 0 none, 1 mini, 2 full.
@@ -77,6 +87,8 @@ struct Locked {
 	int combo = 0;
 	bool perfect = false;
 	int attack = 0;
+	int score = 0;       // The game score once this placement had settled.
+	int downstack = 0;   // Garbage rows dug out so far, this clear included.
 };
 
 // Python's round(): half rounds to the even neighbour, which is not what
@@ -117,6 +129,12 @@ public:
 	int combo () const { return combo_; }
 	int attack_sent () const { return attack_sent_; }
 	int lines_cleared () const { return lines_cleared_; }
+	int score () const { return score_; }
+	int downstack () const { return downstack_; }
+
+	// The sound cues the last step fired, in the order Core would have fired
+	// them, by the names the files in sound/ carry.
+	const std::vector<std::string>& cues () const { return cues_; }
 
 	// Seconds the piece in play has been in play, for the forced drop meter.
 	// Empty between pieces or when the game is over.
@@ -127,17 +145,20 @@ private:
 	void eval_shift ();
 	void gravity ();
 	bool hard_drop (bool forced);
-	void lock (bool forced);
-	bool try_retry (bool forced);
+	void lock (bool forced, int posdif);
+	bool eval_finesse (bool forced);
 	bool drop_reachable () const;
 	void set_shape (int form);
 	void next_shape ();
 	bool hold_shape ();
-	void spin_key (int turns);
+	void spin_key (int turns, const char* pressed);
 	void cut_das ();
 	void eval_block ();
 	void clearing_step ();
 	void resolve_score ();
+	void note_input (const char* name);
+	void settle_move ();
+	void cue (std::string name) { cues_.push_back(std::move(name)); }
 
 	SimConfig config_;
 	// The handling, in frames.
@@ -181,6 +202,27 @@ private:
 	int combo_ = 0;
 	int attack_sent_ = 0;
 	int lines_cleared_ = 0;
+	int downstack_ = 0;
+
+	// The score, in the game's own arithmetic: a point or so per drop plus the
+	// clear formula, with the combo multiplier trailing the counter by one
+	// clear the way current_combo does.
+	int score_ = 0;
+	double current_combo_ = 1.0;
+	bool hard_flag_ = false;
+	int soft_pos_ = 21;          // Where the current soft drop was marked from.
+
+	// The journey the recorder writes down, reset with the piece.
+	std::vector<std::string> input_log_;
+	std::vector<std::optional<std::array<int, 3>>> trail_;
+	bool from_hold_ = false;
+	// The finesse judgement of the placement being locked, stashed by
+	// eval_finesse for the Locked entry the way last_judged/last_best are.
+	std::optional<int> last_best_;
+	bool last_judged_ = false;
+
+	std::vector<std::string> cues_;
+	bool gameover_cued_ = false;
 
 	// The forced drop clock, in the same arithmetic Python runs.
 	double now_ = 0.;

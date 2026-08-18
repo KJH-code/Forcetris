@@ -503,10 +503,12 @@ scoring: spins, back to back, combos and attack.
 
 With SDL2 installed, the same build now produces `forcetris`, a playable game
 on that core: a clean dark board, mouse-driven menus, rebindable keys, the
-forced drop meter, spin and combo banners — and a stat layout editor where
-every figure (PPS, APM, APS, VS, finesse, back to back, combo, and more) is a
-panel you tick on and drag wherever you want it, starting from presets,
-persisted between runs.
+forced drop meter, spin and combo banners, the same sounds and music as the
+Python game — and a stat layout editor where every figure (PPS, APM, APS,
+VS, finesse, back to back, combo, and more) is a panel you tick on and drag
+wherever you want it, starting from presets, persisted between runs.
+Finished games are recorded to the same replay files the Python game writes,
+and either game can browse and watch the other's, corrected finesse and all.
 
 ```bash
 sudo apt install libsdl2-dev    # or vcpkg install sdl2 on Windows
@@ -522,13 +524,18 @@ gives, two ways:
 - `equivalence` — every piece's cells, every finesse route, ~130,000 rotations
   over ten boards with kicks on and off, every attack table entry, ~4,600 spin
   verdicts, and where every piece falls.
-- `trace` — thirteen scripted games are played through the Python engine,
+- `trace` — seventeen scripted games are played through the Python engine,
   inputs frame-stamped, and the sim has to reproduce them move for move: every
   position the piece stands in, every lock and its frame, what each placement
-  scored — spin verdict, back to back, combo, perfect clear, attack — the
-  loss, the final board. A one-frame timing slip anywhere shifts everything
-  after it, so agreement means the loop's timing is right, not just its
-  outcomes.
+  scored — spin verdict, back to back, combo, perfect clear, attack, score,
+  downstack — every press logged and every stop of the movement trail, and
+  every sound cue on the frame it fired. A one-frame timing slip anywhere
+  shifts everything after it, so agreement means the loop's timing is right,
+  not just its outcomes.
+- `replay_cross` — the same scripted game played by both engines must write
+  the same replay file, and a file written by either engine must mean exactly
+  the same thing when the other reads it, re-enactment steps and the
+  corrected-finesse view included.
 
 ```bash
 ctest --test-dir cpp/build --output-on-failure

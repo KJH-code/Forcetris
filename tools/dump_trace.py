@@ -64,8 +64,14 @@ CONFIGS = (
     ('retry',     140, 40,  0,  6,   0, 0.0, True,  2, 1500, 'taps', 2, None),
     ('nokicks',   140, 40,  0,  6,  60, 0.0, False, 1, 1200, 'spins', 3, None),
     # Deterministic clears: an all-O feed laid out in rows, so the line clear
-    # timing is exercised on purpose rather than by luck.
-    ('clears',    140, 40,  0,  6,   0, 0.0, True,  1, 1200, 'rows', 2, None),
+    # timing is exercised on purpose rather than by luck. Finesse is off here
+    # - the only trace where it is - so the rule-zero path is graded too: no
+    # counting, no cue, no retry, but the judgement still recorded.
+    ('clears',    140, 40,  0,  6,   0, 0.0, True,  0, 1200, 'rows', 2, None),
+    # Twelve I pieces straight down a four-wide chimney, each finishing the
+    # bottom row: a twelve clear combo, which is what walks the combo cue up
+    # its whole ladder and past the cap, and the combo multipliers with it.
+    ('combochain', 140, 40, 0,  6,   0, 0.0, True,  1, 700, 'chimney', 2, 'chimney'),
     # Deterministic retries: four taps into the wall and a drop, every piece,
     # so the piece is handed back once per window and locked clean on the
     # second drop. The random scripts only stumble into a retry now and then.
@@ -84,6 +90,21 @@ CONFIGS = (
     # clear bonus and the combo bookkeeping on known numbers. The third I
     # lands on an empty board and clears nothing, which breaks the combo.
     ('b2bwell',   140, 40,  0,  6,   0, 0.0, True,  1, 440, 'quadwell', 2, 'eightrows'),
+    # Gravity locks with a soft drop still held: the only locks whose drop
+    # score uses the third-rate distance, and the only ones that can tell a
+    # hard drop flag that was never put down. The windows alternate a plain
+    # hard drop with a soft drop ridden into the ground until the grace runs
+    # out, tower rising all the while.
+    ('gravlock',  140, 40,  0, 40,   0, 0.0, True,  1, 1000, 'ride', 2, None),
+    # A T walked to the left wall and kicked off it into the hole that
+    # finishes the bottom row: the one trace where a clear's last rotation
+    # needed a kick, which is what the twist multiplier on the score turns on.
+    ('lwall',     140, 40,  0, 40,   0, 0.0, True,  1, 260, 'wallkick', 2, 'lwall'),
+    # A clear that empties the bottom row while a band of rubble floats above:
+    # the base game's perfect - the bottom row alone - pays out here, and the
+    # banner's perfect - the whole board - does not. The one board where the
+    # two disagree.
+    ('floatclear', 140, 40, 0,  6,   0, 0.0, True,  1, 200, 'plunge', 2, 'floated'),
     # A tucked T on the floor, under the plain T-spin rule for once: soft
     # dropped, slid under a lone corner block, and armed by a rotation the
     # kicks refuse - the engine marks the attempt, not the success, and the
@@ -103,6 +124,26 @@ def seed_board (core, which):
         for y in range(14, 22):
             for x in range(9):
                 core.grid.cells[y][x] = Block([x, y], 7, fallen=True)
+    elif which == 'chimney':
+        # Twelve rows lacking only the four columns a flat I fills. The I
+        # falls through the gap to the floor each time, finishing the bottom
+        # row, so every drop is a single and the combo never breaks.
+        for y in range(10, 22):
+            for x in range(10):
+                if not 3 <= x <= 6:
+                    core.grid.cells[y][x] = Block([x, y], 7, fallen=True)
+    elif which == 'lwall':
+        # The bottom row lacking only its wall-side corner, which is exactly
+        # the cell the kicked T's foot lands in.
+        for x in range(1, 10):
+            core.grid.cells[21][x] = Block([x, 21], 7, fallen=True)
+    elif which == 'floated':
+        # A full-width band floating three rows above an almost-finished
+        # bottom row, with a chimney down the middle for the I to fall through.
+        for y in (17, 18, 19, 21):
+            for x in range(10):
+                if not 3 <= x <= 6:
+                    core.grid.cells[y][x] = Block([x, y], 7, fallen=True)
     elif which == 'tslot':
         # The bottom row already full - nothing clears until something locks -
         # the row above open exactly where the tucked T's cells land, and one
@@ -187,8 +228,13 @@ def build_rows_script(frames):
     clears included, so the pattern holds together without predicting frames.
     """
     events = {}
+    # The centre piece wastes two presses that cancel out: it lands where it
+    # would have anyway, but the presses are on the record - which is what
+    # grades the finesse-off rule this trace runs under, since a fault that
+    # is neither counted nor heard must still be a fault nowhere else.
     moves = (
-        ('dasleft',), ('left', 'left'), (), ('right', 'right'), ('dasright',),
+        ('dasleft',), ('left', 'left'), ('left', 'right'), ('right', 'right'),
+        ('dasright',),
     )
     window = 0
     piece = 0
@@ -308,6 +354,39 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
     elif flavour == 'quadwell':
         pieces = [0] * 600
         script = build_quadwell_script(frames)
+    elif flavour == 'chimney':
+        pieces = [0] * 600
+        script = {
+            window * 50 + 30: ('hard', 1)
+            for window in range((frames - 20) // 50)}
+    elif flavour == 'ride':
+        pieces = [1] * 600
+        script = {}
+        for window in range(frames // 90):
+            start = window * 90
+            if window % 2 == 0:
+                script[start + 30] = ('hard', 1)
+            else:
+                # Held through the landing and the whole lock grace: the lock
+                # must find the soft drop still down, or the distance is zero.
+                script[start + 24] = ('soft', 1)
+                script[start + 85] = ('soft', 0)
+    elif flavour == 'wallkick':
+        pieces = [2] * 600
+        script = {}
+        for window in range(frames // 80):
+            start = window * 80
+            script[start + 24] = ('left', 1)
+            script[start + 40] = ('left', 0)
+            script[start + 44] = ('soft', 1)
+            script[start + 46] = ('soft', 0)
+            script[start + 50] = ('cw', 1)
+            script[start + 54] = ('hard', 1)
+    elif flavour == 'plunge':
+        pieces = [0] * 600
+        script = {
+            window * 60 + 30: ('hard', 1)
+            for window in range((frames - 20) // 60)}
     elif flavour == 'tslot':
         pieces = [2, 0] * 300
         script = build_tslot_script(frames)
@@ -362,11 +441,38 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
 
     locks = []
     scores = []
+    places = []
+    cues = []
     in_forced = [False]
     real_fallen = core.eval_fallen
     real_forced = core.eval_forced_drop
     real_commit = core.recorder.commit
+    real_hold = core.recorder.hold
     frame_at = [0]
+
+    def noting_sound(sound):
+        # Every cue the engine fires, by frame. The sim has to fire the same
+        # ones in the same order, or its game sounds different from the game.
+        cues.append((frame_at[0], sound))
+
+    G.env.play_sound = noting_sound
+
+    def noting_hold(**fields):
+        # What the recorder is told about each placement's journey: the press
+        # names, the trail of stops, where the piece came from and what the
+        # player could see. All of it has to come out of the sim identically,
+        # or a replay written by one engine lies when read by the other.
+        places.append((
+            fields.get('held'), fields.get('stored'),
+            list(fields.get('queue') or []),
+            1 if fields.get('judged') else 0,
+            fields.get('best'),
+            list(fields.get('presses') or []),
+            [list(stop) for stop in (fields.get('trail') or [])],
+        ))
+        return real_hold(**fields)
+
+    core.recorder.hold = noting_hold
 
     def noting_fallen(posdif):
         # The two flags the spin verdict reads, written down at the moment the
@@ -390,9 +496,10 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
     def noting_commit(user_, grid, label, perfect, sent):
         # The moment Core.run scores a placement: the clearer has finished and
         # the chain counters are final. One of these per lock, in lock order.
+        # The score is the game's own arithmetic, which the sim also carries.
         scores.append((
             atk.spin_kind(label), user_.b2b, user_.combo_ctr,
-            1 if perfect else 0, sent))
+            1 if perfect else 0, sent, user_.score, user_.downstack))
         return real_commit(user_, grid, label, perfect, sent)
 
     core.eval_fallen = noting_fallen
@@ -436,8 +543,18 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
 
     for lock in locks:
         out.append('lock {} {} {} {} {} {} {} {}'.format(*lock))
+    for index, place in enumerate(places):
+        held, stored, queue, judged, best, presses, trail = place
+        out.append('place {} {} {} {} {} {} {} {}'.format(
+            index, 1 if held else 0, stored,
+            ','.join(str(form) for form in queue) or '-',
+            judged, -1 if best is None else best,
+            ','.join(presses) or '-',
+            ','.join('{}:{}:{}'.format(*stop) for stop in trail) or '-'))
     for index, score in enumerate(scores):
-        out.append('score {} {} {} {} {} {}'.format(index, *score))
+        out.append('score {} {} {} {} {} {} {} {}'.format(index, *score))
+    for frame, name in cues:
+        out.append('cue {} {}'.format(frame, name))
     out.append('loss {}'.format(loss_frame))
     out.append('frames {}'.format(ran))
     rows = rp.board_to_rows(core.grid)

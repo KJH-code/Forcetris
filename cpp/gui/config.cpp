@@ -1,6 +1,7 @@
 #include "config.hpp"
 
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -66,6 +67,30 @@ std::string config_path () {
 	return path;
 }
 
+std::string game_root () {
+	namespace fs = std::filesystem;
+	if (const char* forced = std::getenv("FORCETRIS_ROOT")) {
+		return forced;
+	}
+	std::vector<fs::path> starts;
+	if (char* base = SDL_GetBasePath()) {
+		starts.emplace_back(base);
+		SDL_free(base);
+	}
+	std::error_code ignored;
+	starts.push_back(fs::current_path(ignored));
+	for (const fs::path& start : starts) {
+		fs::path probe = start;
+		for (int depth = 0; depth < 4; ++depth) {
+			if (fs::is_directory(probe / "sound", ignored)) {
+				return probe.string();
+			}
+			probe = probe.parent_path();
+		}
+	}
+	return ".";
+}
+
 Config load_config (const std::string& path) {
 	Config config;
 	apply_preset(config, config.preset);
@@ -93,6 +118,8 @@ Config load_config (const std::string& path) {
 		else if (key == "kicks") { int flag = 1; in >> flag; config.kicks = flag != 0; }
 		else if (key == "finesse") in >> config.finesse_rule;
 		else if (key == "spins") in >> config.spin_rule;
+		else if (key == "sfx_volume") in >> config.sfx_volume;
+		else if (key == "music_volume") in >> config.music_volume;
 		else if (key == "preset") in >> config.preset;
 		else if (key == "key") {
 			// The whole line is that action's binding: an action listed with
@@ -154,6 +181,8 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "kicks " << (config.kicks ? 1 : 0) << "\n";
 	out << "finesse " << config.finesse_rule << "\n";
 	out << "spins " << config.spin_rule << "\n";
+	out << "sfx_volume " << config.sfx_volume << "\n";
+	out << "music_volume " << config.music_volume << "\n";
 	out << "preset " << config.preset << "\n";
 	for (const ActionDef& action : all_actions()) {
 		out << "key " << action.id;

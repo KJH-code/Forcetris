@@ -16,8 +16,9 @@ What is here:
 | `finesse` | The search for the fewest presses a placement could have taken |
 | `spins` | The three corner rule and the immobility rule, under each spin setting |
 | `attack` | TETR.IO's garbage table, and the APM / VS arithmetic on top of it |
-| `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, naive clears, the finesse retry, and the scoring — spins, back to back, combos, attack |
-| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, menus, settings, and the stat layout editor |
+| `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, naive clears, the finesse retry, the scoring — spins, back to back, combos, attack, the score itself — the sound cues, and everything the recorder writes down |
+| `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
+| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, and the replay browser and viewer |
 
 ## The GUI
 
@@ -43,8 +44,17 @@ arrangement and all settings persist in a plain text file under SDL's
 per-user pref directory (`FORCETRIS_GUI_CONFIG` overrides the path).
 
 Settings — DAS/ARR/DCD/SDF/ARE, the forced drop timer, spin rule, finesse
-rule, kicks, and the key bindings — mirror the Python game's. Handling
-applies from the next game; keys apply at once.
+rule, kicks, the key bindings, and the effect and music volumes — mirror the
+Python game's. Handling applies from the next game; keys and volumes apply
+at once.
+
+The sound is the Python game's sound: the same synthesised WAVs out of
+sound/, the same music out of music/, fired by the cues the sim itself
+raises - which the trace harness grades, so what you hear is what the
+engine decided, frame for frame. Finished games are saved to data/replays
+in the same JSON the Python game writes; either game can browse and watch
+the other's recordings, re-enacted stop by stop with the piece walking its
+recorded trail, or the finesse-corrected route with *Perfect finesse* on.
 
 On Windows, install SDL2 through vcpkg (`vcpkg install sdl2`) or point
 `SDL2_DIR` at an unpacked SDL2 development package, then run the same CMake
@@ -84,23 +94,37 @@ C++ is held to the answers the tested implementation actually gives:
 - every attack table entry, and the APM / VS arithmetic
 - every spin verdict, under each rule, kicked and not — around 4,600
 - where every piece falls on every board
-- thirteen scripted games replayed move for move through the sim: seeded
+- seventeen scripted games replayed move for move through the sim: seeded
   random button-mashing across the handling range, plus deliberate scripts
   for line clear timing, finesse retries, DCD cuts, the retry keeping the
   forced drop time a piece had already spent, back-to-back quads down a
-  seeded well ending in a perfect clear, and a tucked mini T-spin armed by a
-  rotation the kicks refuse
+  seeded well ending in a perfect clear, a twelve-clear combo chimney, a
+  tucked mini T-spin armed by a rotation the kicks refuse, a T kicked off
+  the wall into a twist-scored clear, soft-dropped gravity locks, and a
+  clear that empties the bottom row under a floating band of rubble
 - what every one of those placements scored — the spin verdict, the back to
-  back and combo counters, the perfect clear flag and the attack — plus the
-  two flags the verdict reads, compared at every one of the ~190 locks
+  back and combo counters, the perfect clear flag, the attack, the game
+  score and the downstack — plus the two flags the verdict reads, the press
+  log, the movement trail, the hold provenance and the queue snapshot,
+  compared at every one of the ~240 locks
+- every sound cue the engine fired, by name, on the frame it fired — nearly
+  a thousand of them across the traces
+- the replay files, both ways: the same scripted game played by both engines
+  must produce the same file, a file written by either engine must read
+  identically in the other (re-enactment steps and corrected view included),
+  and a synthetic file exercising the format's corners must too
 
-The sim's port was verified the hard way: twenty-six deliberate mutations —
+The sim's port was verified the hard way: over fifty deliberate mutations —
 the lock grace a frame short, the DAS `+1` dropped, ARR 0 stepping instead of
 sliding, the first spawn using ARE, Python's half-to-even rounding replaced
 with C++'s, the spin half of the back-to-back gate dropped, the combo bonus
-read off by one, the spin flags surviving a spawn, and so on — each fail at
-least one trace. Where a mutation survived, the trace set was extended until
-it did not.
+read off by one, the spin flags surviving a spawn, the soft drop scored at
+the hard drop's rate, the twist multiplier dropped from the score, the combo
+cue's ladder uncapped, the hold flag never reset, a replay's counters written
+raw instead of as the HUD shows them, the corrected view inventing routes for
+unjudged placements, and so on — each fail at least one trace or the replay
+cross check. Where a mutation survived, the harness was extended until it
+did not.
 
 ## Kick table coverage
 
@@ -127,7 +151,6 @@ entry went undetected. The seeded rubble boards exist because of that.
 
 ## What it does not have
 
-No audio, no replay files yet. The Python game remains
-the reference implementation and keeps all of those. The sim plays free mode
-with naive clearing, which is the trainer's default; the cascade clear modes
-and arcade's garbage ramp are not ported.
+The arcade and timed modes, the cascade clear styles, and the high score
+table still live only in Python, which remains the reference implementation.
+The sim plays free mode with naive clearing, which is the trainer's default.

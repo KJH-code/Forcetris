@@ -58,7 +58,35 @@ struct Score {
 	int combo = 0;
 	int perfect = 0;
 	int attack = 0;
+	int score = 0;
+	int downstack = 0;
 };
+
+// What the recorder was told about a placement's journey.
+struct Place {
+	size_t lock = 0;
+	int held = 0;
+	int stored = 7;
+	std::vector<int> queue;
+	int judged = 0;
+	int best = -1;
+	std::vector<std::string> presses;
+	std::vector<std::array<int, 3>> trail;
+};
+
+// Split a comma-joined field, with '-' standing for none at all.
+std::vector<std::string> split_list (const std::string& joined) {
+	std::vector<std::string> parts;
+	if (joined == "-") {
+		return parts;
+	}
+	std::string part;
+	std::istringstream in(joined);
+	while (std::getline(in, part, ',')) {
+		parts.push_back(part);
+	}
+	return parts;
+}
 
 struct Trace {
 	std::string name;
@@ -69,6 +97,8 @@ struct Trace {
 	std::vector<Snap> expected;
 	std::vector<Locked> locks;
 	std::vector<Score> scores;
+	std::vector<Place> places;
+	std::vector<std::pair<long, std::string>> cues;
 	long loss = -1;
 	long frames = 0;
 	std::vector<std::string> board;
@@ -81,6 +111,7 @@ int grade (const Trace& trace) {
 		sim.seed(Board::from_rows(trace.seed));
 	}
 	std::vector<Snap> seen;
+	std::vector<std::pair<long, std::string>> heard;
 	std::optional<Snap> last;
 	long ran = 0;
 	long lost_at = -1;
@@ -91,6 +122,9 @@ int grade (const Trace& trace) {
 			event = found->second;
 		}
 		const bool alive = sim.step(event);
+		for (const std::string& name : sim.cues()) {
+			heard.emplace_back(frame, name);
+		}
 		ran = frame + 1;
 		const Piece& piece = sim.piece();
 		const Snap snap{
@@ -177,19 +211,84 @@ int grade (const Trace& trace) {
 			break;
 		}
 		if (got.spin != want.spin || got.b2b != want.b2b || got.combo != want.combo
-			|| (got.perfect ? 1 : 0) != want.perfect || got.attack != want.attack) {
+			|| (got.perfect ? 1 : 0) != want.perfect || got.attack != want.attack
+			|| got.score != want.score || got.downstack != want.downstack) {
 			complain("score " + std::to_string(want.lock) + ": got spin "
 				+ std::to_string(got.spin) + " b2b " + std::to_string(got.b2b)
 				+ " combo " + std::to_string(got.combo)
 				+ " perfect " + std::to_string(got.perfect ? 1 : 0)
 				+ " attack " + std::to_string(got.attack)
+				+ " score " + std::to_string(got.score)
+				+ " downstack " + std::to_string(got.downstack)
 				+ " against spin " + std::to_string(want.spin)
 				+ " b2b " + std::to_string(want.b2b)
 				+ " combo " + std::to_string(want.combo)
 				+ " perfect " + std::to_string(want.perfect)
-				+ " attack " + std::to_string(want.attack));
+				+ " attack " + std::to_string(want.attack)
+				+ " score " + std::to_string(want.score)
+				+ " downstack " + std::to_string(want.downstack));
 			break;
 		}
+	}
+
+	// The recorder's view of each placement: the journey and the judgement.
+	for (const Place& want : trace.places) {
+		if (want.lock >= locked.size()) {
+			complain("place names lock " + std::to_string(want.lock)
+				+ " but only " + std::to_string(locked.size()) + " locked");
+			break;
+		}
+		const Locked& got = locked[want.lock];
+		std::vector<int> queue;
+		for (const int form : got.queue3) {
+			if (form >= 0) {
+				queue.push_back(form);
+			}
+		}
+		// The engine writes 7 - the garbage form - for an empty hold box; the
+		// sim spells the same thing -1.
+		const int stored = got.stored < 0 ? 7 : got.stored;
+		const bool judged = got.best >= 0;
+		if ((got.held ? 1 : 0) != want.held || stored != want.stored
+			|| queue != want.queue || (judged ? 1 : 0) != want.judged
+			|| (judged ? got.best : -1) != want.best
+			|| got.presses != want.presses || got.trail != want.trail) {
+			std::ostringstream what;
+			what << "place " << want.lock << ": got held " << got.held
+			     << " stored " << stored << " judged " << judged
+			     << " best " << got.best << " presses";
+			for (const auto& press : got.presses) what << " " << press;
+			what << " trail";
+			for (const auto& stop : got.trail) {
+				what << " " << stop[0] << ":" << stop[1] << ":" << stop[2];
+			}
+			what << " against held " << want.held << " stored " << want.stored
+			     << " judged " << want.judged << " best " << want.best
+			     << " presses";
+			for (const auto& press : want.presses) what << " " << press;
+			what << " trail";
+			for (const auto& stop : want.trail) {
+				what << " " << stop[0] << ":" << stop[1] << ":" << stop[2];
+			}
+			complain(what.str());
+			break;
+		}
+	}
+
+	// The soundtrack: every cue, in order, on the frame it fired.
+	const size_t both = std::min(heard.size(), trace.cues.size());
+	for (size_t i = 0; i < both; ++i) {
+		if (heard[i] != trace.cues[i]) {
+			complain("cue " + std::to_string(i) + ": got '" + heard[i].second
+				+ "' at frame " + std::to_string(heard[i].first) + " against '"
+				+ trace.cues[i].second + "' at frame "
+				+ std::to_string(trace.cues[i].first));
+			break;
+		}
+	}
+	if (bad == 0 && heard.size() != trace.cues.size()) {
+		complain("fired " + std::to_string(heard.size()) + " cues against "
+			+ std::to_string(trace.cues.size()));
 	}
 
 	// The ending: same loss, same frame count, same board.
@@ -250,8 +349,32 @@ int main (int argc, char** argv) {
 		} else if (kind == "score") {
 			Score score{};
 			in >> score.lock >> score.spin >> score.b2b >> score.combo
-			   >> score.perfect >> score.attack;
+			   >> score.perfect >> score.attack >> score.score >> score.downstack;
 			trace.scores.push_back(score);
+		} else if (kind == "place") {
+			Place place{};
+			std::string queue;
+			std::string presses;
+			std::string trail;
+			in >> place.lock >> place.held >> place.stored >> queue
+			   >> place.judged >> place.best >> presses >> trail;
+			for (const std::string& form : split_list(queue)) {
+				place.queue.push_back(std::stoi(form));
+			}
+			place.presses = split_list(presses);
+			for (const std::string& stop : split_list(trail)) {
+				std::array<int, 3> parsed{};
+				std::istringstream part(stop);
+				char sep = 0;
+				part >> parsed[0] >> sep >> parsed[1] >> sep >> parsed[2];
+				place.trail.push_back(parsed);
+			}
+			trace.places.push_back(place);
+		} else if (kind == "cue") {
+			long frame = 0;
+			std::string name;
+			in >> frame >> name;
+			trace.cues.emplace_back(frame, name);
 		} else if (kind == "pieces") {
 			int form = 0;
 			while (in >> form) {

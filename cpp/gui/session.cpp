@@ -25,9 +25,22 @@ const char* form_letter (int form) {
 
 } // namespace
 
-Session::Session (const SimConfig& config, unsigned seed)
+Session::Session (const SimConfig& config, unsigned seed, const replay::Meta& meta)
 	: sim_(config, {}), rng_(seed) {
+	recorder_.begin(meta);
 	refill();
+}
+
+std::vector<std::string> Session::take_cues () {
+	std::vector<std::string> drained;
+	drained.swap(cue_box_);
+	return drained;
+}
+
+std::optional<replay::Replay> Session::finish () {
+	return recorder_.finish(
+		sim_.score(), sim_.lines_cleared(), sim_.downstack(),
+		sim_.frame() * 0.02);
 }
 
 void Session::refill () {
@@ -56,6 +69,7 @@ bool Session::step () {
 		pending_.pop_front();
 	}
 	over_ = !sim_.step(event);
+	cue_box_.insert(cue_box_.end(), sim_.cues().begin(), sim_.cues().end());
 	refill();
 	absorb();
 	return !over_;
@@ -78,9 +92,12 @@ void Session::absorb () {
 			}
 		}
 	}
-	// Scores resolve a few frames after their locks, strictly in order.
+	// Scores resolve a few frames after their locks, strictly in order. The
+	// recorder gets each placement the moment it resolves, with the board as
+	// the clear left it - the same coupling the cross test grades.
 	for (; scored_ < locked.size() && locked[scored_].scored; ++scored_) {
 		const Locked& lock = locked[scored_];
+		recorder_.add(replay::from_locked(lock, sim_.board().rows()));
 		best_b2b_ = std::max(best_b2b_, lock.b2b - 1);
 		best_combo_ = std::max(best_combo_, lock.combo - 1);
 		if (lock.spin != 0) {

@@ -51,6 +51,10 @@ struct Config {
 	int finesse_rule = 1;   // 0 off, 1 count, 2 retry.
 	int spin_rule = 2;      // spins::Rule.
 
+	// Volumes, as fractions, matching the Python game's defaults.
+	float sfx_volume = 1.f;
+	float music_volume = 1.f;
+
 	// The stat panels, keyed by the stat ids stats.cpp registers.
 	std::map<std::string, StatSpot> stats;
 
@@ -70,6 +74,11 @@ struct Config {
 // Where the config file lives: FORCETRIS_GUI_CONFIG if set (which is how the
 // tests keep out of the real one), otherwise SDL's per-user pref directory.
 std::string config_path ();
+
+// The repository checkout the executable belongs to: the directory holding
+// sound/, music/ and data/. FORCETRIS_ROOT if set, otherwise found by
+// walking up from the executable; falls back to the working directory.
+std::string game_root ();
 
 Config load_config (const std::string& path);
 bool save_config (const Config& config, const std::string& path);

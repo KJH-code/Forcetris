@@ -11,7 +11,9 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <vector>
 
+#include "forcetris/replay.hpp"
 #include "forcetris/sim.hpp"
 
 namespace forcetris {
@@ -25,7 +27,9 @@ struct Banner {
 
 class Session {
 public:
-	Session (const SimConfig& config, unsigned seed);
+	// `meta` is what the recorder writes down about the game being started:
+	// the settings it is actually played under.
+	Session (const SimConfig& config, unsigned seed, const replay::Meta& meta);
 
 	// A key changing state, queued for the sim. The engine polls one event
 	// per frame, so a burst of presses is spread over the following frames -
@@ -34,6 +38,12 @@ public:
 
 	// One 20ms frame. Returns false once the game is over.
 	bool step ();
+
+	// The sound cues fired since the last drain, in firing order.
+	std::vector<std::string> take_cues ();
+
+	// The finished recording, or nothing for a game too short to keep.
+	std::optional<replay::Replay> finish ();
 
 	const Sim& sim () const { return sim_; }
 	bool over () const { return over_; }
@@ -61,6 +71,8 @@ private:
 	std::mt19937 rng_;
 	std::deque<Event> pending_;
 	bool over_ = false;
+	std::vector<std::string> cue_box_;
+	replay::Recorder recorder_;
 
 	// How much of sim.locked() the totals have absorbed.
 	size_t counted_ = 0;
