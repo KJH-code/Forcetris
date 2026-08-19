@@ -55,7 +55,7 @@ const SDL_Color kFormColors[8] = {
 	{122, 122, 122, 255},  // garbage
 };
 
-enum class Screen { Menu, Game, Over, Replays, Viewer, Scores };
+enum class Screen { Menu, Game, Over, Replays, Viewer, Scores, Help, Analysis };
 
 // A replay being watched: which placement, which stop along its journey.
 struct Viewing {
@@ -80,7 +80,11 @@ struct App {
 	std::optional<replay::Replay> last_replay;
 	std::vector<replay::Replay> shelf;   // The browser's listing.
 	std::optional<Viewing> viewing;
+	// The replay the analysis screen is showing, and where it came from.
+	std::optional<replay::Replay> studying;
+	Screen study_back = Screen::Menu;
 	Screen screen = Screen::Menu;
+	Screen help_back = Screen::Menu;      // How to play returns where it came from.
 	bool paused = false;
 	bool editing = false;        // The stat layout editor is live.
 	bool show_settings = false;
@@ -237,6 +241,11 @@ void handle_event (App& app, const SDL_Event& event) {
 		} else if (app.screen == Screen::Viewer && app.viewing.has_value()) {
 			app.screen = app.viewing->back;
 			app.viewing.reset();
+		} else if (app.screen == Screen::Analysis) {
+			app.screen = app.study_back;
+			app.studying.reset();
+		} else if (app.screen == Screen::Help) {
+			app.screen = app.help_back;
 		} else if (app.screen == Screen::Replays
 			|| app.screen == Screen::Scores) {
 			app.screen = Screen::Menu;
@@ -554,6 +563,112 @@ void draw_summary (const Session& session) {
 	}
 }
 
+// What the run was made of, as the Python analysis screen lists it. The rows
+// come out of the core, where the cross test grades them against that
+// screen's own text, so the two games cannot drift apart.
+void draw_analysis_rows (const replay::Replay& game) {
+	if (ImGui::BeginTable("analysis", 2)) {
+		for (const auto& [label, value] : replay::analysis_rows(game)) {
+			ImGui::TableNextRow();
+			if (label.empty()) {
+				// The spacers the Python screen leaves between the groups.
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextUnformatted(" ");
+				continue;
+			}
+			ImGui::TableSetColumnIndex(0);
+			ImGui::TextColored(ImVec4(0.59f, 0.65f, 0.73f, 1.f), "%s", label.c_str());
+			ImGui::TableSetColumnIndex(1);
+			ImGui::TextUnformatted(value.c_str());
+		}
+		ImGui::EndTable();
+	}
+}
+
+// The analysis of a saved replay, opened from the browser. The loss screen
+// shows the same rows inline, since a finished game is already looking at
+// them.
+void draw_analysis (App& app) {
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, 50),
+		ImGuiCond_Always, ImVec2(0.5f, 0.f));
+	ImGui::SetNextWindowSize(ImVec2(470, 0));
+	ImGui::Begin("Analysis", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+	if (app.studying.has_value()) {
+		ImGui::TextDisabled("%s", app.studying->title().c_str());
+		ImGui::Separator();
+		draw_analysis_rows(*app.studying);
+		ImGui::Separator();
+		if (ImGui::Button("Watch replay", ImVec2(220, 0))) {
+			watch(app, *app.studying, Screen::Analysis);
+		}
+	} else {
+		ImGui::TextDisabled("That run was too short to record.");
+	}
+	if (ImGui::Button("Back", ImVec2(220, 0))) {
+		app.screen = app.study_back;
+		app.studying.reset();
+	}
+	ImGui::End();
+}
+
+// How to play: the keys as they are bound right now, and the one rule no
+// other Tetris has. The Python help screen's text, read off the live
+// bindings the same way.
+void draw_help (App& app) {
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, 50),
+		ImGuiCond_Always, ImVec2(0.5f, 0.f));
+	ImGui::SetNextWindowSize(ImVec2(620, 0));
+	ImGui::Begin("How to Play", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+	if (ImGui::BeginTable("keys", 2)) {
+		for (const ActionDef& action : all_actions()) {
+			// Every key bound to the action, or the word for none - the same
+			// line controls.describe() builds.
+			std::string bound;
+			const auto found = app.config.keys.find(action.id);
+			if (found != app.config.keys.end()) {
+				for (const int code : found->second) {
+					const char* name =
+						SDL_GetScancodeName(static_cast<SDL_Scancode>(code));
+					bound += (bound.empty() ? "" : ", ")
+						+ std::string(name != nullptr && *name != '\0' ? name : "?");
+				}
+			}
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "%s",
+				bound.empty() ? "Unbound" : bound.c_str());
+			ImGui::TableSetColumnIndex(1);
+			ImGui::TextUnformatted(action.label);
+		}
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(0);
+		ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "Escape");
+		ImGui::TableSetColumnIndex(1);
+		ImGui::TextUnformatted("Pause");
+		ImGui::EndTable();
+	}
+	ImGui::Separator();
+	ImGui::TextUnformatted("Forced Drop");
+	if (app.config.forced_delay > 0.) {
+		ImGui::Text("Every piece is hard dropped for you %.2fs after it spawns.",
+			app.config.forced_delay);
+		ImGui::Text("Holding gives the incoming piece a fresh %.2fs, once per piece.",
+			app.config.forced_delay);
+		ImGui::TextUnformatted("Soft dropping and wall kicks do not stop the clock.");
+		ImGui::TextUnformatted("Change the time under Settings.");
+	} else {
+		ImGui::TextUnformatted("Currently off, so this is plain Tetris.");
+		ImGui::TextUnformatted("Turn it on under Settings to train placement speed.");
+	}
+	ImGui::Separator();
+	if (ImGui::Button("Back", ImVec2(220, 0))) {
+		app.screen = app.help_back;
+	}
+	ImGui::End();
+}
+
 // --- The replay viewer: a re-enactment, never a re-simulation. ------------
 
 void advance_viewer (App& app) {
@@ -717,7 +832,13 @@ void draw_replays (App& app) {
 	for (size_t i = 0; i < app.shelf.size(); ++i) {
 		ImGui::PushID(static_cast<int>(i));
 		ImGui::TextUnformatted(app.shelf[i].title().c_str());
-		ImGui::SameLine(430);
+		ImGui::SameLine(370);
+		if (ImGui::SmallButton("Analysis")) {
+			app.studying = app.shelf[i];
+			app.study_back = Screen::Replays;
+			app.screen = Screen::Analysis;
+		}
+		ImGui::SameLine(440);
 		if (ImGui::SmallButton("Watch")) {
 			watch(app, app.shelf[i], Screen::Replays);
 		}
@@ -797,6 +918,10 @@ void draw_menus (App& app) {
 		if (ImGui::Button("Play arcade", ImVec2(220, 0))) {
 			start_game(app, 2);
 		}
+		if (ImGui::Button("How to play", ImVec2(220, 0))) {
+			app.help_back = Screen::Menu;
+			app.screen = Screen::Help;
+		}
 		if (ImGui::Button("High scores", ImVec2(220, 0))) {
 			app.score_page = 2;
 			app.screen = Screen::Scores;
@@ -842,7 +967,15 @@ void draw_menus (App& app) {
 		ImGui::TextUnformatted("Game over");
 		ImGui::SetWindowFontScale(1.f);
 		ImGui::Spacing();
-		draw_summary(*app.session);
+		// What the run was made of, as the Python analysis screen lists it -
+		// which needs the recording. A game too short for a file says so and
+		// falls back to the totals the panels were already showing.
+		if (app.last_replay.has_value()) {
+			draw_analysis_rows(*app.last_replay);
+		} else {
+			ImGui::TextDisabled("That run was too short to record.");
+			draw_summary(*app.session);
+		}
 		ImGui::Spacing();
 		if (app.hiscore_place >= 0 && !app.score_saved) {
 			ImGui::TextColored(ImVec4(1.f, 0.82f, 0.29f, 1.f),
@@ -904,6 +1037,49 @@ void draw_menus (App& app) {
 
 // --- The loop. -------------------------------------------------------------
 
+// The screens the smoke run visits between games, in order. Each is opened
+// the way a player opens it - with the data the screen reads actually
+// loaded - so the headless run proves they draw, not merely that they build.
+constexpr int kTour = 6;
+
+void tour_screen (App& app, int stop) {
+	switch (stop) {
+		case 0:
+			app.help_back = Screen::Over;
+			app.screen = Screen::Help;
+			break;
+		case 1:
+			app.score_page = 0;
+			app.screen = Screen::Scores;
+			break;
+		case 2:
+			app.score_page = 2;
+			app.screen = Screen::Scores;
+			break;
+		case 3:
+			app.shelf = replay::listing(replay::folder(app.root));
+			app.screen = Screen::Replays;
+			break;
+		case 4:
+			// The analysis of the run just finished, or of the newest file
+			// on the shelf if this game was too short to keep.
+			app.studying = app.last_replay.has_value()
+				? app.last_replay
+				: (app.shelf.empty() ? std::nullopt
+					: std::optional<replay::Replay>(app.shelf.front()));
+			app.study_back = Screen::Over;
+			app.screen = Screen::Analysis;
+			break;
+		default:
+			// And the same screen with nothing to show, which is what a run
+			// too short to record leaves it holding.
+			app.studying.reset();
+			app.study_back = Screen::Over;
+			app.screen = Screen::Analysis;
+			break;
+	}
+}
+
 int run (bool smoke, long smoke_frames) {
 	App app;
 	app.config_file = config_path();
@@ -959,6 +1135,13 @@ int run (bool smoke, long smoke_frames) {
 	Uint64 previous = SDL_GetPerformanceCounter();
 	double behind = 0.;
 	long frames = 0;
+	// The smoke run's tour of the screens a game never opens. It only starts
+	// once a game has ended, and the viewer mode skips it, so the run is only
+	// held to finishing a tour it was in a position to start.
+	const bool touring = smoke && std::getenv("FORCETRIS_SMOKE_VIEW") == nullptr;
+	int toured = 0;
+	int tour_frames = 0;
+	bool game_ended = false;
 	while (!app.quit) {
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
@@ -1006,6 +1189,10 @@ int run (bool smoke, long smoke_frames) {
 				if (smoke) {
 					++frames;
 				}
+			} else if (smoke) {
+				// A menu screen on the tour still counts, so the run always
+				// reaches its frame budget rather than sitting on one.
+				++frames;
 			}
 		}
 		if (app.session.has_value()) {
@@ -1039,6 +1226,12 @@ int run (bool smoke, long smoke_frames) {
 		if (app.screen == Screen::Scores) {
 			draw_scores(app);
 		}
+		if (app.screen == Screen::Analysis) {
+			draw_analysis(app);
+		}
+		if (app.screen == Screen::Help) {
+			draw_help(app);
+		}
 		if (app.editing) {
 			draw_layout_editor(app);
 		}
@@ -1067,14 +1260,26 @@ int run (bool smoke, long smoke_frames) {
 
 		if (smoke) {
 			if (app.screen == Screen::Over) {
+				game_ended = true;
 				// With FORCETRIS_SMOKE_VIEW set the run ends in the replay
 				// viewer instead of another game, so the screenshot shows a
 				// recording being re-enacted.
-				if (std::getenv("FORCETRIS_SMOKE_VIEW") != nullptr
-					&& app.last_replay.has_value()) {
+				if (!touring && app.last_replay.has_value()) {
 					watch(app, *app.last_replay, Screen::Menu);
+				} else if (toured < kTour) {
+					// Between games, walk the screens a game never opens, a
+					// few frames each: every one of them has to build and
+					// draw with real data behind it, not merely compile.
+					tour_screen(app, toured++);
 				} else {
 					start_game(app, app.mode);
+				}
+			} else if (toured > 0 && toured <= kTour
+				&& app.screen != Screen::Game && app.screen != Screen::Viewer) {
+				if (++tour_frames >= 4) {
+					tour_frames = 0;
+					app.screen = Screen::Over;
+					app.studying.reset();
 				}
 			}
 			if (frames >= smoke_frames) {
@@ -1091,7 +1296,16 @@ int run (bool smoke, long smoke_frames) {
 	SDL_DestroyWindow(app.window);
 	SDL_Quit();
 	if (smoke) {
-		SDL_Log("smoke: ran %ld frames", frames);
+		SDL_Log("smoke: ran %ld frames, toured %d of %d screens",
+			frames, toured, kTour);
+		if (touring && game_ended && toured < kTour) {
+			// The tour is the only thing that opens the menu screens, so a
+			// run that had the chance to walk them and did not finish proves
+			// nothing about them. A budget too short to end a single game is
+			// not held to it - there was never a screen to open.
+			SDL_Log("smoke: the screen tour did not finish");
+			return 1;
+		}
 	}
 	return 0;
 }

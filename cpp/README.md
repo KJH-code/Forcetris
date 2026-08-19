@@ -19,7 +19,7 @@ What is here:
 | `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, all three clear styles, the finesse retry, the scoring — spins, back to back, combos, cascade chains, attack, the score itself — the sound cues, timed mode's clock, arcade's level ramp and garbage, and everything the recorder writes down |
 | `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
-| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, the replay browser and viewer, the three game modes, and the high score screens |
+| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, the replay browser and viewer, the three game modes, the high score screens, the how-to-play screen and the analysis of a finished run |
 
 ## The GUI
 
@@ -57,6 +57,16 @@ name entry, and the table is the Python game's own data/hiscore.dat, read
 and written byte-compatibly; the High scores screen shows the same three
 pages the Python game shows.
 
+A finished run is laid out the way the Python analysis screen lays it out -
+score, pieces, lines and time; the finesse rate, the faults, what the run
+cost in presses and what it would have cost without them; attack, VS, the
+clears by size, spins, perfect clears and the best chains - and the same
+rows open from the replay browser for any saved recording. Those rows are
+built in the core and graded against the Python screen's own text, so the
+two games say the same thing about the same run. How to Play lists every
+action against the keys bound to it right now, and explains the forced
+drop, in the Python screen's words.
+
 The sound is the Python game's sound: the same synthesised WAVs out of
 sound/, the same music out of music/, fired by the cues the sim itself
 raises - which the trace harness grades, so what you hear is what the
@@ -73,7 +83,14 @@ else to fetch.
 Headless machines can still prove the whole thing runs:
 `FORCETRIS_SMOKE=1500 SDL_VIDEODRIVER=dummy ./forcetris` plays that many
 frames of scripted-random input and exits; `FORCETRIS_SHOT=/path/out.bmp`
-saves the final frame. The `gui_smoke` ctest does exactly this.
+saves the final frame. Between games it tours the screens a game never
+opens - how to play, both high score pages, the replay browser, the
+analysis of the run just finished, and that same analysis screen with
+nothing to show - a few frames each, with their real data behind them,
+and fails if it finished a game and did not finish the tour. That proves
+the screens open and draw against real replays and a real score table; it
+is not a substitute for the cross tests, which is where the text on them
+is actually graded. The `gui_smoke` ctest does exactly this.
 
 ## Building and grading it
 
@@ -128,6 +145,9 @@ C++ is held to the answers the tested implementation actually gives:
   must produce the same file, a file written by either engine must read
   identically in the other (re-enactment steps and corrected view included),
   and a synthetic file exercising the format's corners must too
+- the analysis screen's own rows, character for character: the C++ text is
+  compared against what the Python AnalysisMenu actually renders, so a
+  rounding or a plural out of place is a failure, not a detail
 
 The sim's port was verified the hard way: over fifty deliberate mutations —
 the lock grace a frame short, the DAS `+1` dropped, ARR 0 stepping instead of
@@ -190,9 +210,9 @@ entry went undetected. The seeded rubble boards exist because of that.
 
 ## What it does not have
 
-The game itself is all here now - the three modes, the three clear styles,
-the high score table, the sound, the replays. What stays Python-only is the
-chrome around it: the how-to-play screen, the loss screen's analysis charts
-(the C++ side shows its stat panels and the replay summary instead), and
-the pygbag web build. The Python game remains the reference implementation
-either way: every answer the C++ gives is graded against it, never assumed.
+The game and its screens are all here now - the three modes, the three
+clear styles, the high score table, the sound, the replays, the analysis
+of a finished run, the how-to-play. What stays Python-only is the pygbag
+web build, which is a packaging job rather than a port. The Python game
+remains the reference implementation either way: every answer the C++
+gives is graded against it, never assumed.

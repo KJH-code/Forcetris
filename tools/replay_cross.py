@@ -73,6 +73,18 @@ def stops_joined (stops):
     return joined('{}:{}:{}'.format(*stop) for stop in stops)
 
 
+_screens = {}
+
+
+def analysis_menu ():
+    """The game's own analysis screen, built once and re-shown per replay."""
+    if 'menu' not in _screens:
+        tetris = G.init(Namespace(
+            debug=False, forced_delay=0., volume=0., sfx_volume=0.))
+        _screens['menu'] = tetris.game.loss_menu.analysis_menu
+    return _screens['menu']
+
+
 def dump_summary (out, summary, fixed):
     clears = sorted(summary['clears'].items())
     out.append('summary {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}'.format(
@@ -118,6 +130,12 @@ def dump_replay (replay):
         out.append('fixedshown {} {}'.format(i, joined(place.presses_shown(True))))
     dump_summary(out, replay.summary(False), False)
     dump_summary(out, replay.summary(True), True)
+    # The analysis screen's rows, off the real screen rather than off a
+    # second rendering of them: what the player reads is what is graded.
+    menu = analysis_menu()
+    menu.show(replay)
+    for i, (name, value) in enumerate(menu.rows()):
+        out.append('analysis {} {}|{}'.format(i, name, value))
     return out
 
 
@@ -133,6 +151,15 @@ def compare (name, py_lines, cpp_lines):
             len(py_lines), len(cpp_lines)))
         return
     for py_line, cpp_line in zip(py_lines, cpp_lines):
+        if py_line.startswith('analysis') or cpp_line.startswith('analysis'):
+            # Rendered text, not numbers: '2.5' and '2.50' are the same
+            # figure and a different screen, so these lines match exactly or
+            # not at all.
+            if py_line != cpp_line:
+                check(name, False, 'analysis row differs:\n  py:  {}\n  cpp: {}'
+                      .format(py_line, cpp_line))
+                return
+            continue
         py_parts = py_line.split()
         cpp_parts = cpp_line.split()
         if len(py_parts) != len(cpp_parts):

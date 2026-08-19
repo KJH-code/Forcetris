@@ -13,6 +13,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace forcetris {
@@ -122,6 +123,15 @@ struct Replay {
 // A snapshot back at full height, empty rows on top.
 std::vector<std::string> padded (
 	const std::vector<std::string>& rows, int height = kSnapshotHeight);
+
+// What the run was made of, as the analysis screen lists it: a label and a
+// value per row, the blank pairs included as the spacers they are. The
+// strings are the Python screen's strings, formatting and all - the cross
+// test compares them character for character, so what the C++ screen paints
+// is what the Python screen paints. A file too short to have been recorded
+// never reaches here; the screen says so itself.
+std::vector<std::pair<std::string, std::string>> analysis_rows (
+	const Replay& replay);
 
 // One scored lock out of the sim, as the recorder would write it down: the
 // banner label built from the verdict, the HUD's counter values, the board

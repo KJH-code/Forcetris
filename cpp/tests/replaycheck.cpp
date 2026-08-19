@@ -116,6 +116,13 @@ void dump (const replay::Replay& game, const std::string& path) {
 	}
 	dump_summary(out, game.summary(false), false);
 	dump_summary(out, game.summary(true), true);
+	// The analysis screen's own text, which Python dumps off the real
+	// AnalysisMenu: rendered strings, compared character for character.
+	const auto rows = replay::analysis_rows(game);
+	for (size_t i = 0; i < rows.size(); ++i) {
+		out << "analysis " << i << " " << rows[i].first
+		    << "|" << rows[i].second << "\n";
+	}
 }
 
 // The scripted game the write side plays: twelve rows of chimney and a feed

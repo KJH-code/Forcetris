@@ -515,7 +515,10 @@ runs. All three modes are there — free, timed, arcade with its garbage ramp
 — and all three clear styles, cascades included. Finished games are recorded
 to the same replay files the Python game writes, and either game can browse
 and watch the other's, corrected finesse and all; high scores go into the
-same `data/hiscore.dat`, byte for byte.
+same `data/hiscore.dat`, byte for byte. A finished run gets the same
+analysis the Python loss screen gives it — down to the wording, which the
+cross test grades — and How to Play explains the forced drop against
+whatever keys are bound at the time.
 
 ```bash
 sudo apt install libsdl2-dev    # or vcpkg install sdl2 on Windows
@@ -541,8 +544,9 @@ gives, two ways:
   not just its outcomes.
 - `replay_cross` — the same scripted game played by both engines must write
   the same replay file, and a file written by either engine must mean exactly
-  the same thing when the other reads it, re-enactment steps and the
-  corrected-finesse view included.
+  the same thing when the other reads it, re-enactment steps, the
+  corrected-finesse view and the analysis screen's own rows — character for
+  character against the text the Python screen renders — included.
 - `hiscore_cross` — the same score submissions through both engines' codecs
   must produce byte-identical `hiscore.dat` files and announce the same
   placements, tie quirks faithfully included.

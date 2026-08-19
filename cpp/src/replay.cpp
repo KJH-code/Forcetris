@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -332,6 +333,50 @@ std::vector<std::string> padded (
 	}
 	full.insert(full.end(), rows.begin(), rows.end());
 	return full;
+}
+
+std::vector<std::pair<std::string, std::string>> analysis_rows (
+	const Replay& replay) {
+	// AnalysisMenu.rows(), string for string. Python's format specs are
+	// printf's with one exception - '{:.1%}' is a percentage of the rate -
+	// and the blank pairs are the spacers the screen skips over.
+	const Summary s = replay.summary(false);
+	const Summary f = replay.summary(true);
+	const auto text = [] (const char* spec, auto... args) {
+		char buffer[128];
+		std::snprintf(buffer, sizeof buffer, spec, args...);
+		return std::string(buffer);
+	};
+	std::string clears;
+	for (const auto& [size, count] : s.clears) {
+		static const char* names[] = {"Single", "Double", "Triple", "Quad"};
+		const std::string name = size >= 1 && size <= 4
+			? names[size - 1] : std::to_string(size) + "L";
+		clears += (clears.empty() ? "" : " ") + std::to_string(count) + "x" + name;
+	}
+	if (clears.empty()) {
+		clears = "none";
+	}
+	return {
+		{"Score", text("%lld", s.score)},
+		{"Pieces", text("%d  (%.2f/s)", s.placements, s.pps)},
+		{"Lines", text("%d", s.lines)},
+		{"Time", text("%.0f:%04.1f", std::floor(s.seconds / 60.),
+			std::fmod(s.seconds, 60.))},
+		{"", ""},
+		{"Finesse", text("%.1f%%", s.rate * 100.)},
+		{"Faults", text("%d over %d judged", s.faults, s.judged)},
+		{"Key presses", text("%d  (%.2f/piece)", s.presses, s.ppp)},
+		{"Without faults", text("%d  (%.2f/piece)", f.presses, f.ppp)},
+		{"Wasted", text("%d press%s", s.wasted, s.wasted == 1 ? "" : "es")},
+		{"", ""},
+		{"Attack", text("%d  (%.1f APM)", s.attack, s.apm)},
+		{"VS", text("%.1f", s.vs)},
+		{"Clears", clears},
+		{"Spins", text("%d", s.spins)},
+		{"Perfect clears", text("%d", s.perfects)},
+		{"Best B2B / combo", text("%d / %d", s.best_b2b, s.best_combo)},
+	};
 }
 
 std::vector<std::string> Replay::before (size_t index) const {
