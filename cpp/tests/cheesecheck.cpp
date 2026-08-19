@@ -51,7 +51,7 @@ int main () {
 		config.cheese_total = 15;
 		Sim sim(config, std::vector<int>(30, 0));
 		for (int hole = 0; hole < 15; ++hole) {
-			sim.feed_garbage(hole % 10);
+			sim.feed_garbage(1 << (hole % 10));
 		}
 		run_frames(sim, 15);
 		check("the race primes nine rows and no more",
@@ -79,7 +79,7 @@ int main () {
 		// A vertical I at spawn stands in column kSpawnX + 1; the hole is
 		// dealt to meet it so the drop needs no walking.
 		const int hole = kSpawnX + 1;
-		sim.feed_garbage(hole);
+		sim.feed_garbage(1 << hole);
 		run_frames(sim, 25);
 		check("one row of cheese stands", sim.board().garbage_rows() == 1);
 		check("the quota is spent", sim.cheese_left() == 0);
@@ -109,7 +109,7 @@ int main () {
 		config.cheese_period = 50;
 		Sim sim(config, std::vector<int>(60, 0));
 		for (int hole = 0; hole < 40; ++hole) {
-			sim.feed_garbage(hole % 10);
+			sim.feed_garbage(1 << (hole % 10));
 		}
 		run_frames(sim, 45);
 		check("no cheese before the first tick",
@@ -130,6 +130,45 @@ int main () {
 		}
 		check("the rising floor ends it eventually", guard < 6000);
 		check("as a loss", !sim.won());
+	}
+
+	// A mask row: two holes where the mask says, garbage everywhere else,
+	// and the links chained along each stretch but never across a hole -
+	// the block between two holes stands alone.
+	{
+		Board board;
+		board.push_garbage_mask((1 << 3) | (1 << 5));
+		bool cells_right = board.at(3, kHeight - 1) < 0
+			&& board.at(5, kHeight - 1) < 0;
+		for (int x = 0; x < kWidth; ++x) {
+			if (x != 3 && x != 5) {
+				cells_right = cells_right && board.at(x, kHeight - 1) == GARBAGE;
+			}
+		}
+		check("a two-hole mask empties exactly its columns", cells_right);
+		check("links stop at the first hole",
+			(board.links_at(2, kHeight - 1) & 2) == 0);
+		check("the block between the holes stands alone",
+			board.links_at(4, kHeight - 1) == 0);
+		check("and the stretches chain within themselves",
+			(board.links_at(1, kHeight - 1) & 2) != 0
+			&& (board.links_at(7, kHeight - 1) & 8) != 0);
+	}
+
+	// The single-hole push is the mask push with one bit: arcade's rows
+	// must come out identical either way, links and all.
+	{
+		Board lone;
+		Board masked;
+		lone.push_garbage(4);
+		masked.push_garbage_mask(1 << 4);
+		bool same = true;
+		for (int x = 0; x < kWidth; ++x) {
+			same = same && lone.at(x, kHeight - 1) == masked.at(x, kHeight - 1)
+				&& lone.links_at(x, kHeight - 1) == masked.links_at(x, kHeight - 1)
+				&& lone.fallen_at(x, kHeight - 1) == masked.fallen_at(x, kHeight - 1);
+		}
+		check("one hole is one-bit cheese", same);
 	}
 
 	if (failures > 0) {

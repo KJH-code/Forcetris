@@ -69,6 +69,9 @@ public:
 	// row is garbage with a single hole, its blocks chained left and right the
 	// way add_garbage chains them.
 	void push_garbage (int hole);
+	// The same push with any set of holes: bit x of `mask` empties column x.
+	// The cheese knobs deal these; arcade keeps its single hole.
+	void push_garbage_mask (int mask);
 	// Rows still carrying garbage cells, for the cheese modes' bookkeeping:
 	// how much of the stack is cheese, and whether the race has dug it all.
 	int garbage_rows () const;

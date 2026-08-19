@@ -74,8 +74,8 @@ private:
 	std::vector<std::string> cue_box_;
 	replay::Recorder recorder_;
 
-	// The last garbage hole dealt, so the cheese modes never align two.
-	int last_hole_ = -1;
+	// The last cheese mask dealt, for the messiness roll to copy or avoid.
+	int last_mask_ = 0;
 	// How much of sim.locked() the totals have absorbed.
 	size_t counted_ = 0;
 	size_t scored_ = 0;

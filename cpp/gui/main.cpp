@@ -294,6 +294,8 @@ struct App {
 	int mode = 0;                // The gametype the current game was started as.
 	int cheese_total = 18;       // The race's quota, set by the mode picker.
 	int cheese_period = 250;     // Survival's frames per rising row.
+	int cheese_holes = 1;        // Holes per cheese row.
+	int cheese_messiness = 100;  // Percent chance a row re-rolls its holes.
 	int score_page = 2;          // The high score table being looked at.
 	int hiscore_place = -1;      // Where the finished game would place, if it does.
 	char name_entry[9] = "";
@@ -346,6 +348,8 @@ void start_game (App& app, int mode) {
 	config.gametype = mode;
 	config.cheese_total = app.cheese_total;
 	config.cheese_period = app.cheese_period;
+	config.cheese_holes = app.cheese_holes;
+	config.cheese_messiness = app.cheese_messiness;
 	app.session.emplace(config, app.seeds(), meta_for(app.config, mode));
 	app.screen = Screen::Game;
 	app.paused = false;
@@ -1396,6 +1400,21 @@ void draw_scores (App& app) {
 	ImGui::End();
 }
 
+// One option in a picker row: drawn selected in the accent, and returns
+// true when clicked.
+bool option_button (const char* label, bool selected, float width) {
+	if (selected) {
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16f, 0.42f, 0.49f, 1.f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.50f, 0.58f, 1.f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.24f, 0.58f, 0.67f, 1.f));
+	}
+	const bool clicked = ImGui::Button(label, ImVec2(width, 0));
+	if (selected) {
+		ImGui::PopStyleColor(3);
+	}
+	return clicked;
+}
+
 void draw_menus (App& app) {
 	const ImVec2 middle(ImGui::GetIO().DisplaySize.x / 2,
 		ImGui::GetIO().DisplaySize.y / 2);
@@ -1436,7 +1455,9 @@ void draw_menus (App& app) {
 		}
 		ImGui::End();
 	} else if (app.screen == Screen::Modes) {
-		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+		ImGui::SetNextWindowPos(ImVec2(middle.x, ui(8)),
+			ImGuiCond_Always, ImVec2(0.5f, 0.f));
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(7)));
 		ImGui::Begin("mode select", nullptr, box);
 		ImGui::PushFont(app.fonts.head);
 		ImGui::TextUnformatted("Choose a mode");
@@ -1450,8 +1471,7 @@ void draw_menus (App& app) {
 		if (ImGui::Button("Timed", ImVec2(ui(280), ui(44)))) {
 			start_game(app, 1);
 		}
-		ImGui::TextDisabled("Five minutes; the score multiplier climbs as");
-		ImGui::TextDisabled("the clock drains.");
+		ImGui::TextDisabled("Five minutes; the multiplier climbs as it drains.");
 		ImGui::Dummy(ImVec2(0.f, ui(4)));
 		if (ImGui::Button("Arcade", ImVec2(ui(280), ui(44)))) {
 			start_game(app, 2);
@@ -1475,8 +1495,7 @@ void draw_menus (App& app) {
 			app.cheese_total = 100;
 			start_game(app, 3);
 		}
-		ImGui::TextDisabled("Dig that many rows of holey garbage. The clock");
-		ImGui::TextDisabled("stops when the last of it is gone.");
+		ImGui::TextDisabled("Dig that many rows; the clock stops at the last.");
 		ImGui::Dummy(ImVec2(0.f, ui(4)));
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextUnformatted("Cheese survival");
@@ -1495,13 +1514,38 @@ void draw_menus (App& app) {
 			app.cheese_period = 150;
 			start_game(app, 4);
 		}
-		ImGui::TextDisabled("The floor rises on that clock. Last as long as");
-		ImGui::TextDisabled("you can.");
-		ImGui::Dummy(ImVec2(0.f, ui(8)));
+		ImGui::TextDisabled("The floor rises on that clock. Outlast it.");
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted("Holes per row");
+		for (int holes = 1; holes <= 3; ++holes) {
+			ImGui::SameLine();
+			char label[4];
+			std::snprintf(label, sizeof label, "%d", holes);
+			if (option_button(label, app.cheese_holes == holes, ui(44))) {
+				app.cheese_holes = holes;
+			}
+		}
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted("Messiness");
+		static const struct { const char* label; int percent; } kMess[] = {
+			{"Clean", 0}, {"Low", 33}, {"High", 66}, {"Full", 100},
+		};
+		for (const auto& mess : kMess) {
+			ImGui::SameLine();
+			if (option_button(mess.label, app.cheese_messiness == mess.percent,
+				ui(62))) {
+				app.cheese_messiness = mess.percent;
+			}
+		}
+		ImGui::TextDisabled("How the cheese is cut: holes per row, and how");
+		ImGui::TextDisabled("often they move between rows.");
+		ImGui::Dummy(ImVec2(0.f, ui(6)));
 		if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
 			app.screen = Screen::Menu;
 		}
 		ImGui::End();
+		ImGui::PopStyleVar();
 	} else if (app.screen == Screen::Game && app.paused) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 		ImGui::Begin("paused", nullptr, box);

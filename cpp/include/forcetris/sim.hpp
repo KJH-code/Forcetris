@@ -65,6 +65,14 @@ struct SimConfig {
 	// one row rising and the next.
 	int cheese_total = 18;
 	int cheese_period = 250;
+	// How the cheese is cut: holes per row, and the percent chance a new row
+	// re-rolls its holes instead of copying the row below's. Full messiness
+	// is classic cheese; zero is a clean well. The knobs live here so the
+	// dealer and the sim agree on them, but the dealing itself stays outside
+	// the sim: for the cheese modes each dealt value is a hole *mask*, bit x
+	// emptying column x, built by the session from these settings.
+	int cheese_holes = 1;
+	int cheese_messiness = 100;
 };
 
 enum class Key : int { Left, Right, Soft, Hard, Hold, Ccw, Cw, Flip };

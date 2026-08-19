@@ -692,7 +692,8 @@ void Sim::eval_cheese () {
 		// they are dug, the quota sends more up from the floor, one row a
 		// frame, the piece riding the push the way arcade's does.
 		if (cheese_left_ > 0 && board_.garbage_rows() < 9 && !holes_.empty()) {
-			board_.push_garbage(holes_.front());
+			const int mask = holes_.front() & 0x3FF;
+			board_.push_garbage_mask(mask != 0 ? mask : 1 << 4);
 			holes_.pop_front();
 			--cheese_left_;
 			if (board_.collides(piece_)) {
@@ -713,7 +714,8 @@ void Sim::eval_cheese () {
 		if (cheese_frame_ > 1) {
 			--cheese_frame_;
 		} else if (!holes_.empty()) {
-			board_.push_garbage(holes_.front());
+			const int mask = holes_.front() & 0x3FF;
+			board_.push_garbage_mask(mask != 0 ? mask : 1 << 4);
 			holes_.pop_front();
 			if (board_.collides(piece_)) {
 				piece_.y -= 1;

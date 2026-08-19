@@ -56,18 +56,39 @@ void Session::refill () {
 			sim_.feed(form);
 		}
 	}
-	// The garbage holes: the sim never rolls its own dice, so the dice are
-	// rolled here and dealt in ahead of need. Arcade's holes land anywhere;
-	// the cheese modes never repeat one - two aligned holes stack into a
-	// clean well, and a clean well is not cheese.
-	const int gametype = sim_.config().gametype;
-	while (gametype >= 2 && sim_.garbage_queued() < 10) {
-		int hole = static_cast<int>(rng_() % 10);
-		if (gametype >= 3 && last_hole_ >= 0) {
-			hole = (last_hole_ + 1 + static_cast<int>(rng_() % 9)) % 10;
+	// The garbage, dealt ahead of need: the sim never rolls its own dice.
+	// Arcade's single holes land anywhere. The cheese modes deal hole masks
+	// cut to the settings picked with the mode: so many holes per row, and a
+	// messiness - the odds that a new row re-rolls its holes rather than
+	// copying the row below's. A re-roll must actually move: two identical
+	// rows out of a re-roll would stack into the clean well full messiness
+	// exists to rule out.
+	const SimConfig& config = sim_.config();
+	while (config.gametype >= 2 && sim_.garbage_queued() < 10) {
+		if (config.gametype == 2) {
+			sim_.feed_garbage(static_cast<int>(rng_() % 10));
+			continue;
 		}
-		last_hole_ = hole;
-		sim_.feed_garbage(hole);
+		const int holes = std::clamp(config.cheese_holes, 1, 3);
+		int mask;
+		if (last_mask_ > 0
+			&& static_cast<int>(rng_() % 100) >= config.cheese_messiness) {
+			mask = last_mask_;
+		} else {
+			do {
+				mask = 0;
+				int placed = 0;
+				while (placed < holes) {
+					const int bit = 1 << (rng_() % 10);
+					if ((mask & bit) == 0) {
+						mask |= bit;
+						++placed;
+					}
+				}
+			} while (mask == last_mask_);
+		}
+		last_mask_ = mask;
+		sim_.feed_garbage(mask);
 	}
 }
 

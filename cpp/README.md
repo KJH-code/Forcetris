@@ -62,10 +62,13 @@ All three of the Python game's modes are here - free, timed with its five
 minute clock and closing score multiplier, arcade with its level ramp and
 rising garbage - and so are all three clear styles, the two cascade ones
 included. Two more modes are this side's own, with no Python counterpart:
-a cheese race - ten, eighteen or a hundred rows of holey garbage, holes
-never aligned, dug as fast as you can, the clock stopping the moment the
-last of it is gone - and cheese survival, where the floor rises on a
-clock you pick (every eight, five or three seconds) until the stack wins.
+a cheese race - ten, eighteen or a hundred rows of holey garbage, dug as
+fast as you can, the clock stopping the moment the last of it is gone -
+and cheese survival, where the floor rises on a clock you pick (every
+eight, five or three seconds) until the stack wins. The cut of the cheese
+is picked with the mode: one to three holes per row, and a messiness from
+Clean - every row's holes right under the last one's, a well - through
+Full, where no two rows in a row ever align.
 Their behaviour is spelled out by the `cheese_check` ctest instead of a
 cross-grading, since there is nothing to cross against; a Cheese stat
 panel counts what is left to dig, or what has risen. Cheese games are
@@ -93,8 +96,8 @@ and TR, taken off the live leaderboard breakdown) and runs the official TR
 conversion over the result; there is no opponent in a trainer,
 so it is an entertainment-grade placement, and the screen says so in as
 many words. Play opens a mode picker - Free, Timed, Arcade, the cheese race at three
-lengths and cheese survival at three paces - with a line on what each one
-does. How to Play lists every
+lengths and cheese survival at three paces, with the holes-per-row and
+messiness of the cheese beside them - with a line on what each one does. How to Play lists every
 action against the keys bound to it right now, and explains the forced
 drop, in the Python screen's words.
 

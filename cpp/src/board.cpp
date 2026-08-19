@@ -154,22 +154,27 @@ int Board::clear_lines () {
 }
 
 void Board::push_garbage (int hole) {
+	push_garbage_mask(1 << hole);
+}
+
+void Board::push_garbage_mask (int mask) {
 	for (int y = 0; y + 1 < kHeight; ++y) {
 		cells_[y] = cells_[y + 1];
 		links_[y] = links_[y + 1];
 		fallen_[y] = fallen_[y + 1];
 	}
+	const auto open = [mask] (int x) { return (mask >> x & 1) != 0; };
 	for (int x = 0; x < kWidth; ++x) {
-		const bool block = x != hole;
+		const bool block = !open(x);
 		cells_[kHeight - 1][x] = block ? GARBAGE : -1;
-		// Chained left and right, never across the hole, as add_garbage
-		// chains them: garbage falls as a row, or not at all.
+		// Chained left and right, never across a hole, as add_garbage
+		// chains them: each stretch of garbage falls as one, or not at all.
 		unsigned char links = 0;
 		if (block) {
-			if (x != 0 && x != hole + 1) {
+			if (x != 0 && !open(x - 1)) {
 				links |= 8;   // Left.
 			}
-			if (x != kWidth - 1 && x != hole - 1) {
+			if (x != kWidth - 1 && !open(x + 1)) {
 				links |= 2;   // Right.
 			}
 		}
