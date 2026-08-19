@@ -66,4 +66,63 @@ const Cells& offsets (int form, int state) {
 	return table[form][state];
 }
 
+namespace {
+
+// The spawn links, cell for cell in kSpawn's order, as Shape.__init__ writes
+// them: bit 0 up, 1 right, 2 down, 3 left.
+constexpr std::array<std::array<unsigned char, kCells>, kForms> kSpawnLinks = {{
+	{{ 2, 10, 10, 8 }},   // I:  R, RL, RL, L
+	{{ 6, 12,  9, 3 }},   // O:  RD, DL, LU, UR
+	{{ 2,  4,  8, 11 }},  // T:  R, D, L, URL
+	{{ 2,  9,  6, 8 }},   // S:  R, UL, RD, L
+	{{ 2, 12,  3, 8 }},   // Z:  R, DL, UR, L
+	{{ 4,  3, 10, 8 }},   // J:  D, UR, RL, L
+	{{ 2, 10,  9, 4 }},   // L:  R, RL, UL, D
+}};
+
+struct Linked {
+	Offset cell;
+	unsigned char mask;
+};
+
+// One clockwise turn: the cell turns as spin_cw turns it, and every link
+// turns with it - up becomes right becomes down becomes left.
+std::array<std::array<std::array<Linked, kCells>, kStates>, kForms> build_links () {
+	std::array<std::array<std::array<Linked, kCells>, kStates>, kForms> table{};
+	for (int form = 0; form < kForms; ++form) {
+		std::array<Linked, kCells> cells{};
+		for (int i = 0; i < kCells; ++i) {
+			cells[i] = Linked{kSpawn[form][i], kSpawnLinks[form][i]};
+		}
+		table[form][0] = cells;
+		for (int state = 1; state < kStates; ++state) {
+			if (form != O) {
+				// The O never turns, links included.
+				for (Linked& linked : cells) {
+					linked.cell = spin_cw(form, linked.cell);
+					linked.mask = static_cast<unsigned char>(
+						((linked.mask << 1) | (linked.mask >> 3)) & 0xF);
+				}
+			}
+			table[form][state] = cells;
+		}
+	}
+	return table;
+}
+
+} // namespace
+
+unsigned char link_mask (int form, int state, Offset cell) {
+	static const auto table = build_links();
+	if (form < 0 || form >= kForms || state < 0 || state >= kStates) {
+		return 0;
+	}
+	for (const Linked& linked : table[form][state]) {
+		if (linked.cell == cell) {
+			return linked.mask;
+		}
+	}
+	return 0;
+}
+
 } // namespace forcetris

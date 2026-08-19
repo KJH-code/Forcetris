@@ -44,6 +44,13 @@ using Cells = std::array<Offset, kCells>;
 // orientation. Sorted. Rotation state 0 is spawn, 1 is one turn clockwise.
 const Cells& offsets (int form, int state);
 
+// The intra-piece links of the cell at `cell` in this orientation, as a mask:
+// bit 0 up, 1 right, 2 down, 3 left - Block.links' numbering. The links are
+// what the linked cascade style follows, so a locked piece's cells remember
+// which of their neighbours were their own. Zero for a cell the piece does
+// not cover.
+unsigned char link_mask (int form, int state, Offset cell);
+
 // Which state a rotation lands in. Turns are counted clockwise: 1 for CW, 3 for
 // CCW, 2 for a 180.
 constexpr int turned (int state, int turns) { return (state + turns) % kStates; }

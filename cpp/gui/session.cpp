@@ -38,8 +38,11 @@ std::vector<std::string> Session::take_cues () {
 }
 
 std::optional<replay::Replay> Session::finish () {
+	// The loss-time counters, not the live ones: a timed game can die with a
+	// clear still resolving, and the Python recorder is finished before that
+	// clear lands its points.
 	return recorder_.finish(
-		sim_.score(), sim_.lines_cleared(), sim_.downstack(),
+		sim_.final_score(), sim_.final_lines(), sim_.final_downstack(),
 		sim_.frame() * 0.02);
 }
 
@@ -52,6 +55,11 @@ void Session::refill () {
 		for (const int form : bag) {
 			sim_.feed(form);
 		}
+	}
+	// Arcade's garbage holes: the sim never rolls its own dice, so the dice
+	// are rolled here and dealt in ahead of need.
+	while (sim_.config().gametype == 2 && sim_.garbage_queued() < 8) {
+		sim_.feed_garbage(static_cast<int>(rng_() % 10));
 	}
 }
 
@@ -94,7 +102,13 @@ void Session::absorb () {
 	}
 	// Scores resolve a few frames after their locks, strictly in order. The
 	// recorder gets each placement the moment it resolves, with the board as
-	// the clear left it - the same coupling the cross test grades.
+	// the clear left it - the same coupling the cross test grades. On the
+	// loss frame the resolution comes after the loss, and by then Python's
+	// recorder is already finished: a clear that resolves into a lost game
+	// stays out of the replay and off the loss screens.
+	if (over_) {
+		return;
+	}
 	for (; scored_ < locked.size() && locked[scored_].scored; ++scored_) {
 		const Locked& lock = locked[scored_];
 		recorder_.add(replay::from_locked(lock, sim_.board().rows()));
@@ -114,7 +128,15 @@ void Session::absorb () {
 				+ form_letter(lock.form) + "-SPIN";
 		}
 		if (lock.lines > 0) {
-			text += std::string(text.empty() ? "" : "  ") + clear_name(lock.lines);
+			// announce_clear names the final chain link, not the cascade's
+			// total, and past the named four it falls back to a number the
+			// way CLEAR_NAMES.get does.
+			const int link = lock.last_link > 0 ? lock.last_link : lock.lines;
+			std::string name = clear_name(link);
+			if (name.empty()) {
+				name = std::to_string(link) + " LINES";
+			}
+			text += std::string(text.empty() ? "" : "  ") + name;
 		}
 		if (lock.perfect) {
 			text += std::string(text.empty() ? "" : "  ") + "PERFECT CLEAR";

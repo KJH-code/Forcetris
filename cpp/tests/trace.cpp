@@ -58,7 +58,7 @@ struct Score {
 	int combo = 0;
 	int perfect = 0;
 	int attack = 0;
-	int score = 0;
+	long long score = 0;
 	int downstack = 0;
 };
 
@@ -93,6 +93,7 @@ struct Trace {
 	SimConfig config;
 	std::vector<std::string> seed;
 	std::vector<int> pieces;
+	std::vector<int> holes;
 	std::map<long, Event> events;
 	std::vector<Snap> expected;
 	std::vector<Locked> locks;
@@ -109,6 +110,9 @@ int grade (const Trace& trace) {
 	Sim sim(trace.config, trace.pieces);
 	if (!trace.seed.empty()) {
 		sim.seed(Board::from_rows(trace.seed));
+	}
+	for (const int hole : trace.holes) {
+		sim.feed_garbage(hole);
 	}
 	std::vector<Snap> seen;
 	std::vector<std::pair<long, std::string>> heard;
@@ -340,8 +344,15 @@ int main (int argc, char** argv) {
 			in >> trace.config.das_ms >> trace.config.arr_ms >> trace.config.dcd_ms
 			   >> trace.config.sdf >> trace.config.are_ms >> trace.config.forced_delay
 			   >> kicks >> trace.config.finesse_rule >> trace.config.fall_delay
-			   >> trace.config.spin_rule;
+			   >> trace.config.spin_rule >> trace.config.gametype
+			   >> trace.config.timer_ms >> trace.config.start_lines
+			   >> trace.config.cleartype;
 			trace.config.kicks = kicks != 0;
+		} else if (kind == "holes") {
+			int hole = 0;
+			while (in >> hole) {
+				trace.holes.push_back(hole);
+			}
 		} else if (kind == "seed") {
 			std::string row;
 			in >> row;

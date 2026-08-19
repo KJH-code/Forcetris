@@ -103,7 +103,11 @@ the very next piece. They are also saved as you make them — see
 rows that went, and nothing cascades. That is how TETR.IO and every other guideline game
 clears, so it is what a trainer for one has to do. The base game defaulted to a cascade,
 where blocks left hanging fall into the gap and can set off further clears; both cascade
-modes are still there under the same row if you want them.
+modes are still there under the same row if you want them — and they now actually work.
+The machinery behind them shipped broken upstream (fills that crashed on the walls, a
+sticky mode that never dropped anything, and a garbage-row clear that hung the game);
+[cpp/README.md](cpp/README.md#the-cascade-repairs) lists the repairs, and
+`tools/test_cascade.py` pins them.
 
 If you have played before, the settings you already saved are yours and are left alone —
 this default only applies to a profile that does not exist yet. **Line Clears** in the
@@ -505,10 +509,13 @@ With SDL2 installed, the same build now produces `forcetris`, a playable game
 on that core: a clean dark board, mouse-driven menus, rebindable keys, the
 forced drop meter, spin and combo banners, the same sounds and music as the
 Python game — and a stat layout editor where every figure (PPS, APM, APS,
-VS, finesse, back to back, combo, and more) is a panel you tick on and drag
-wherever you want it, starting from presets, persisted between runs.
-Finished games are recorded to the same replay files the Python game writes,
-and either game can browse and watch the other's, corrected finesse and all.
+VS, finesse, back to back, combo, level, and more) is a panel you tick on
+and drag wherever you want it, starting from presets, persisted between
+runs. All three modes are there — free, timed, arcade with its garbage ramp
+— and all three clear styles, cascades included. Finished games are recorded
+to the same replay files the Python game writes, and either game can browse
+and watch the other's, corrected finesse and all; high scores go into the
+same `data/hiscore.dat`, byte for byte.
 
 ```bash
 sudo apt install libsdl2-dev    # or vcpkg install sdl2 on Windows
@@ -524,7 +531,7 @@ gives, two ways:
 - `equivalence` — every piece's cells, every finesse route, ~130,000 rotations
   over ten boards with kicks on and off, every attack table entry, ~4,600 spin
   verdicts, and where every piece falls.
-- `trace` — seventeen scripted games are played through the Python engine,
+- `trace` — thirty scripted games are played through the Python engine,
   inputs frame-stamped, and the sim has to reproduce them move for move: every
   position the piece stands in, every lock and its frame, what each placement
   scored — spin verdict, back to back, combo, perfect clear, attack, score,
@@ -536,6 +543,12 @@ gives, two ways:
   the same replay file, and a file written by either engine must mean exactly
   the same thing when the other reads it, re-enactment steps and the
   corrected-finesse view included.
+- `hiscore_cross` — the same score submissions through both engines' codecs
+  must produce byte-identical `hiscore.dat` files and announce the same
+  placements, tie quirks faithfully included.
+- `cascade_check` — the cascade movement loop's collision verdicts, pinned on
+  the same hand-built boards `tools/test_cascade.py` pins the Python engine
+  with: the one corner no natural game, and so no trace, can reach.
 
 ```bash
 ctest --test-dir cpp/build --output-on-failure

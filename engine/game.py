@@ -922,7 +922,11 @@ class Core:
 					self.line_frame = 180
 				elif self.user.level >= 128:
 					self.line_frame = 240
-				elif self.user.levl >= 64:
+				else:
+					# The base game misspelled this branch's condition badly
+					# enough to crash the first garbage spawn of levels 64 to
+					# 127; it is the arm every earlier test fell through to,
+					# so it is spelled as the else it always was.
 					self.line_frame = 300
 			else: self.line_frame -= 1
 

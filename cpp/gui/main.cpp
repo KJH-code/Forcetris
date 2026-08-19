@@ -25,6 +25,7 @@
 
 #include "audio.hpp"
 #include "config.hpp"
+#include "forcetris/hiscore.hpp"
 #include "forcetris/replay.hpp"
 #include "session.hpp"
 #include "stats.hpp"
@@ -54,7 +55,7 @@ const SDL_Color kFormColors[8] = {
 	{122, 122, 122, 255},  // garbage
 };
 
-enum class Screen { Menu, Game, Over, Replays, Viewer };
+enum class Screen { Menu, Game, Over, Replays, Viewer, Scores };
 
 // A replay being watched: which placement, which stop along its journey.
 struct Viewing {
@@ -85,11 +86,27 @@ struct App {
 	bool show_settings = false;
 	bool place_panels = false;   // Push saved positions into ImGui this frame.
 	std::string rebinding;       // Action waiting for its next key, if any.
+	int mode = 0;                // The gametype the current game was started as.
+	int score_page = 2;          // The high score table being looked at.
+	int hiscore_place = -1;      // Where the finished game would place, if it does.
+	char name_entry[9] = "";
+	bool score_saved = false;
 	std::mt19937 seeds{std::random_device{}()};
 	bool quit = false;
 };
 
-replay::Meta meta_for (const Config& config) {
+const char* gametype_name (int mode) {
+	return mode == 1 ? "timed" : mode == 2 ? "arcade" : "free";
+}
+
+std::string place_string (int at) {
+	if (at == 0) return "1st";
+	if (at == 1) return "2nd";
+	if (at == 2) return "3rd";
+	return std::to_string(at + 1) + "th";
+}
+
+replay::Meta meta_for (const Config& config, int mode) {
 	replay::Meta meta;
 	char stamp[32] = "";
 	const std::time_t now = std::time(nullptr);
@@ -97,11 +114,11 @@ replay::Meta meta_for (const Config& config) {
 		std::strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%S", local);
 	}
 	meta.played = stamp;
-	meta.gametype = "free";
+	meta.gametype = gametype_name(mode);
 	meta.forced_delay = config.forced_delay;
 	meta.finesse = config.finesse_rule;
 	meta.spinrule = config.spin_rule;
-	meta.cleartype = 0;
+	meta.cleartype = config.cleartype;
 	meta.das = config.das;
 	meta.arr = config.arr;
 	meta.dcd = config.dcd;
@@ -110,12 +127,17 @@ replay::Meta meta_for (const Config& config) {
 	return meta;
 }
 
-void start_game (App& app) {
-	app.session.emplace(app.config.sim(), app.seeds(), meta_for(app.config));
+void start_game (App& app, int mode) {
+	app.mode = mode;
+	SimConfig config = app.config.sim();
+	config.gametype = mode;
+	app.session.emplace(config, app.seeds(), meta_for(app.config, mode));
 	app.screen = Screen::Game;
 	app.paused = false;
 	app.editing = false;
 	app.place_panels = true;
+	app.hiscore_place = -1;
+	app.score_saved = false;
 	app.audio.start_music();
 }
 
@@ -129,6 +151,22 @@ void end_game (App& app) {
 	if (app.last_replay.has_value()) {
 		replay::save(*app.last_replay, replay::folder(app.root));
 	}
+	// Would this run make the table? The probe carries the raw clock value,
+	// exactly as eval_loss probes it - the conversion to stored centiseconds
+	// only happens if a name is entered and the score actually submitted.
+	// The loss-time counters: eval_loss probes before a still-resolving
+	// clear lands its points, so the snapshot does too.
+	const Sim& sim = app.session->sim();
+	hiscore::Entry probe;
+	probe.score = static_cast<std::uint64_t>(
+		std::max<long long>(0, sim.final_score()));
+	probe.lines = static_cast<std::uint32_t>(std::max(0, sim.final_lines()));
+	probe.timer = static_cast<std::uint32_t>(std::max(0L, sim.timer_ms()));
+	const int at = hiscore::place(
+		hiscore::load(hiscore::folder(app.root)), gametype_name(app.mode), probe);
+	app.hiscore_place = at < hiscore::kPerTable ? at : -1;
+	app.name_entry[0] = '\0';
+	app.score_saved = false;
 }
 
 void watch (App& app, replay::Replay game, Screen back) {
@@ -199,7 +237,8 @@ void handle_event (App& app, const SDL_Event& event) {
 		} else if (app.screen == Screen::Viewer && app.viewing.has_value()) {
 			app.screen = app.viewing->back;
 			app.viewing.reset();
-		} else if (app.screen == Screen::Replays) {
+		} else if (app.screen == Screen::Replays
+			|| app.screen == Screen::Scores) {
 			app.screen = Screen::Menu;
 		}
 		return;
@@ -425,6 +464,8 @@ void draw_settings (App& app) {
 	}
 	const char* spin_rules[] = {"Off", "T-spins", "All spins", "All spins + minis"};
 	ImGui::Combo("Spins", &app.config.spin_rule, spin_rules, 4);
+	const char* clear_styles[] = {"Naive", "Sticky cascade", "Linked cascade"};
+	ImGui::Combo("Line clears", &app.config.cleartype, clear_styles, 3);
 	const char* finesse_rules[] = {"Off", "Count faults", "Retry on fault"};
 	ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);
 	ImGui::Checkbox("Wall kicks", &app.config.kicks);
@@ -616,7 +657,7 @@ void draw_viewer (App& app) {
 	if (place.attack > 0) {
 		ImGui::Text("Attack +%d", place.attack);
 	}
-	ImGui::Text("Score %d", place.score);
+	ImGui::Text("Score %lld", place.score);
 	ImGui::Text("At %.2fs", place.elapsed);
 	ImGui::End();
 
@@ -689,6 +730,49 @@ void draw_replays (App& app) {
 	ImGui::End();
 }
 
+void draw_scores (App& app) {
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, 50),
+		ImGuiCond_Always, ImVec2(0.5f, 0.f));
+	ImGui::SetNextWindowSize(ImVec2(640, 0));
+	ImGui::Begin("High scores", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+	static const char* kPages[] = {"Arcade", "Timed", "Free"};
+	for (int page = 0; page < 3; ++page) {
+		if (page > 0) {
+			ImGui::SameLine();
+		}
+		if (ImGui::RadioButton(kPages[page], app.score_page == page)) {
+			app.score_page = page;
+		}
+	}
+	ImGui::Separator();
+	const hiscore::Tables tables = hiscore::load(hiscore::folder(app.root));
+	if (ImGui::BeginTable("scores", 4)) {
+		ImGui::TableSetupColumn("Name");
+		ImGui::TableSetupColumn("Score");
+		ImGui::TableSetupColumn("Lines");
+		ImGui::TableSetupColumn("Time taken");
+		ImGui::TableHeadersRow();
+		for (const hiscore::Entry& entry : tables[app.score_page]) {
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::TextUnformatted(hiscore::shown_name(entry).c_str());
+			ImGui::TableSetColumnIndex(1);
+			ImGui::Text("%llu", static_cast<unsigned long long>(entry.score));
+			ImGui::TableSetColumnIndex(2);
+			ImGui::Text("%u", entry.lines);
+			ImGui::TableSetColumnIndex(3);
+			ImGui::TextUnformatted(hiscore::shown_timer(entry.timer).c_str());
+		}
+		ImGui::EndTable();
+	}
+	ImGui::Separator();
+	if (ImGui::Button("Back", ImVec2(120, 0))) {
+		app.screen = Screen::Menu;
+	}
+	ImGui::End();
+}
+
 void draw_menus (App& app) {
 	const ImVec2 middle(ImGui::GetIO().DisplaySize.x / 2,
 		ImGui::GetIO().DisplaySize.y / 2);
@@ -705,7 +789,17 @@ void draw_menus (App& app) {
 		ImGui::TextDisabled("the forced hard drop trainer");
 		ImGui::Spacing();
 		if (ImGui::Button("Play", ImVec2(220, 0))) {
-			start_game(app);
+			start_game(app, 0);
+		}
+		if (ImGui::Button("Play timed", ImVec2(220, 0))) {
+			start_game(app, 1);
+		}
+		if (ImGui::Button("Play arcade", ImVec2(220, 0))) {
+			start_game(app, 2);
+		}
+		if (ImGui::Button("High scores", ImVec2(220, 0))) {
+			app.score_page = 2;
+			app.screen = Screen::Scores;
 		}
 		if (ImGui::Button("Replays", ImVec2(220, 0))) {
 			app.shelf = replay::listing(replay::folder(app.root));
@@ -727,7 +821,7 @@ void draw_menus (App& app) {
 			app.paused = false;
 		}
 		if (ImGui::Button("Restart", ImVec2(220, 0))) {
-			start_game(app);
+			start_game(app, app.mode);
 		}
 		if (ImGui::Button("Edit stat layout", ImVec2(220, 0))) {
 			app.paused = false;
@@ -750,6 +844,43 @@ void draw_menus (App& app) {
 		ImGui::Spacing();
 		draw_summary(*app.session);
 		ImGui::Spacing();
+		if (app.hiscore_place >= 0 && !app.score_saved) {
+			ImGui::TextColored(ImVec4(1.f, 0.82f, 0.29f, 1.f),
+				"You got the %s place high score!",
+				place_string(app.hiscore_place).c_str());
+			ImGui::SetNextItemWidth(140);
+			ImGui::InputText("##name", app.name_entry, sizeof app.name_entry,
+				ImGuiInputTextFlags_CallbackCharFilter,
+				[] (ImGuiInputTextCallbackData* data) {
+					const ImWchar c = data->EventChar;
+					const bool fine = (c >= 'a' && c <= 'z')
+						|| (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+						|| c == ' ';
+					return fine ? 0 : 1;
+				});
+			ImGui::SameLine();
+			if (ImGui::Button("Save score")) {
+				// As the save menu stores it: the name padded to eight, the
+				// clock converted to elapsed centiseconds.
+				const Sim& sim = app.session->sim();
+				hiscore::Entry entry;
+				std::string name = app.name_entry;
+				name.resize(8, ' ');
+				std::copy(name.begin(), name.end(), entry.name.begin());
+				entry.score = static_cast<std::uint64_t>(
+					std::max<long long>(0, sim.final_score()));
+				entry.lines = static_cast<std::uint32_t>(
+					std::max(0, sim.final_lines()));
+				entry.timer = static_cast<std::uint32_t>(app.mode == 1
+					? std::max(0L, (300000L - sim.timer_ms()) / 10)
+					: std::max(0L, sim.timer_ms() / 10));
+				hiscore::submit(hiscore::folder(app.root),
+					gametype_name(app.mode), entry);
+				app.score_saved = true;
+			}
+		} else if (app.score_saved) {
+			ImGui::TextDisabled("Score saved.");
+		}
 		if (app.last_replay.has_value()) {
 			if (ImGui::Button("Watch replay", ImVec2(220, 0))) {
 				watch(app, *app.last_replay, Screen::Over);
@@ -758,7 +889,7 @@ void draw_menus (App& app) {
 			ImGui::TextDisabled("Too short to record.");
 		}
 		if (ImGui::Button("Play again", ImVec2(220, 0))) {
-			start_game(app);
+			start_game(app, app.mode);
 		}
 		if (ImGui::Button("Back to menu", ImVec2(220, 0))) {
 			app.screen = Screen::Menu;
@@ -822,7 +953,7 @@ int run (bool smoke, long smoke_frames) {
 
 	std::mt19937 mash(20260818);
 	if (smoke) {
-		start_game(app);
+		start_game(app, 0);
 	}
 
 	Uint64 previous = SDL_GetPerformanceCounter();
@@ -905,6 +1036,9 @@ int run (bool smoke, long smoke_frames) {
 		if (app.screen == Screen::Replays) {
 			draw_replays(app);
 		}
+		if (app.screen == Screen::Scores) {
+			draw_scores(app);
+		}
 		if (app.editing) {
 			draw_layout_editor(app);
 		}
@@ -940,7 +1074,7 @@ int run (bool smoke, long smoke_frames) {
 					&& app.last_replay.has_value()) {
 					watch(app, *app.last_replay, Screen::Menu);
 				} else {
-					start_game(app);
+					start_game(app, app.mode);
 				}
 			}
 			if (frames >= smoke_frames) {

@@ -113,7 +113,77 @@ CONFIGS = (
     # on known numbers. The next window's T gets kicked off the rubble and
     # scores nothing - the verdict has to go away again, not stick.
     ('minispin',  140, 40,  0, 40,   0, 0.0, True,  1, 300, 'tslot', 1, 'tslot'),
+    # Timed mode down the chimney: the ten-frame entry and gravity, the score
+    # multiplier climbing as the clock drains, and the game ending the frame
+    # after the clock does.
+    ('timedrun',  140, 40,  0,  6,   0, 0.0, True,  1, 400, 'chimney', 2, 'chimney'),
+    # The clock running out mid-clear, both ways it can land: on a row-scan
+    # resume ('timedcut') and on the frame the clear resolves its score
+    # ('timedcusp'). eval_loss runs between the clock tick and the clearing
+    # block, so the gameover cue comes before that frame's clear cue - the
+    # one ordering timedrun's clock, expiring between clears, never grades.
+    ('timedcut',  140, 40,  0,  6,   0, 0.0, True,  1, 200, 'chimney', 2, 'chimney'),
+    ('timedcusp', 140, 40,  0,  6,   0, 0.0, True,  1, 200, 'chimney', 2, 'chimney'),
+    # Arcade at each garbage tier: the level read off the lines counter, the
+    # gravity ramp, the garbage rows pushing the stack - and the piece - up,
+    # and each tier's spawn cadence. The holes are dealt to both engines.
+    ('arcade64',  140, 40,  0,  6,   0, 0.0, True,  1, 1400, 'chimney', 2, 'chimney'),
+    # And one where a piece is parked on the floor when the garbage arrives,
+    # so the push that keeps it above the risen stack is on the record.
+    ('arcaderide', 140, 40, 0, 40,   0, 0.0, True,  1, 700, 'sitting', 2, 'chimney'),
+    ('arcade128', 140, 40,  0,  6,   0, 0.0, True,  1, 800, 'chimney', 2, 'chimney'),
+    ('arcade192', 140, 40,  0,  6,   0, 0.0, True,  1, 800, 'chimney', 2, 'chimney'),
+    ('arcade256', 140, 40,  0,  6,   0, 0.0, True,  1, 800, 'chimney', 2, 'chimney'),
+    # The cascade styles, over seeded rubble that clears keep disturbing: the
+    # sticky style drops everything side-connected as one mass, the linked
+    # style drops the surviving fragments of each piece by its own links, and
+    # every fall is one row per frame with re-clears chaining. Random play on
+    # a rubble board makes the clears - and the cascades - constant.
+    ('sticky',    140, 40,  0,  6,   0, 0.0, True,  1, 1500, 'mixed', 2, 'rubble'),
+    ('linked',    140, 40,  0,  6,   0, 0.0, True,  1, 1500, 'mixed', 2, 'rubble'),
+    # Linked cascade in arcade: garbage rows push up mid-clear, their linked
+    # chains ride the cascades, and digging them out splits the chain the way
+    # the splice always has.
+    ('linkedarcade', 140, 40, 0, 6,  0, 0.0, True,  1, 1000, 'chimney', 2, 'chimney'),
+    # A clear high up a shelf: the floating band above it reaches exactly one
+    # row below the cleared rows, and the settled shelf underneath must not be
+    # dragged along by the sticky fill.
+    ('stickyshelf', 140, 40, 0, 6,  0, 0.0, True,  1, 300, 'quadwell', 2, 'shelf'),
+    # A garbage block left hanging over a cleared row: garbage never floats,
+    # so it stays nailed in the air while its normal neighbour falls past it -
+    # and a fill that absorbed settled cells would tear it down instead.
+    ('stickygarbage', 140, 40, 0, 6, 0, 0.0, True,  1, 300, 'quadwell', 2, 'hung'),
 )
+
+
+# The traces that leave free mode behind: gametype (0 free, 1 timed,
+# 2 arcade), the timed clock in milliseconds, and a head start on the lines
+# counter so arcade's high levels are within a trace's reach. Timed runs on a
+# shortened clock so the expiry - and the loss it causes - happens on the
+# record; the four arcade entries pin each garbage tier and its gravity.
+MODES = {
+    'timedrun':  (1, 4000, 0),
+    'timedcut':  (1, 2600, 0),
+    'timedcusp': (1, 2740, 0),
+    'arcaderide': (2, 300000, 645),
+    'linkedarcade': (2, 300000, 630),
+    'arcade64':  (2, 300000, 630),
+    'arcade128': (2, 300000, 1921),
+    'arcade192': (2, 300000, 3841),
+    'arcade256': (2, 300000, 6401),
+}
+GAMETYPE_NAMES = {0: 'free', 1: 'timed', 2: 'arcade'}
+
+# The clear style each trace runs under: naive unless named here. The cascade
+# styles change the whole shape of a clear - rows blank in place, what was
+# left hanging falls a row per frame, and what lands can clear again.
+CLEARTYPES = {
+    'sticky': 1,
+    'linked': 2,
+    'linkedarcade': 2,
+    'stickyshelf': 1,
+    'stickygarbage': 1,
+}
 
 
 # The seeded boards, by name. Row 21 is the lowest playable row; the floor
@@ -132,6 +202,33 @@ def seed_board (core, which):
             for x in range(10):
                 if not 3 <= x <= 6:
                     core.grid.cells[y][x] = Block([x, y], 7, fallen=True)
+    elif which == 'shelf':
+        # Two full-but-for-the-well rows high up, a lone floater above the
+        # band's lower edge, and a settled shelf below with its own hole so
+        # nothing else clears. The well is column nine; the I dives down it.
+        for y in (12, 13):
+            for x in range(9):
+                core.grid.cells[y][x] = Block([x, y], 3, fallen=True)
+        core.grid.cells[14][0] = Block([0, 14], 3, fallen=True)
+        for y in range(15, 22):
+            for x in range(1, 10):
+                if x != 9 or y == 15:
+                    core.grid.cells[y][x] = Block([x, y], 3, fallen=True)
+    elif which == 'hung':
+        # The bottom row all but done, a garbage block two rows up, and a
+        # normal block hanging just beneath it.
+        for x in range(9):
+            core.grid.cells[21][x] = Block([x, 21], 3, fallen=True)
+        core.grid.cells[19][3] = Block([3, 19], 7, fallen=True)
+        core.grid.cells[20][3] = Block([3, 20], 3, fallen=True)
+    elif which == 'rubble':
+        # Seeded rubble that floats: normal-coloured, linkless, and dense
+        # enough that most clears leave something hanging to cascade.
+        rng = random.Random(20260819)
+        for y in range(12, 22):
+            for x in range(10):
+                if rng.random() < 0.55:
+                    core.grid.cells[y][x] = Block([x, y], 3, fallen=True)
     elif which == 'lwall':
         # The bottom row lacking only its wall-side corner, which is exactly
         # the cell the kicked T's foot lands in.
@@ -354,11 +451,28 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
     elif flavour == 'quadwell':
         pieces = [0] * 600
         script = build_quadwell_script(frames)
+    elif flavour == 'sitting':
+        # Forty-five frame windows, the instant soft drop parking each I on
+        # the floor for most of its window: the garbage spawn at frame 300
+        # arrives under a parked piece.
+        pieces = [0] * 600
+        script = {}
+        for window in range((frames - 20) // 45):
+            start = window * 45
+            script[start + 10] = ('soft', 1)
+            script[start + 12] = ('soft', 0)
+            script[start + 40] = ('hard', 1)
     elif flavour == 'chimney':
         pieces = [0] * 600
-        script = {
-            window * 50 + 30: ('hard', 1)
-            for window in range((frames - 20) // 50)}
+        script = {}
+        for window in range((frames - 20) // 50):
+            start = window * 50
+            # A held soft drop on the way down, so the soft delay - re-derived
+            # from gravity every frame, which is how arcade's ramp drags it -
+            # is part of what the trajectory grades.
+            script[start + 14] = ('soft', 1)
+            script[start + 26] = ('soft', 0)
+            script[start + 30] = ('hard', 1)
     elif flavour == 'ride':
         pieces = [1] * 600
         script = {}
@@ -414,6 +528,9 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
             pieces.extend(bag)
         script = build_script(rng, frames, flavour)
 
+    gametype, timer_ms, start_lines = MODES.get(name, (0, 300000, 0))
+    cleartype = CLEARTYPES.get(name, us.CLEAR_NAIVE)
+
     clock = Clock()
     G.time.perf_counter = clock
     tetris = G.init(Namespace(debug=False, forced_delay=forced, volume=0., sfx_volume=0.))
@@ -422,10 +539,41 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
     user.enablekicks = kicks
     user.finesse = finesse
     user.spinrule = spinrule
-    user.cleartype = us.CLEAR_NAIVE
+    user.cleartype = cleartype
     user.state = 'game'
-    user.gametype = 'free'
+    user.gametype = GAMETYPE_NAMES[gametype]
     user.reset()
+
+    # The engine reads real elapsed milliseconds off the frame clock; a trace
+    # runs on the same twenty even milliseconds the sim counts.
+    class SteadyClock:
+        @staticmethod
+        def get_time():
+            return 20
+
+        @staticmethod
+        def tick(*ignored):
+            return 20
+
+        @staticmethod
+        def get_fps():
+            return 50.0
+
+    G.env.clock = SteadyClock()
+
+    # Arcade's garbage holes, dealt up front so the sim can be dealt the same
+    # hand - the sim never rolls its own dice.
+    hole_rng = random.Random('holes-' + name)
+    holes = [hole_rng.randrange(10) for _ in range(40)]
+    hole_feed = iter(holes)
+    import engine.shapes as shp
+
+    class DealtDice:
+        @staticmethod
+        def randrange(count):
+            return next(hole_feed) % count
+
+    shp.random = DealtDice()
 
     feed = {'at': 0}
 
@@ -436,6 +584,10 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
 
     core.gen_shapelist = deal
     core.set_data()
+    if gametype == 1:
+        user.timer = timer_ms
+    if start_lines:
+        user.lines_cleared = start_lines
     if seedname:
         seed_board(core, seedname)
 
@@ -507,8 +659,11 @@ def run_trace(name, das, arr, dcd, sdf, are, forced, kicks, finesse, frames, fla
     core.recorder.commit = noting_commit
 
     out.append('trace {}'.format(name))
-    out.append('config {} {} {} {} {} {!r} {} {} 30 {}'.format(
-        das, arr, dcd, sdf, are, float(forced), int(kicks), finesse, spinrule))
+    out.append('config {} {} {} {} {} {!r} {} {} 30 {} {} {} {} {}'.format(
+        das, arr, dcd, sdf, are, float(forced), int(kicks), finesse, spinrule,
+        gametype, timer_ms, start_lines, cleartype))
+    if gametype == 2:
+        out.append('holes ' + ' '.join(str(hole) for hole in holes))
     if seedname:
         for row in rp.board_to_rows(core.grid):
             out.append('seed ' + row)

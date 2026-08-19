@@ -23,8 +23,11 @@ class ContextMan:
 	def __init__ (self, name):
 		# Anchored to the game folder rather than the working directory, and created
 		# up front, so that saving a score doesn't depend on where the game was started.
-		fname = os.path.join(ROOT, 'data', name)
-		bname = os.path.join(ROOT, 'data', 'back', name[:-3] + 'bak')
+		# Overridable for the same reason the settings and replay folders are: a test
+		# run must not be able to touch the player's own scores.
+		folder = os.environ.get('FORCETRIS_HISCORE') or os.path.join(ROOT, 'data')
+		fname = os.path.join(folder, name)
+		bname = os.path.join(folder, 'back', name[:-3] + 'bak')
 		os.makedirs(os.path.dirname(bname), exist_ok=True)
 		# The backup file is there to ensure that the data is preserved in some cases of fucketry.
 		# Note: Does not work if the backup file itself is fucked with.

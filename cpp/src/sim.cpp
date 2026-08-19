@@ -23,20 +23,51 @@ int py_round (double value) {
 	return low % 2 == 0 ? low : low + 1;
 }
 
+namespace {
+
+// The same half-to-even round, kept in doubles: the score formula mirrors
+// Python's int(round(stake / 50, 0) * 50), whose figures outgrow int long
+// before they outgrow a double's integer range.
+double py_round_whole (double value) {
+	const double floor = std::floor(value);
+	const double diff = value - floor;
+	if (diff > 0.5) {
+		return floor + 1.0;
+	}
+	if (diff < 0.5) {
+		return floor;
+	}
+	return std::fmod(floor, 2.0) == 0.0 ? floor : floor + 1.0;
+}
+
+} // namespace
+
 Sim::Sim (const SimConfig& config, std::vector<int> pieces)
 	: config_(config), queue_(pieces.begin(), pieces.end()) {
-	// apply_handling, run once since nothing in a trace retunes it mid-game.
+	// apply_handling. The handling half never moves mid-game; the soft drop
+	// half is re-derived each step because arcade's gravity ramp drags it.
 	shift_delay_ = py_round(config.das_ms / 20.);
 	shift_fdelay_ = py_round(config.arr_ms / 20.);
 	dcd_frames_ = py_round(config.dcd_ms / 20.);
 	soft_instant_ = config.sdf >= 40;
-	soft_delay_ = std::max(1, py_round(config.fall_delay / static_cast<double>(config.sdf)));
 	entry_delay_ = py_round(config.are_ms / 20.);
-	// set_data seeds the first entry countdown from the mode's own entry delay
-	// - free mode's twenty frames - before apply_handling has replaced the
-	// delay with the player's ARE. Only the very first spawn waits this long;
-	// every later one uses the ARE-derived count, as the game does.
-	entry_frame_ = 20;
+	// set_data: each mode brings its own pace, and seeds the first entry
+	// countdown from its own entry delay before apply_handling has replaced
+	// the delay with the player's ARE. Only the very first spawn waits this
+	// long; every later one uses the ARE-derived count, as the game does.
+	if (config.gametype == 1) {
+		fall_delay_ = 10;
+		entry_frame_ = 10;
+	} else if (config.gametype == 2) {
+		fall_delay_ = 45;
+		entry_frame_ = 30;
+	} else {
+		fall_delay_ = config.fall_delay;
+		entry_frame_ = 20;
+	}
+	soft_delay_ = std::max(1, py_round(fall_delay_ / static_cast<double>(config.sdf)));
+	timer_ms_ = config.gametype == 1 ? config.timer_ms : 0;
+	lines_cleared_ = config.start_lines;
 	piece_.form = GARBAGE;
 }
 
@@ -377,25 +408,15 @@ void Sim::lock (bool forced, int posdif) {
 		entry.queue3[slot] = queue_[slot];
 	}
 	board_.paste(piece_);
-	// Digging a garbage row out is the downstack half of the VS score. Judged
-	// as the clearer judges it: by the colour of the row's first two cells.
-	for (int y = 0; y < kHeight; ++y) {
-		bool full = true;
-		for (int x = 0; x < kWidth; ++x) {
-			if (board_.at(x, y) < 0) {
-				full = false;
-				break;
-			}
-		}
-		if (full && (board_.at(0, y) == GARBAGE || board_.at(1, y) == GARBAGE)) {
-			++downstack_;
-		}
-	}
-	entry.lines = board_.clear_lines();
-	const int lines = entry.lines;
+	// The clearer starts here, lazily: its first resume happens later this
+	// same frame, in clearing_step, exactly where run() calls next() on it.
+	// What it clears - and what that was worth - lands on this entry when the
+	// clear resolves.
+	line_list_.assign(1, 0);
+	clear_phase_ = 0;
+	clear_base_ = 0;
 	locked_.push_back(std::move(entry));
 	clearing_ = true;
-	pending_rows_ = lines;
 	sprite_frames_ = 0;
 	entry_ = false;
 	entry_frame_ = entry_delay_;
@@ -427,8 +448,70 @@ bool Sim::hard_drop (bool forced) {
 	return true;
 }
 
+void Sim::ramp_arcade () {
+	// eval_level: the tiers slow the climb down as it goes.
+	const int lines = lines_cleared_;
+	if (lines <= 640) {
+		level_ = 1 + lines / 10;
+	} else if (lines <= 1920) {
+		level_ = 64 + (lines - 640) / 20;
+	} else if (lines <= 3840) {
+		level_ = 128 + (lines - 1920) / 30;
+	} else if (lines <= 6400) {
+		level_ = 192 + (lines - 3840) / 40;
+	} else {
+		level_ = 256;
+	}
+	// Only gravity climbs with the level; handling stays the player's.
+	fall_delay_ = level_ < 180 ? 45 - (40 * level_ / 180) : 5;
+	// From level 64, garbage rows push up from the floor, faster each tier.
+	if (level_ >= 64) {
+		if (line_frame_ == 0) {
+			if (!holes_.empty()) {
+				board_.push_garbage(holes_.front());
+				holes_.pop_front();
+			}
+			// Prevent intersections: the piece rides the stack up.
+			if (board_.collides(piece_)) {
+				piece_.y -= 1;
+			}
+			if (level_ >= 256) {
+				line_frame_ = 120;
+			} else if (level_ >= 192) {
+				line_frame_ = 180;
+			} else if (level_ >= 128) {
+				line_frame_ = 240;
+			} else {
+				line_frame_ = 300;
+			}
+		} else {
+			--line_frame_;
+		}
+	}
+}
+
+void Sim::eval_timer () {
+	// The sim's clock is its frame: twenty even milliseconds, the value the
+	// engine reads off env.clock. Timed mode notices emptiness one frame
+	// after the subtraction that caused it, exactly as eval_timer does.
+	if (config_.gametype == 1) {
+		if (timer_ms_ > 0) {
+			timer_ms_ -= 20;
+		} else {
+			timer_ms_ = 0;
+			if (!lost_) {
+				lost_ = true;
+				loss_frame_ = frame_;
+				piece_elapsed_.reset();
+			}
+		}
+	} else {
+		timer_ms_ += 20;
+	}
+}
+
 void Sim::gravity () {
-	const int grav_delay = soft_ ? soft_delay_ : config_.fall_delay;
+	const int grav_delay = soft_ ? soft_delay_ : fall_delay_;
 	Piece below = piece_;
 	below.y += 1;
 	if (board_.collides(below)) {
@@ -463,20 +546,47 @@ void Sim::gravity () {
 }
 
 void Sim::clearing_step () {
+	// One frame of the clearing block: six frames of sprite animation per
+	// pass, then one resume of the clearer - which is one pass of the row
+	// scan, or one settle step of the cascade, or the report that it is done.
 	if (sprite_frames_ > 0) {
 		--sprite_frames_;
-	} else if (pending_rows_ > 0) {
-		// One yield of the line clearer: one row named, one sprite raised for
-		// the six frames its animation runs - and one cue, which under naive
-		// clearing means a quad is heard as clear, clear, clear, tetris.
-		--pending_rows_;
-		sprite_frames_ = 6;
-		cue(locked_.back().lines - pending_rows_ > 3 ? "tetris" : "clear");
-	} else {
-		// The final yield: the clearer reports done, and the counters are
-		// final - which is the moment the placement can be scored in full.
-		clearing_ = false;
-		resolve_score();
+		return;
+	}
+	while (true) {
+		if (clear_phase_ == 0) {
+			int base = 0;
+			int dug = 0;
+			const int rows = board_.clear_pass(config_.cleartype, base, dug);
+			downstack_ += dug;
+			if (rows > 0) {
+				// One yield with sprites: the pass's rows named and heard.
+				// Under naive that is one row and a running count - a quad is
+				// clear, clear, clear, tetris - and under the cascade styles
+				// it is the whole chain link at once.
+				line_list_.back() += rows;
+				clear_base_ = base;
+				sprite_frames_ = 6;
+				cue(line_list_.back() > 3 ? "tetris" : "clear");
+				if (config_.cleartype >= 1) {
+					clear_phase_ = 1;
+				}
+				return;
+			}
+			// The final yield: the clearer reports done, and the counters are
+			// final - which is the moment the placement can be scored in full.
+			clearing_ = false;
+			resolve_score();
+			return;
+		}
+		// The settle loop: one row of falling per resume. A step that moves
+		// nothing ends the loop and rolls straight into the next row scan,
+		// inside the same resume, exactly as the generator falls through.
+		if (board_.cascade_step(config_.cleartype, clear_base_)) {
+			return;
+		}
+		line_list_.push_back(0);
+		clear_phase_ = 0;
 	}
 }
 
@@ -485,19 +595,39 @@ void Sim::resolve_score () {
 	// has finished. tspin_flag is still set from the lock: it is cleared on
 	// spawn, not at lock, precisely so this late reading works.
 	Locked& last = locked_.back();
-	const int total = last.lines;
+	int total = 0;
+	for (const int chain : line_list_) {
+		total += chain;
+	}
+	last.lines = total;
 	if (total > 0) {
 		// A quad, or any clear that came out of a spin, carries the back to
 		// back chain on. A smaller clear ends it. A placement that clears
 		// nothing at all leaves it alone - but does break the combo.
 		b2b_ = (tspin_flag_ || total >= 4) ? b2b_ + 1 : 0;
 		lines_cleared_ += total;
-		// predict_score, in free mode's arithmetic: the line value, then the
-		// combo multiplier as it stood *before* this clear moved the counter,
-		// then the spin and perfect multipliers, rounded to the nearest fifty.
-		// The perfect it pays for is the base game's - the bottom row alone -
-		// which is not the one the banner announces.
-		double stake = 500.0 * total * (1.0 + 0.8 * (total - 1));
+		// predict_score: each chain link's line value - arcade's level fattens
+		// it - then the cascade multiplier per extra link, the combo
+		// multiplier as it stood *before* this clear moved the counter, the
+		// spin and perfect multipliers, and timed mode's clock bonus, rounded
+		// to the nearest fifty. The perfect it pays for is the base game's -
+		// the bottom row alone - not the one the banner announces. The
+		// trailing zero a cascade's last settle appends is dropped first,
+		// as predict_score drops it.
+		if (line_list_.back() == 0) {
+			line_list_.pop_back();
+		}
+		// What announce_clear names is the last chain link, not the total.
+		last.last_link = line_list_.back();
+		double linescore = 500.0;
+		if (config_.gametype == 2) {
+			linescore += level_ * 2.5;
+		}
+		double stake = 0.0;
+		for (const int chain : line_list_) {
+			stake += linescore * chain * (1.0 + 0.8 * (chain - 1));
+		}
+		stake *= std::pow(1.3, static_cast<double>(line_list_.size() - 1));
 		stake *= current_combo_;
 		if (twist_flag_) {
 			stake *= 2.7;
@@ -515,7 +645,10 @@ void Sim::resolve_score () {
 		if (floor_clear) {
 			stake *= 2.0;
 		}
-		score_ += py_round(stake / 50.0) * 50;
+		if (config_.gametype == 1) {
+			stake *= 1.0 + (300.0 - static_cast<double>(timer_ms_ / 1000)) / 100.0;
+		}
+		score_ += static_cast<long long>(py_round_whole(stake / 50.0) * 50.0);
 		++combo_;
 		current_combo_ = std::pow(1.6, combo_);
 	} else {
@@ -563,6 +696,11 @@ bool Sim::step (const std::optional<Event>& event) {
 	prev_ = now_;
 	have_prev_ = true;
 
+	// apply_handling, the half of it that can move: soft drop is a multiple
+	// of gravity, so arcade's ramp drags it along a frame behind.
+	soft_delay_ = std::max(
+		1, py_round(fall_delay_ / static_cast<double>(config_.sdf)));
+
 	// The frame runs to completion even if something in it loses the game -
 	// Python's run() does, and the trace counts frames on both sides.
 	eval_input(event);
@@ -586,13 +724,27 @@ bool Sim::step (const std::optional<Event>& event) {
 			next_shape();
 		}
 	}
-	if (clearing_) {
-		clearing_step();
+	// As run() orders it: the arcade ramp and the clock tick between the
+	// gravity section and the clearing block, every frame, clearing or not.
+	if (config_.gametype == 2) {
+		ramp_arcade();
 	}
+	eval_timer();
 	if (lost_ && !gameover_cued_) {
-		// eval_loss fires it on the frame the blocked spawn is noticed.
+		// eval_loss runs between the clock tick and the frame's clearing
+		// resume: the gameover cue fires first, and the high score entry and
+		// the recorder are finished before a still-resolving clear lands its
+		// points - so the counters are written down here, ahead of the
+		// resolution below, for the loss screens to read.
 		cue("gameover");
 		gameover_cued_ = true;
+		final_score_ = score_;
+		final_lines_ = lines_cleared_;
+		final_attack_ = attack_sent_;
+		final_downstack_ = downstack_;
+	}
+	if (clearing_) {
+		clearing_step();
 	}
 	++frame_;
 	return !lost_;

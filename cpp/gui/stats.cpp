@@ -29,11 +29,22 @@ double per_second (int total, double seconds) {
 const std::vector<StatDef>& all_stats () {
 	static const std::vector<StatDef> stats = {
 		{"time", "Time", [] (const Session& s) {
+			// Timed mode shows what is left of the clock; the others show how
+			// long the run has gone on.
+			char text[32];
+			if (s.sim().config().gametype == 1) {
+				const long ms = s.sim().timer_ms();
+				std::snprintf(text, sizeof text, "%ld:%02ld:%02ld",
+					ms / 60000, ms / 1000 % 60, ms % 1000 / 10);
+				return std::string(text);
+			}
 			const double t = s.seconds();
 			const int minutes = static_cast<int>(t) / 60;
-			char text[32];
 			std::snprintf(text, sizeof text, "%d:%04.1f", minutes, t - minutes * 60);
 			return std::string(text);
+		}},
+		{"level", "Level", [] (const Session& s) {
+			return count(s.sim().level());
 		}},
 		{"pieces", "Pieces", [] (const Session& s) { return count(s.pieces()); }},
 		{"pps", "PPS", [] (const Session& s) {
@@ -52,8 +63,10 @@ const std::vector<StatDef>& all_stats () {
 			return fmt("%.2f", per_second(s.sim().attack_sent(), s.seconds()));
 		}},
 		{"vs", "VS", [] (const Session& s) {
-			// No garbage arrives in the trainer, so the downstack half is zero.
-			return fmt("%.1f", attack::vs_score(s.sim().attack_sent(), 0, s.seconds()));
+			// Arcade's dug garbage rows count as downstack, the same figure
+			// the replay summary of the run reports.
+			return fmt("%.1f", attack::vs_score(
+				s.sim().attack_sent(), s.sim().downstack(), s.seconds()));
 		}},
 		{"b2b", "B2B", [] (const Session& s) {
 			const int now = s.sim().b2b() - 1;

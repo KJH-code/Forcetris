@@ -16,9 +16,10 @@ What is here:
 | `finesse` | The search for the fewest presses a placement could have taken |
 | `spins` | The three corner rule and the immobility rule, under each spin setting |
 | `attack` | TETR.IO's garbage table, and the APM / VS arithmetic on top of it |
-| `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, naive clears, the finesse retry, the scoring — spins, back to back, combos, attack, the score itself — the sound cues, and everything the recorder writes down |
+| `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, all three clear styles, the finesse retry, the scoring — spins, back to back, combos, cascade chains, attack, the score itself — the sound cues, timed mode's clock, arcade's level ramp and garbage, and everything the recorder writes down |
 | `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
-| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, and the replay browser and viewer |
+| `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
+| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, the replay browser and viewer, the three game modes, and the high score screens |
 
 ## The GUI
 
@@ -47,6 +48,14 @@ Settings — DAS/ARR/DCD/SDF/ARE, the forced drop timer, spin rule, finesse
 rule, kicks, the key bindings, and the effect and music volumes — mirror the
 Python game's. Handling applies from the next game; keys and volumes apply
 at once.
+
+All three of the Python game's modes are here - free, timed with its five
+minute clock and closing score multiplier, arcade with its level ramp and
+rising garbage - and so are all three clear styles, the two cascade ones
+included. A finished game that places on the high score table is offered a
+name entry, and the table is the Python game's own data/hiscore.dat, read
+and written byte-compatibly; the High scores screen shows the same three
+pages the Python game shows.
 
 The sound is the Python game's sound: the same synthesised WAVs out of
 sound/, the same music out of music/, fired by the cues the sim itself
@@ -94,14 +103,20 @@ C++ is held to the answers the tested implementation actually gives:
 - every attack table entry, and the APM / VS arithmetic
 - every spin verdict, under each rule, kicked and not — around 4,600
 - where every piece falls on every board
-- seventeen scripted games replayed move for move through the sim: seeded
+- thirty scripted games replayed move for move through the sim: seeded
   random button-mashing across the handling range, plus deliberate scripts
   for line clear timing, finesse retries, DCD cuts, the retry keeping the
   forced drop time a piece had already spent, back-to-back quads down a
   seeded well ending in a perfect clear, a twelve-clear combo chimney, a
   tucked mini T-spin armed by a rotation the kicks refuse, a T kicked off
-  the wall into a twist-scored clear, soft-dropped gravity locks, and a
-  clear that empties the bottom row under a floating band of rubble
+  the wall into a twist-scored clear, soft-dropped gravity locks, a clear
+  that empties the bottom row under a floating band of rubble, a timed game
+  run to its clock's end, two more whose clock dies with a clear still
+  resolving - once on a row-scan resume, once on the frame the score
+  lands - arcade at every garbage tier with the piece riding the rising
+  stack, and the cascade styles - sticky and linked -
+  over seeded rubble, under arcade garbage, off a high shelf and around a
+  garbage block nailed in mid-air
 - what every one of those placements scored — the spin verdict, the back to
   back and combo counters, the perfect clear flag, the attack, the game
   score and the downstack — plus the two flags the verdict reads, the press
@@ -125,6 +140,30 @@ raw instead of as the HUD shows them, the corrected view inventing routes for
 unjudged placements, and so on — each fail at least one trace or the replay
 cross check. Where a mutation survived, the harness was extended until it
 did not.
+
+## The cascade repairs
+
+The sticky and linked clear styles shipped broken upstream, in ways the
+naive default hid: the fills indexed off the right wall and wrapped around
+the left one, they were seeded from block positions a row splice had
+already invalidated (so clearing a garbage row under cascade hung the game
+for good), sticky groups were declared stuck by fiat so nothing ever fell,
+and a shape blocked by another floating shape was re-queued unmoved
+forever. The Python side was repaired first - bounds-checked fills seeded
+from real coordinates, fills that stop at settled blocks instead of
+dragging garbage down, one collision verdict per moved shape, sticky
+groups that actually fall - pinned by tools/test_cascade.py, and the C++
+port is graded against the repaired behaviour. The movement loop's
+settled-collision verdict - a block whose dangling down link exempts it
+from the resting test, stopped by the collision instead - is out of any
+natural game's reach, so tools/test_cascade.py builds the board by hand
+and the `cascade_check` ctest holds the C++ loop to the same ending,
+fallen flag included; the blocked-by-floating verdict beside it is a pure
+backstop, since the fills absorb any floating blocker before the movement
+loop could meet one. Two mutations of the link surgery survive as provably
+equivalent: a cell under a surviving link mate can never be refilled while
+the mate stands, so the stale link the surgery exists to remove is never
+followed anywhere it matters.
 
 ## Kick table coverage
 
@@ -151,6 +190,9 @@ entry went undetected. The seeded rubble boards exist because of that.
 
 ## What it does not have
 
-The arcade and timed modes, the cascade clear styles, and the high score
-table still live only in Python, which remains the reference implementation.
-The sim plays free mode with naive clearing, which is the trainer's default.
+The game itself is all here now - the three modes, the three clear styles,
+the high score table, the sound, the replays. What stays Python-only is the
+chrome around it: the how-to-play screen, the loss screen's analysis charts
+(the C++ side shows its stat panels and the replay summary instead), and
+the pygbag web build. The Python game remains the reference implementation
+either way: every answer the C++ gives is graded against it, never assumed.

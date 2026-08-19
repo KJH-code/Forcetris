@@ -24,6 +24,7 @@ add_library(forcetris_core
 	src/spins.cpp
 	src/sim.cpp
 	src/replay.cpp
+	src/hiscore.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
 # nlohmann/json.hpp, vendored, for the replay files.
@@ -41,6 +42,14 @@ target_compile_options(trace PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(replaycheck tests/replaycheck.cpp)
 target_link_libraries(replaycheck PRIVATE forcetris_core)
 target_compile_options(replaycheck PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(hiscorecheck tests/hiscorecheck.cpp)
+target_link_libraries(hiscorecheck PRIVATE forcetris_core)
+target_compile_options(hiscorecheck PRIVATE -Wall -Wextra -Wpedantic)
+
+add_executable(cascadecheck tests/cascadecheck.cpp)
+target_link_libraries(cascadecheck PRIVATE forcetris_core)
+target_compile_options(cascadecheck PRIVATE -Wall -Wextra -Wpedantic)
 
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
@@ -102,6 +111,15 @@ add_test(NAME trace
 add_test(NAME replay_cross
 	COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/../tools/replay_cross.py
 		$<TARGET_FILE:replaycheck>)
+# The same submissions through both engines' codecs must produce the same
+# hiscore.dat, byte for byte, and announce the same places.
+add_test(NAME hiscore_cross
+	COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/../tools/hiscore_cross.py
+		$<TARGET_FILE:hiscorecheck>)
+# The cascade movement loop's collision verdicts, on the synthetic boards
+# tools/test_cascade.py pins the Python engine with - the one corner no
+# natural game, and so no trace, can reach.
+add_test(NAME cascade_check COMMAND cascadecheck)
 if (SDL2_FOUND)
 	# The whole window run headlessly under scripted-random input: proves the
 	# loop, the drawing and the shutdown hold together with no display.

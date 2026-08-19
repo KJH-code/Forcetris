@@ -42,7 +42,8 @@ struct Meta {
 	int spinrule = 0;
 	int cleartype = 0;
 	int das = 0, arr = 0, dcd = 0, sdf = 0, are = 0;
-	int score = 0;
+	// 64-bit, like the sim's own score: Python's integer is unbounded.
+	long long score = 0;
 	int lines = 0;
 	int downstack = 0;
 	double seconds = 0.;
@@ -64,7 +65,7 @@ struct Placement {
 	bool perfect = false;
 	int combo = 0;           // As shown on the HUD: counter minus one.
 	int b2b = 0;
-	int score = 0;
+	long long score = 0;
 	double elapsed = 0.;
 	std::vector<std::string> rows;
 	std::vector<int> queue;  // The previews the player could see. Empty in v2.
@@ -94,7 +95,7 @@ struct Summary {
 	double ppp = 0.;
 	double pps = 0.;
 	int lines = 0;
-	int score = 0;
+	long long score = 0;
 	double seconds = 0.;
 	std::map<int, int> clears;
 	int spins = 0;
@@ -138,7 +139,7 @@ public:
 	// Stamp the totals and hand back the replay, or nothing if the game was
 	// too short to keep.
 	std::optional<Replay> finish (
-		int score, int lines, int downstack, double seconds);
+		long long score, int lines, int downstack, double seconds);
 
 private:
 	Meta meta_;

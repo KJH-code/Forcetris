@@ -51,6 +51,7 @@ SimConfig Config::sim () const {
 	config.kicks = kicks;
 	config.finesse_rule = finesse_rule;
 	config.spin_rule = spin_rule;
+	config.cleartype = cleartype;
 	return config;
 }
 
@@ -118,6 +119,7 @@ Config load_config (const std::string& path) {
 		else if (key == "kicks") { int flag = 1; in >> flag; config.kicks = flag != 0; }
 		else if (key == "finesse") in >> config.finesse_rule;
 		else if (key == "spins") in >> config.spin_rule;
+		else if (key == "clears") in >> config.cleartype;
 		else if (key == "sfx_volume") in >> config.sfx_volume;
 		else if (key == "music_volume") in >> config.music_volume;
 		else if (key == "preset") in >> config.preset;
@@ -181,6 +183,7 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "kicks " << (config.kicks ? 1 : 0) << "\n";
 	out << "finesse " << config.finesse_rule << "\n";
 	out << "spins " << config.spin_rule << "\n";
+	out << "clears " << config.cleartype << "\n";
 	out << "sfx_volume " << config.sfx_volume << "\n";
 	out << "music_volume " << config.music_volume << "\n";
 	out << "preset " << config.preset << "\n";

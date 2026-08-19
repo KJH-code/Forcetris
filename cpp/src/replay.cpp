@@ -31,6 +31,14 @@ int int_or (const json& data, const char* key, int fallback) {
 		? found->get<int>() : fallback;
 }
 
+// The score fields alone: Python's integers are unbounded, and a marathon's
+// score is the one figure that can outgrow int.
+long long ll_or (const json& data, const char* key, long long fallback) {
+	const auto found = data.find(key);
+	return found != data.end() && found->is_number()
+		? found->get<long long>() : fallback;
+}
+
 double num_or (const json& data, const char* key, double fallback) {
 	const auto found = data.find(key);
 	return found != data.end() && found->is_number()
@@ -92,7 +100,7 @@ Placement read_placement (const json& data) {
 	place.perfect = bool_or(data, "perfect", false);
 	place.combo = int_or(data, "combo", 0);
 	place.b2b = int_or(data, "b2b", 0);
-	place.score = int_or(data, "score", 0);
+	place.score = ll_or(data, "score", 0);
 	place.elapsed = num_or(data, "elapsed", 0.);
 	if (const auto found = data.find("rows");
 		found != data.end() && found->is_array()) {
@@ -169,7 +177,7 @@ Meta read_meta (const json& data) {
 	meta.dcd = int_or(data, "dcd", 0);
 	meta.sdf = int_or(data, "sdf", 0);
 	meta.are = int_or(data, "are", 0);
-	meta.score = int_or(data, "score", 0);
+	meta.score = ll_or(data, "score", 0);
 	meta.lines = int_or(data, "lines", 0);
 	meta.downstack = int_or(data, "downstack", 0);
 	meta.seconds = num_or(data, "seconds", 0.);
@@ -398,7 +406,7 @@ void Recorder::begin (const Meta& meta) {
 }
 
 std::optional<Replay> Recorder::finish (
-	int score, int lines, int downstack, double seconds) {
+	long long score, int lines, int downstack, double seconds) {
 	if (static_cast<int>(placements_.size()) < kMinPlacements) {
 		return std::nullopt;
 	}

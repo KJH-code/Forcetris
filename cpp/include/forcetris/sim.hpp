@@ -37,11 +37,26 @@ struct SimConfig {
 	bool kicks = true;
 	// 0 off, 1 count, 2 retry - only retry changes what the pieces do.
 	int finesse_rule = 1;
-	// Free mode's gravity: frames between one row and the next.
+	// Free mode's gravity: frames between one row and the next. Timed and
+	// arcade bring their own pace and ignore this.
 	int fall_delay = 30;
 	// Which rotations count as spins - spins::Rule, defaulting as the game does.
 	// Scoring only: no placement moves differently for it.
 	int spin_rule = 2;
+	// The clear style: 0 naive, 1 sticky cascade, 2 linked cascade. Naive is
+	// the guideline's and the trainer's default; the cascade styles let what
+	// was left hanging fall, one row per frame, and clear again.
+	int cleartype = 0;
+	// The mode: 0 free, 1 timed, 2 arcade. Timed runs its clock down and ends
+	// the game at zero; arcade ramps gravity with the level and pushes garbage
+	// rows up from the floor.
+	int gametype = 0;
+	// Timed mode's clock, in milliseconds. The game's own five minutes by
+	// default; a trace shortens it to something a trace can outlive.
+	int timer_ms = 5 * 60 * 1000;
+	// Lines already on the counter when the game starts: zero in play, set by
+	// a trace that needs arcade's high levels within a trace's reach.
+	int start_lines = 0;
 };
 
 enum class Key : int { Left, Right, Soft, Hard, Hold, Ccw, Cw, Flip };
@@ -87,8 +102,13 @@ struct Locked {
 	int combo = 0;
 	bool perfect = false;
 	int attack = 0;
-	int score = 0;       // The game score once this placement had settled.
+	// The game score once this placement had settled. 64-bit because Python's
+	// is unbounded: a marathon past two billion points must diverge nowhere.
+	long long score = 0;
 	int downstack = 0;   // Garbage rows dug out so far, this clear included.
+	// The final chain link of the clear - what announce_clear names. Equal to
+	// `lines` under naive clearing; a cascade's total spreads over its links.
+	int last_link = 0;
 };
 
 // Python's round(): half rounds to the even neighbour, which is not what
@@ -109,6 +129,11 @@ public:
 	// the queue runs down; a trace deals everything up front instead.
 	void feed (int form) { queue_.push_back(form); }
 
+	// Where arcade's next garbage rows leave their hole. The sim never rolls
+	// its own dice, for pieces or for holes: the game feeds its RNG through
+	// here, a trace feeds the recorded sequence.
+	void feed_garbage (int hole) { holes_.push_back(hole); }
+
 	// One frame, with at most one input event - the engine polls one per frame.
 	// Returns false once the game has been lost.
 	bool step (const std::optional<Event>& event);
@@ -116,6 +141,7 @@ public:
 	long frame () const { return frame_; }
 	bool entry () const { return entry_; }
 	bool clearing () const { return clearing_; }
+	const SimConfig& config () const { return config_; }
 	const Piece& piece () const { return piece_; }
 	const Board& board () const { return board_; }
 	const std::vector<Locked>& locked () const { return locked_; }
@@ -129,8 +155,23 @@ public:
 	int combo () const { return combo_; }
 	int attack_sent () const { return attack_sent_; }
 	int lines_cleared () const { return lines_cleared_; }
-	int score () const { return score_; }
+	long long score () const { return score_; }
 	int downstack () const { return downstack_; }
+	int level () const { return level_; }
+	// The counters as they stood at the loss, which is what the loss screens
+	// read: a timed game can die with a clear still resolving, and Python's
+	// eval_loss takes its high score entry and replay before that clear
+	// resolves. Fall back to the live figures while the game is still on.
+	long long final_score () const { return lost_ ? final_score_ : score_; }
+	int final_lines () const { return lost_ ? final_lines_ : lines_cleared_; }
+	int final_attack () const { return lost_ ? final_attack_ : attack_sent_; }
+	int final_downstack () const {
+		return lost_ ? final_downstack_ : downstack_;
+	}
+	// Timed mode's remaining milliseconds; the elapsed count elsewhere.
+	long timer_ms () const { return timer_ms_; }
+	// How many holes the queue still holds, so the game knows when to roll.
+	size_t garbage_queued () const { return holes_.size(); }
 
 	// The sound cues the last step fired, in the order Core would have fired
 	// them, by the names the files in sound/ carry.
@@ -158,6 +199,8 @@ private:
 	void resolve_score ();
 	void note_input (const char* name);
 	void settle_move ();
+	void ramp_arcade ();
+	void eval_timer ();
 	void cue (std::string name) { cues_.push_back(std::move(name)); }
 
 	SimConfig config_;
@@ -180,8 +223,13 @@ private:
 	bool entry_ = false;
 	int entry_frame_ = 0;
 	bool clearing_ = false;
-	int pending_rows_ = 0;      // Row-clear yields the generator still owes.
 	int sprite_frames_ = 0;     // Frames the clear animation has left.
+	// The line clearer, unrolled from its generator: which half of the loop
+	// the next resume lands in, the lowest row the current pass cleared, and
+	// the rows each chain link took - line_list, lifecycle and all.
+	int clear_phase_ = 0;       // 0 the row scan, 1 the settle loop.
+	int clear_base_ = 0;
+	std::vector<int> line_list_;
 
 	int shift_dir_ = 0;         // -1 left, 1 right, 0 none.
 	int shift_frame_ = 0;
@@ -204,10 +252,25 @@ private:
 	int lines_cleared_ = 0;
 	int downstack_ = 0;
 
+	// The mode's moving parts: gravity that arcade ramps, the level driving
+	// it, the countdown to the next garbage row, the hole feed, and the clock
+	// that timed mode runs down and the others run up.
+	int fall_delay_ = 30;
+	int level_ = 1;
+	int line_frame_ = 300;
+	std::deque<int> holes_;
+	long timer_ms_ = 0;
+
 	// The score, in the game's own arithmetic: a point or so per drop plus the
 	// clear formula, with the combo multiplier trailing the counter by one
-	// clear the way current_combo does.
-	int score_ = 0;
+	// clear the way current_combo does. 64-bit: Python's integer is unbounded
+	// and a long game must not wrap where the reference keeps counting.
+	long long score_ = 0;
+	// The loss snapshot the final_* accessors serve.
+	long long final_score_ = 0;
+	int final_lines_ = 0;
+	int final_attack_ = 0;
+	int final_downstack_ = 0;
 	double current_combo_ = 1.0;
 	bool hard_flag_ = false;
 	int soft_pos_ = 21;          // Where the current soft drop was marked from.

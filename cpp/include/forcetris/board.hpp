@@ -64,6 +64,36 @@ public:
 	// clears. Returns how many rows went.
 	int clear_lines ();
 
+	// A garbage row pushed in under everything, as arcade mode does it: every
+	// row shifts up one - the top row falls off the world - and the new bottom
+	// row is garbage with a single hole, its blocks chained left and right the
+	// way add_garbage chains them.
+	void push_garbage (int hole);
+
+	// The cascade bookkeeping riding along with every cell: the intra-piece
+	// links (bit 0 up, 1 right, 2 down, 3 left) and whether the cell has
+	// settled. Cells hand-placed through set() and rows read through
+	// from_rows() count as settled rubble; cells pasted as a locking piece do
+	// not, until a cascade lands them.
+	unsigned char links_at (int x, int y) const;
+	bool fallen_at (int x, int y) const;
+	void set_cell (int x, int y, int form, unsigned char links, bool fallen);
+
+	// One pass of the line clearer's row scan, per clear style (0 naive,
+	// 1 sticky, 2 linked): naive takes the lowest full row alone and splices
+	// it out; the cascade styles blank every full row bottom-up in one pass
+	// but stop at - and splice out - a garbage row, which ends the pass. The
+	// link surgery on the neighbours happens here too. Returns the rows taken;
+	// `base_row` is the lowest row cleared and `downstacked` counts the
+	// garbage rows dug out.
+	int clear_pass (int cleartype, int& base_row, int& downstacked);
+
+	// One settle step of a cascade: every floating group - side-connected
+	// under sticky, link-connected under linked - falls one row, or lands on
+	// something settled, or waits behind another floating group. Returns true
+	// if anything moved; the clearer yields a frame for it and calls again.
+	bool cascade_step (int cleartype, int base_row);
+
 	// True if nothing is left standing on the field.
 	bool empty () const;
 
@@ -71,7 +101,17 @@ public:
 	std::vector<std::string> rows () const;
 
 private:
+	// A block lifted out of the grid while its group decides where to fall.
+	struct Loose {
+		Offset at;
+		int form = 0;
+		unsigned char links = 0;
+	};
+	void fill_group (int cleartype, int x, int y, std::vector<Loose>& group);
+
 	std::array<std::array<int, kWidth>, kHeight> cells_{};
+	std::array<std::array<unsigned char, kWidth>, kHeight> links_{};
+	std::array<std::array<bool, kWidth>, kHeight> fallen_{};
 };
 
 } // namespace forcetris

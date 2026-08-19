@@ -297,7 +297,17 @@ class Grid (env.AnimatedSprite):
 
 	def flood_fill (self, t_shape, index):
 		# Recursive blind flood fill function.
-		if self[index[0]][index[1]] is not None and index[0] < 22:
+		# Bounds come first: the old code indexed before checking, which walked
+		# off the right wall with an IndexError, wrapped from the left wall to
+		# the far column, and could cut blocks out of the floor through the
+		# negative row. The fill stays on the playable field.
+		if not (0 <= index[0] < 22 and 0 <= index[1] < 10):
+			return
+		# Only floating blocks are cut. A blind fill that crossed into settled
+		# neighbours dragged garbage - which never floats - down with whatever
+		# leaned against it; a group that touches something settled is instead
+		# left for the locked test, which finds the settled cell below it.
+		if self[index[0]][index[1]] is not None and not self[index[0]][index[1]].fallen:
 			# Reset the block's position.
 			self[index[0]][index[1]].relpos = [index[1] - 4, index[0] - 1]
 			# Add the block to the temporary shape.
@@ -312,7 +322,13 @@ class Grid (env.AnimatedSprite):
 
 	def link_fill (self, t_shape, index):
 		# Recursive flood fill function using the links.
-		if self[index[0]][index[1]] is not None and index[0] < 22:
+		# Guarded like flood_fill: piece links cannot point off the field, but
+		# garbage links exist too and a guard costs nothing.
+		if not (0 <= index[0] < 22 and 0 <= index[1] < 10):
+			return
+		# Floating blocks only, as in flood_fill: a link into a still-settled
+		# half of a piece must prop the floating half, not uproot the rest.
+		if self[index[0]][index[1]] is not None and not self[index[0]][index[1]].fallen:
 			# Reset the block's position.
 			self[index[0]][index[1]].relpos = [index[1] - 4, index[0] - 1]
 			# Add the block to the temporary shape.
@@ -339,53 +355,72 @@ class Grid (env.AnimatedSprite):
 				if block is not None and block.color != 7:
 					block.fallen = False
 		# For each row, cut a set of temporary shapes from it to allow to fall.
-		locked_shapes = True
-		while locked_shapes:
-			for row in self[::-1]:
-				# locked_shapes is True when one of the shapes in the row is blocked from falling by another shape.
-				locked_shapes = False
-				tempshapes = [ ]
-				for block in row:
-					# Add blocks that both exist and have not fallen yet.
-					if block is None or block.fallen:
-						continue
-					# Create new blank temporary shape.
-					tempshape = Shape()
-					# Cut connected blocks from grid to the shape.
-					if self.user.cleartype == 1:
-						# Perform a blind flood fill if the method is sticky.
-						self.flood_fill(tempshape, block.relpos[::-1])
-					elif self.user.cleartype == 2:
-						# Perform a flood fill considering which blocks are linked if the method is cascade.
-						self.link_fill(tempshape, block.relpos[::-1])
-					for block in tempshape:
-						# If the block being tested isn't connected to the block below it, then the shape it's a part of is blocked.
-						if (self.user.cleartype == 1
-							or (2 not in block.links and self[block.relpos[1] + 2][block.relpos[0] + 4] is not None)):
-							locked_shapes = True
-							# Cut the shape back to the matrix.
-							self.paste_shape(tempshape)
-							break
-					# Add this temprary shape to the list if it's not blocked.
-					else: tempshapes.append(tempshape)
-				# If there is at least one temporary shape created, move them all down one space.
-				if not len(tempshapes):
+		# The fills are seeded from the cell actually being looked at. They used
+		# to be seeded from block.relpos, which a row splice - a cleared garbage
+		# row, an arcade garbage push - leaves pointing at the wrong row, and a
+		# fill seeded on the wrong cell either cut the wrong group or cut
+		# nothing and left the clearer waiting forever on a block it never saw.
+		for rowindex in range(len(self.cells) - 1, -1, -1):
+			tempshapes = [ ]
+			for colindex, block in enumerate(self[rowindex]):
+				# Add blocks that both exist and have not fallen yet.
+				if block is None or block.fallen:
 					continue
-				for shape in tempshapes:
-					shape.translate(( 0, 1))	
-					# Test if moving down one space causes a collision.
-					for pos, block in zip(shape.poslist, shape):
-						if self[pos[1]][pos[0]] is None:
-							continue
-						# Move it back up one space when a collision has been detected.
-						shape.translate(( 0,-1))
-						# If it collided with a fallen block, then the shape has fallen. Copy it back to the matrix.
-						if self[pos[1]][pos[0]].fallen:
-							self.paste_shape(shape, True)
-							break
+				# Create new blank temporary shape.
+				tempshape = Shape()
+				# Cut connected blocks from grid to the shape.
+				if self.user.cleartype == 1:
+					# Perform a blind flood fill if the method is sticky.
+					self.flood_fill(tempshape, (rowindex, colindex))
+				else:
+					# Perform a flood fill considering which blocks are linked if the method is cascade.
+					self.link_fill(tempshape, (rowindex, colindex))
+				for member in tempshape:
+					# If the block being tested isn't connected to the block below
+					# it, and the cell below belongs to something else, the shape
+					# is resting on that something. The fill has already lifted
+					# the shape's own cells out of the grid, so under the sticky
+					# rule - where the group is everything side-connected - the
+					# occupied cell below is always another group's. The old code
+					# declared every sticky group locked outright, which left the
+					# leftovers of a sticky clear hanging in the air for good;
+					# sticky cascade falls now, as the settings screen says it does.
+					if (2 not in member.links
+						and self[member.relpos[1] + 2][member.relpos[0] + 4] is not None):
+						# Cut the shape back to the matrix.
+						self.paste_shape(tempshape)
+						break
+				# Add this temporary shape to the list if it's not blocked.
+				else: tempshapes.append(tempshape)
+			# If there is at least one temporary shape created, move them all down one space.
+			for shape in tempshapes:
+				shape.translate(( 0, 1))
+				# Test if moving down one space causes a collision. One test,
+				# one verdict: the old loop undid the move once per colliding
+				# cell, which could land a shape a row above where it stood.
+				blocked = None
+				for pos in shape.poslist:
+					if self[pos[1]][pos[0]] is not None:
+						blocked = self[pos[1]][pos[0]]
+						break
+				if blocked is None:
+					self.tempgrid.append(shape)
+				else:
+					shape.translate(( 0,-1))
+					if blocked.fallen:
+						# It landed on something settled: settled too.
+						self.paste_shape(shape, True)
 					else:
-						# If it either did not collide, or collided with another floating shape, copy it to the tempgrid instead.
-						self.tempgrid.append(shape)			
+						# Blocked by another floating shape: stay put this step
+						# and try again on the next one, when the shape below
+						# has moved on. A backstop rather than a working path -
+						# the fills hand the loop no floating blockers, since
+						# sticky absorbs any side-adjacent floater and a linked
+						# down link absorbs the cell it points at - but if it
+						# ever fires, nothing moved, the settle loop ends, and
+						# whatever still floats is simply left standing - which
+						# is where the old code span its wheels forever instead.
+						self.paste_shape(shape)
 
 	def clear_lines (self):
 		"""
