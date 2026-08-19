@@ -15,6 +15,14 @@ if (NOT CMAKE_BUILD_TYPE)
 	set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Warnings, in each compiler's own spelling: MSVC does not speak -W flags and
+# answers them with a warning of its own, which is noise on a Windows build.
+if (MSVC)
+	set(FORCETRIS_WARNINGS /W3)
+else()
+	set(FORCETRIS_WARNINGS -Wall -Wextra -Wpedantic)
+endif()
+
 add_library(forcetris_core
 	src/piece.cpp
 	src/board.cpp
@@ -29,27 +37,27 @@ add_library(forcetris_core
 target_include_directories(forcetris_core PUBLIC include)
 # nlohmann/json.hpp, vendored, for the replay files.
 target_include_directories(forcetris_core SYSTEM PRIVATE third_party)
-target_compile_options(forcetris_core PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(forcetris_core PRIVATE ${FORCETRIS_WARNINGS})
 
 add_executable(equivalence tests/equivalence.cpp)
 target_link_libraries(equivalence PRIVATE forcetris_core)
-target_compile_options(equivalence PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(equivalence PRIVATE ${FORCETRIS_WARNINGS})
 
 add_executable(trace tests/trace.cpp)
 target_link_libraries(trace PRIVATE forcetris_core)
-target_compile_options(trace PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(trace PRIVATE ${FORCETRIS_WARNINGS})
 
 add_executable(replaycheck tests/replaycheck.cpp)
 target_link_libraries(replaycheck PRIVATE forcetris_core)
-target_compile_options(replaycheck PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(replaycheck PRIVATE ${FORCETRIS_WARNINGS})
 
 add_executable(hiscorecheck tests/hiscorecheck.cpp)
 target_link_libraries(hiscorecheck PRIVATE forcetris_core)
-target_compile_options(hiscorecheck PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(hiscorecheck PRIVATE ${FORCETRIS_WARNINGS})
 
 add_executable(cascadecheck tests/cascadecheck.cpp)
 target_link_libraries(cascadecheck PRIVATE forcetris_core)
-target_compile_options(cascadecheck PRIVATE -Wall -Wextra -Wpedantic)
+target_compile_options(cascadecheck PRIVATE ${FORCETRIS_WARNINGS})
 
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
@@ -82,7 +90,7 @@ if (SDL2_FOUND)
 	target_link_libraries(forcetris PRIVATE forcetris_core imgui)
 	# stb_vorbis, vendored, for the music.
 	target_include_directories(forcetris SYSTEM PRIVATE third_party/stb)
-	target_compile_options(forcetris PRIVATE -Wall -Wextra -Wpedantic)
+	target_compile_options(forcetris PRIVATE ${FORCETRIS_WARNINGS})
 	if (TARGET SDL2::SDL2main)
 		target_link_libraries(forcetris PRIVATE SDL2::SDL2main)
 	endif()
