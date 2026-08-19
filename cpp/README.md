@@ -30,6 +30,12 @@ cmake --build cpp/build -j
 ./cpp/build/forcetris
 ```
 
+The screens are typeset in whatever real font the machine has - Segoe UI on
+Windows, DejaVu or Noto on Linux, `FORCETRIS_FONT` to choose one by hand -
+and the window is laid out per-monitor DPI aware, so a scaled display gets
+a sharp window at the right size instead of a stretched blur of the 96dpi
+one.
+
 Arrows move, `Z`/`X`/`A` turn, space drops, down soft drops, shift or `C`
 holds, escape pauses. Everything else is the mouse — and all of it except
 escape is rebindable: the settings screen lists every action, a click on a
@@ -37,17 +43,19 @@ bound key unbinds it, and `+` grabs the next key you press. An action can
 hold any number of keys, but a key serves one action - binding it somewhere
 new takes it away from where it was, so nothing fires twice.
 
-The stat panels beside the board are the point: pause → *Edit stat layout*
-gives every stat a checkbox and makes the panels draggable, so PPS, APM, APS,
-VS, finesse, back-to-back, combo and the rest sit wherever you put them. Four
-presets (`tetrastats`, `battle`, `minimal`, `full`) are starting points; the
-arrangement and all settings persist in a plain text file under SDL's
-per-user pref directory (`FORCETRIS_GUI_CONFIG` overrides the path).
+The stat panels beside the board are the point: *Edit stat layout* - from
+the pause menu, or from the settings screen's Layout tab, which works from
+the main menu too by standing a preview board up behind the editor - gives
+every stat a checkbox and makes the panels draggable, so PPS, APM, APS,
+VS, finesse, back-to-back, combo and the rest sit wherever you put them.
+Four presets (`tetrastats`, `battle`, `minimal`, `full`) are starting
+points; the arrangement and all settings persist in a plain text file under
+SDL's per-user pref directory (`FORCETRIS_GUI_CONFIG` overrides the path).
 
-Settings — DAS/ARR/DCD/SDF/ARE, the forced drop timer, spin rule, finesse
-rule, kicks, the key bindings, and the effect and music volumes — mirror the
-Python game's. Handling applies from the next game; keys and volumes apply
-at once.
+Settings — DAS/ARR/DCD/SDF/ARE and the forced drop timer, the spin, clear
+and finesse rules, kicks, the volumes, the key bindings and the stat layout
+— sit in one tabbed screen and mirror the Python game's. Handling applies
+from the next game; keys, volumes and layout apply at once.
 
 All three of the Python game's modes are here - free, timed with its five
 minute clock and closing score multiplier, arcade with its level ramp and
@@ -90,7 +98,9 @@ nothing to show - a few frames each, with their real data behind them,
 and fails if it finished a game and did not finish the tour. That proves
 the screens open and draw against real replays and a real score table; it
 is not a substitute for the cross tests, which is where the text on them
-is actually graded. The `gui_smoke` ctest does exactly this.
+is actually graded. The `gui_smoke` ctest does exactly this. With
+`FORCETRIS_SHOTS=<dir>` the run also leaves one BMP per screen it visited -
+the way a design change is looked at, screen by screen, without a display.
 
 ## Building and grading it
 

@@ -506,7 +506,8 @@ hold, the forced drop timer, locking, line clears, the finesse retry, and the
 scoring: spins, back to back, combos and attack.
 
 With SDL2 installed, the same build now produces `forcetris`, a playable game
-on that core: a clean dark board, mouse-driven menus, rebindable keys, the
+on that core: a clean dark board, real typefaces on a DPI-aware window,
+mouse-driven menus, rebindable keys, the
 forced drop meter, spin and combo banners, the same sounds and music as the
 Python game — and a stat layout editor where every figure (PPS, APM, APS,
 VS, finesse, back to back, combo, level, and more) is a panel you tick on

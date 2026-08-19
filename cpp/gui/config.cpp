@@ -231,7 +231,9 @@ void apply_preset (Config& config, const std::string& name) {
 	float y = 0.f;
 	for (const char* id : shown) {
 		config.stats[id] = StatSpot{true, 0.f, y};
-		y += 64.f;
+		// A panel is a label over a headline figure; the step leaves a
+		// breath of dark between one and the next.
+		y += 78.f;
 	}
 	config.preset = name;
 }

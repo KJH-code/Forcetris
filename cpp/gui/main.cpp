@@ -13,9 +13,13 @@
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
+#include <filesystem>
+#include <map>
 #include <optional>
 #include <random>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <SDL.h>
 
@@ -35,12 +39,202 @@ namespace gui {
 namespace {
 
 // The board's place on screen. The stat panels anchor to its right edge, so
-// their saved positions survive a window resize.
-constexpr int kCell = 26;
-constexpr int kBoardX = 300;
-constexpr int kBoardY = 48;
-constexpr int kBoardW = kWidth * kCell;
-constexpr int kBoardH = kHeight * kCell;
+// their saved positions survive a window resize. Everything is laid out in
+// the same 96-dpi units it always was and multiplied once by the display's
+// scale, so a laptop at 150% gets the same picture with more pixels in it
+// instead of a stretched copy of the 100% one.
+float kScale = 1.f;
+int kCell = 26;
+int kBoardX = 300;
+int kBoardY = 48;
+int kBoardW = kWidth * kCell;
+int kBoardH = kHeight * kCell;
+
+// A design-unit measure scaled to the display, for the layout literals.
+float ui (float units) {
+	return units * kScale;
+}
+
+int px (float units) {
+	return static_cast<int>(std::lround(units * kScale));
+}
+
+void apply_ui_scale (float scale) {
+	kScale = scale;
+	kCell = px(26);
+	kBoardX = px(300);
+	kBoardY = px(48);
+	kBoardW = kWidth * kCell;
+	kBoardH = kHeight * kCell;
+}
+
+// The typefaces, baked from a real vector font when one can be found: the
+// stock ImGui font is a 13px bitmap, and every scaled-up use of it is what
+// pixelated the old screens.
+struct Fonts {
+	ImFont* body = nullptr;
+	ImFont* head = nullptr;    // Section headers, stat values, screen names.
+	ImFont* title = nullptr;   // The FORCETRIS wordmark.
+};
+
+// The first face the machine actually has, tried in the order a player is
+// likely to own them. FORCETRIS_FONT overrides the lot (a bold companion is
+// guessed from the regular's name); missing everything falls back to the
+// bitmap font, small enough to stay sharp.
+std::string first_file (const std::vector<std::string>& candidates) {
+	std::error_code ignored;
+	for (const std::string& path : candidates) {
+		if (!path.empty() && std::filesystem::is_regular_file(path, ignored)) {
+			return path;
+		}
+	}
+	return "";
+}
+
+std::pair<std::string, std::string> find_font_files () {
+	if (const char* forced = std::getenv("FORCETRIS_FONT")) {
+		// Guess the bold companion from the usual naming: X-Regular.ttf has
+		// X-Bold.ttf beside it, plain X.ttf might have X-Bold.ttf.
+		std::string bold = forced;
+		const size_t tagged = bold.rfind("-Regular");
+		const size_t dot = bold.rfind('.');
+		if (tagged != std::string::npos) {
+			bold.replace(tagged, 8, "-Bold");
+		} else if (dot != std::string::npos) {
+			bold.insert(dot, "-Bold");
+		}
+		return {forced, first_file({bold})};
+	}
+	const std::string regular = first_file({
+		"C:\\Windows\\Fonts\\segoeui.ttf",
+		"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+		"/System/Library/Fonts/Supplemental/Arial.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+		"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+		"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+		"/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+		"/usr/share/fonts/TTF/DejaVuSans.ttf",
+	});
+	const std::string bold = first_file({
+		"C:\\Windows\\Fonts\\segoeuib.ttf",
+		"/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+		"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+		"/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+		"/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+		"/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+		"/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+	});
+	return {regular, bold};
+}
+
+Fonts load_fonts () {
+	Fonts fonts;
+	ImGuiIO& io = ImGui::GetIO();
+	const auto [regular, bold] = find_font_files();
+	if (!regular.empty()) {
+		fonts.body = io.Fonts->AddFontFromFileTTF(regular.c_str(), ui(19.f));
+		const std::string& heavy = bold.empty() ? regular : bold;
+		fonts.head = io.Fonts->AddFontFromFileTTF(heavy.c_str(), ui(26.f));
+		fonts.title = io.Fonts->AddFontFromFileTTF(heavy.c_str(), ui(44.f));
+	}
+	if (fonts.body == nullptr) {
+		SDL_Log("no scalable font found - falling back to the bitmap font");
+		fonts.body = io.Fonts->AddFontDefault();
+	}
+	if (fonts.head == nullptr) {
+		fonts.head = fonts.body;
+	}
+	if (fonts.title == nullptr) {
+		fonts.title = fonts.head;
+	}
+	return fonts;
+}
+
+// The theme: the board's own palette carried into the chrome. One accent -
+// the I piece's cyan - against slate, rounded corners, and room to breathe;
+// the stock StyleColorsDark is a debugger's colour scheme, not a game's.
+void apply_theme () {
+	ImGuiStyle& style = ImGui::GetStyle();
+	style.WindowRounding = 10.f;
+	style.ChildRounding = 8.f;
+	style.FrameRounding = 6.f;
+	style.PopupRounding = 8.f;
+	style.GrabRounding = 6.f;
+	style.TabRounding = 6.f;
+	style.ScrollbarRounding = 8.f;
+	style.WindowPadding = ImVec2(20.f, 16.f);
+	style.FramePadding = ImVec2(11.f, 6.f);
+	style.ItemSpacing = ImVec2(10.f, 9.f);
+	style.ItemInnerSpacing = ImVec2(8.f, 6.f);
+	style.CellPadding = ImVec2(8.f, 5.f);
+	style.ScrollbarSize = 12.f;
+	style.GrabMinSize = 12.f;
+	style.WindowBorderSize = 1.f;
+	style.FrameBorderSize = 0.f;
+	style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
+	style.SeparatorTextBorderSize = 2.f;
+
+	const ImVec4 canvas(0.070f, 0.086f, 0.118f, 0.98f);   // #12161E
+	const ImVec4 well(0.118f, 0.145f, 0.196f, 1.f);       // #1E2532
+	const ImVec4 wellHover(0.153f, 0.188f, 0.251f, 1.f);
+	const ImVec4 wellActive(0.180f, 0.227f, 0.306f, 1.f);
+	const ImVec4 accent(0.255f, 0.776f, 0.878f, 1.f);     // The I piece.
+	const ImVec4 accentDim(0.255f, 0.776f, 0.878f, 0.28f);
+	const ImVec4 edge(0.165f, 0.196f, 0.259f, 0.65f);
+	const ImVec4 text(0.910f, 0.929f, 0.957f, 1.f);
+	const ImVec4 faded(0.486f, 0.529f, 0.596f, 1.f);
+
+	ImVec4* colors = style.Colors;
+	colors[ImGuiCol_Text] = text;
+	colors[ImGuiCol_TextDisabled] = faded;
+	colors[ImGuiCol_WindowBg] = canvas;
+	colors[ImGuiCol_ChildBg] = ImVec4(0.f, 0.f, 0.f, 0.f);
+	colors[ImGuiCol_PopupBg] = ImVec4(0.086f, 0.106f, 0.145f, 0.98f);
+	colors[ImGuiCol_Border] = edge;
+	colors[ImGuiCol_BorderShadow] = ImVec4(0.f, 0.f, 0.f, 0.f);
+	colors[ImGuiCol_FrameBg] = well;
+	colors[ImGuiCol_FrameBgHovered] = wellHover;
+	colors[ImGuiCol_FrameBgActive] = wellActive;
+	colors[ImGuiCol_TitleBg] = ImVec4(0.055f, 0.067f, 0.094f, 1.f);
+	colors[ImGuiCol_TitleBgActive] = ImVec4(0.078f, 0.098f, 0.137f, 1.f);
+	colors[ImGuiCol_TitleBgCollapsed] = colors[ImGuiCol_TitleBg];
+	colors[ImGuiCol_MenuBarBg] = colors[ImGuiCol_TitleBg];
+	colors[ImGuiCol_ScrollbarBg] = ImVec4(0.f, 0.f, 0.f, 0.f);
+	colors[ImGuiCol_ScrollbarGrab] = well;
+	colors[ImGuiCol_ScrollbarGrabHovered] = wellHover;
+	colors[ImGuiCol_ScrollbarGrabActive] = wellActive;
+	colors[ImGuiCol_CheckMark] = accent;
+	colors[ImGuiCol_SliderGrab] = accent;
+	colors[ImGuiCol_SliderGrabActive] = ImVec4(0.42f, 0.86f, 0.94f, 1.f);
+	colors[ImGuiCol_Button] = well;
+	colors[ImGuiCol_ButtonHovered] = wellHover;
+	colors[ImGuiCol_ButtonActive] = wellActive;
+	colors[ImGuiCol_Header] = well;
+	colors[ImGuiCol_HeaderHovered] = wellHover;
+	colors[ImGuiCol_HeaderActive] = wellActive;
+	colors[ImGuiCol_Separator] = edge;
+	colors[ImGuiCol_SeparatorHovered] = accentDim;
+	colors[ImGuiCol_SeparatorActive] = accent;
+	colors[ImGuiCol_ResizeGrip] = ImVec4(0.f, 0.f, 0.f, 0.f);
+	colors[ImGuiCol_ResizeGripHovered] = accentDim;
+	colors[ImGuiCol_ResizeGripActive] = accent;
+	colors[ImGuiCol_Tab] = ImVec4(0.f, 0.f, 0.f, 0.f);
+	colors[ImGuiCol_TabHovered] = wellHover;
+	colors[ImGuiCol_TabSelected] = well;
+	colors[ImGuiCol_TabSelectedOverline] = accent;
+	colors[ImGuiCol_TabDimmed] = ImVec4(0.f, 0.f, 0.f, 0.f);
+	colors[ImGuiCol_TabDimmedSelected] = well;
+	colors[ImGuiCol_TableHeaderBg] = ImVec4(0.086f, 0.106f, 0.145f, 1.f);
+	colors[ImGuiCol_TableBorderStrong] = edge;
+	colors[ImGuiCol_TableBorderLight] = ImVec4(0.165f, 0.196f, 0.259f, 0.35f);
+	colors[ImGuiCol_TableRowBg] = ImVec4(0.f, 0.f, 0.f, 0.f);
+	colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.f, 1.f, 1.f, 0.02f);
+	colors[ImGuiCol_TextSelectedBg] = accentDim;
+	colors[ImGuiCol_NavHighlight] = accent;
+	colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.02f, 0.03f, 0.05f, 0.6f);
+
+	style.ScaleAllSizes(kScale);
+}
 
 // One colour per form, matching the Python game's palette closely enough
 // that a player moving between the two is not surprised.
@@ -85,8 +279,12 @@ struct App {
 	Screen study_back = Screen::Menu;
 	Screen screen = Screen::Menu;
 	Screen help_back = Screen::Menu;      // How to play returns where it came from.
+	Fonts fonts;
 	bool paused = false;
 	bool editing = false;        // The stat layout editor is live.
+	// The editor opened from the menu, over a throwaway board: closing it
+	// drops the preview game and lands back in the settings screen.
+	bool layout_preview = false;
 	bool show_settings = false;
 	bool place_panels = false;   // Push saved positions into ImGui this frame.
 	std::string rebinding;       // Action waiting for its next key, if any.
@@ -290,7 +488,7 @@ void draw_board (App& app) {
 	const Session& session = *app.session;
 	const Sim& sim = session.sim();
 
-	fill(renderer, kBoardX - 3, kBoardY - 3, kBoardW + 6, kBoardH + 6, {32, 40, 53, 255});
+	fill(renderer, kBoardX - px(3), kBoardY - px(3), kBoardW + px(6), kBoardH + px(6), {32, 40, 53, 255});
 	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {14, 18, 24, 255});
 	SDL_SetRenderDrawColor(renderer, 26, 33, 44, 255);
 	for (int x = 1; x < kWidth; ++x) {
@@ -337,27 +535,27 @@ void draw_board (App& app) {
 	}
 
 	// The hold box and the coming pieces.
-	fill(renderer, kBoardX - 122, kBoardY, 104, 86, {20, 26, 34, 255});
-	draw_preview(renderer, sim.stored(), kBoardX - 122 + 16, kBoardY + 12, 18);
+	fill(renderer, kBoardX - px(122), kBoardY, px(104), px(86), {20, 26, 34, 255});
+	draw_preview(renderer, sim.stored(), kBoardX - px(122) + px(16), kBoardY + px(12), px(18));
 	const auto& queue = sim.queue();
 	for (int slot = 0; slot < 5 && slot < static_cast<int>(queue.size()); ++slot) {
-		fill(renderer, kBoardX + kBoardW + 18, kBoardY + slot * 92, 104, 86,
+		fill(renderer, kBoardX + kBoardW + px(18), kBoardY + slot * px(92), px(104), px(86),
 			{20, 26, 34, 255});
 		draw_preview(renderer, queue[slot],
-			kBoardX + kBoardW + 18 + 16, kBoardY + slot * 92 + 12, 18);
+			kBoardX + kBoardW + px(18) + px(16), kBoardY + slot * px(92) + px(12), px(18));
 	}
 
 	// The forced drop meter: how much of the piece's stay is spent.
 	if (app.config.forced_delay > 0.) {
-		fill(renderer, kBoardX, kBoardY + kBoardH + 10, kBoardW, 8, {26, 33, 44, 255});
+		fill(renderer, kBoardX, kBoardY + kBoardH + px(10), kBoardW, px(8), {26, 33, 44, 255});
 		const auto elapsed = sim.piece_elapsed();
 		if (elapsed.has_value()) {
 			const double part =
 				std::min(1.0, *elapsed / app.config.forced_delay);
 			const Uint8 red = static_cast<Uint8>(90 + 165 * part);
 			const Uint8 green = static_cast<Uint8>(200 - 140 * part);
-			fill(renderer, kBoardX, kBoardY + kBoardH + 10,
-				static_cast<int>(kBoardW * (1.0 - part)), 8, {red, green, 80, 255});
+			fill(renderer, kBoardX, kBoardY + kBoardH + px(10),
+				static_cast<int>(kBoardW * (1.0 - part)), px(8), {red, green, 80, 255});
 		}
 	}
 }
@@ -378,16 +576,16 @@ void draw_banner (App& app) {
 		return;
 	}
 	const float alpha = age < 50 ? 1.f : 1.f - (age - 50) / 20.f;
-	ImFont* font = ImGui::GetFont();
-	const float size = ImGui::GetFontSize() * 1.35f;
+	ImFont* font = app.fonts.head;
+	const float size = font->FontSize;
 	const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.f, banner.text.c_str());
 	ImGui::GetForegroundDrawList()->AddText(font, size,
-		ImVec2(kBoardX + (kBoardW - extent.x) / 2, kBoardY - 34),
+		ImVec2(kBoardX + (kBoardW - extent.x) / 2, kBoardY - ui(38)),
 		IM_COL32(255, 210, 74, static_cast<int>(alpha * 255)), banner.text.c_str());
 }
 
 void draw_stat_panels (App& app) {
-	const ImVec2 origin(kBoardX + kBoardW + 140.f, static_cast<float>(kBoardY));
+	const ImVec2 origin(kBoardX + kBoardW + ui(140), static_cast<float>(kBoardY));
 	for (const StatDef& stat : all_stats()) {
 		const auto found = app.config.stats.find(stat.id);
 		if (found == app.config.stats.end() || !found->second.shown) {
@@ -395,7 +593,9 @@ void draw_stat_panels (App& app) {
 		}
 		StatSpot& spot = found->second;
 		if (app.place_panels || !app.editing) {
-			ImGui::SetNextWindowPos(ImVec2(origin.x + spot.x, origin.y + spot.y));
+			// The saved layout is in design units, the window in pixels.
+			ImGui::SetNextWindowPos(
+				ImVec2(origin.x + ui(spot.x), origin.y + ui(spot.y)));
 		}
 		ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar
 			| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse
@@ -406,46 +606,59 @@ void draw_stat_panels (App& app) {
 		}
 		ImGui::PushStyleColor(ImGuiCol_WindowBg,
 			app.editing ? ImVec4(0.16f, 0.22f, 0.32f, 0.9f) : ImVec4(0.07f, 0.09f, 0.12f, 0.65f));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui(14), ui(8)));
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(2)));
+		ImGui::SetNextWindowSizeConstraints(
+			ImVec2(ui(96), 0.f), ImVec2(FLT_MAX, FLT_MAX));
 		ImGui::Begin((std::string("stat##") + stat.id).c_str(), nullptr, flags);
 		ImGui::TextColored(ImVec4(0.59f, 0.65f, 0.73f, 1.f), "%s", stat.label);
-		ImGui::SetWindowFontScale(1.5f);
+		ImGui::PushFont(app.fonts.head);
 		ImGui::Text("%s", stat.value(*app.session).c_str());
-		ImGui::SetWindowFontScale(1.f);
+		ImGui::PopFont();
 		if (app.editing && !app.place_panels) {
-			// Dragging writes straight back into the layout being saved.
+			// Dragging writes straight back into the layout being saved,
+			// in design units so the file means the same at every scale.
 			const ImVec2 where = ImGui::GetWindowPos();
-			spot.x = where.x - origin.x;
-			spot.y = where.y - origin.y;
+			spot.x = (where.x - origin.x) / kScale;
+			spot.y = (where.y - origin.y) / kScale;
 		}
 		ImGui::End();
+		ImGui::PopStyleVar(2);
 		ImGui::PopStyleColor();
 	}
 	app.place_panels = false;
 }
 
 void draw_layout_editor (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(20, 48), ImGuiCond_Appearing);
+	ImGui::SetNextWindowPos(ImVec2(ui(20), ui(48)), ImGuiCond_Appearing);
 	ImGui::Begin("Stat layout", &app.editing,
-		ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+		ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings);
 	ImGui::TextWrapped("Drag any panel where you want it. Tick a stat to add it.");
 	ImGui::Separator();
-	for (const StatDef& stat : all_stats()) {
-		StatSpot& spot = app.config.stats[stat.id];
-		if (ImGui::Checkbox(stat.label, &spot.shown) && spot.shown) {
-			app.place_panels = true;
+	if (ImGui::BeginTable("editorstats", 2)) {
+		for (const StatDef& stat : all_stats()) {
+			StatSpot& spot = app.config.stats[stat.id];
+			ImGui::TableNextColumn();
+			if (ImGui::Checkbox(stat.label, &spot.shown) && spot.shown) {
+				app.place_panels = true;
+			}
 		}
+		ImGui::EndTable();
 	}
 	ImGui::Separator();
+	ImGui::AlignTextToFramePadding();
 	ImGui::TextUnformatted("Presets");
 	for (const std::string& name : preset_names()) {
+		ImGui::SameLine();
 		if (ImGui::Button(name.c_str())) {
 			apply_preset(app.config, name);
 			app.place_panels = true;
 		}
-		ImGui::SameLine();
 	}
-	ImGui::NewLine();
-	if (ImGui::Button("Done")) {
+	ImGui::Spacing();
+	if (ImGui::Button(app.layout_preview ? "Back to settings" : "Done",
+		ImVec2(ui(180), 0))) {
 		app.editing = false;
 	}
 	ImGui::End();
@@ -454,83 +667,157 @@ void draw_layout_editor (App& app) {
 	}
 }
 
+// The stat layout editor, reachable from the pause menu and - through a
+// throwaway preview board - from the settings screen and the main menu.
+void open_layout_editor (App& app) {
+	if (!app.session.has_value() || app.screen != Screen::Game) {
+		app.session.emplace(app.config.sim(), app.seeds(),
+			meta_for(app.config, 0));
+		app.layout_preview = true;
+		app.screen = Screen::Game;
+	}
+	app.paused = false;
+	app.editing = true;
+	app.place_panels = true;
+	app.show_settings = false;
+}
+
 void draw_settings (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, 80),
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(70)),
 		ImGuiCond_Appearing, ImVec2(0.5f, 0.f));
+	ImGui::SetNextWindowSize(ImVec2(ui(560), 0));
 	ImGui::Begin("Settings", &app.show_settings,
-		ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
-	ImGui::TextUnformatted("Handling");
-	ImGui::SliderInt("DAS (ms)", &app.config.das, 0, 330);
-	ImGui::SliderInt("ARR (ms)", &app.config.arr, 0, 83);
-	ImGui::SliderInt("DCD (ms)", &app.config.dcd, 0, 330);
-	ImGui::SliderInt("SDF (x, 40 = instant)", &app.config.sdf, 5, 40);
-	ImGui::SliderInt("ARE (ms)", &app.config.are, 0, 500);
-	ImGui::Separator();
-	ImGui::TextUnformatted("Training");
-	float forced = static_cast<float>(app.config.forced_delay);
-	if (ImGui::SliderFloat("Forced drop (s, 0 = off)", &forced, 0.f, 5.f, "%.1f")) {
-		app.config.forced_delay = forced;
-	}
-	const char* spin_rules[] = {"Off", "T-spins", "All spins", "All spins + minis"};
-	ImGui::Combo("Spins", &app.config.spin_rule, spin_rules, 4);
-	const char* clear_styles[] = {"Naive", "Sticky cascade", "Linked cascade"};
-	ImGui::Combo("Line clears", &app.config.cleartype, clear_styles, 3);
-	const char* finesse_rules[] = {"Off", "Count faults", "Retry on fault"};
-	ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);
-	ImGui::Checkbox("Wall kicks", &app.config.kicks);
-	ImGui::Separator();
-	ImGui::TextUnformatted("Sound");
-	int sfx = static_cast<int>(std::lround(app.config.sfx_volume * 100.f));
-	if (ImGui::SliderInt("Effects (%)", &sfx, 0, 100)) {
-		app.config.sfx_volume = sfx / 100.f;
-		app.audio.set_sfx_volume(app.config.sfx_volume);
-	}
-	int music = static_cast<int>(std::lround(app.config.music_volume * 100.f));
-	if (ImGui::SliderInt("Music (%)", &music, 0, 100)) {
-		app.config.music_volume = music / 100.f;
-		app.audio.set_music_volume(app.config.music_volume);
-	}
-	ImGui::Separator();
-	ImGui::TextUnformatted("Keys");
-	for (const ActionDef& action : all_actions()) {
-		ImGui::PushID(action.id);
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted(action.label);
-		ImGui::SameLine(140);
-		std::vector<int>& codes = app.config.keys[action.id];
-		int remove_at = -1;
-		for (size_t i = 0; i < codes.size(); ++i) {
-			ImGui::PushID(static_cast<int>(i));
-			const char* name = SDL_GetScancodeName(static_cast<SDL_Scancode>(codes[i]));
-			if (ImGui::SmallButton(name != nullptr && *name != '\0' ? name : "?")) {
-				remove_at = static_cast<int>(i);
+		ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings);
+	if (ImGui::BeginTabBar("settings", ImGuiTabBarFlags_None)) {
+		if (ImGui::BeginTabItem("Handling")) {
+			ImGui::Spacing();
+			ImGui::SliderInt("DAS (ms)", &app.config.das, 0, 330);
+			ImGui::SliderInt("ARR (ms)", &app.config.arr, 0, 83);
+			ImGui::SliderInt("DCD (ms)", &app.config.dcd, 0, 330);
+			ImGui::SliderInt("SDF (x, 40 = instant)", &app.config.sdf, 5, 40);
+			ImGui::SliderInt("ARE (ms)", &app.config.are, 0, 500);
+			ImGui::Spacing();
+			float forced = static_cast<float>(app.config.forced_delay);
+			if (ImGui::SliderFloat("Forced drop (s, 0 = off)", &forced,
+				0.f, 5.f, "%.1f")) {
+				app.config.forced_delay = forced;
 			}
-			if (ImGui::IsItemHovered()) {
-				ImGui::SetTooltip("Click to unbind");
+			ImGui::Spacing();
+			ImGui::TextDisabled("Handling applies from the next game.");
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem("Rules")) {
+			ImGui::Spacing();
+			const char* spin_rules[] = {
+				"Off", "T-spins", "All spins", "All spins + minis"};
+			ImGui::Combo("Spins", &app.config.spin_rule, spin_rules, 4);
+			const char* clear_styles[] = {
+				"Naive", "Sticky cascade", "Linked cascade"};
+			ImGui::Combo("Line clears", &app.config.cleartype, clear_styles, 3);
+			const char* finesse_rules[] = {
+				"Off", "Count faults", "Retry on fault"};
+			ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);
+			ImGui::Checkbox("Wall kicks", &app.config.kicks);
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem("Sound")) {
+			ImGui::Spacing();
+			int sfx = static_cast<int>(std::lround(app.config.sfx_volume * 100.f));
+			if (ImGui::SliderInt("Effects (%)", &sfx, 0, 100)) {
+				app.config.sfx_volume = sfx / 100.f;
+				app.audio.set_sfx_volume(app.config.sfx_volume);
 			}
-			ImGui::PopID();
+			int music = static_cast<int>(std::lround(app.config.music_volume * 100.f));
+			if (ImGui::SliderInt("Music (%)", &music, 0, 100)) {
+				app.config.music_volume = music / 100.f;
+				app.audio.set_music_volume(app.config.music_volume);
+			}
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem("Keys")) {
+			ImGui::Spacing();
+			for (const ActionDef& action : all_actions()) {
+				ImGui::PushID(action.id);
+				ImGui::AlignTextToFramePadding();
+				ImGui::TextUnformatted(action.label);
+				ImGui::SameLine(ui(150));
+				std::vector<int>& codes = app.config.keys[action.id];
+				int remove_at = -1;
+				for (size_t i = 0; i < codes.size(); ++i) {
+					ImGui::PushID(static_cast<int>(i));
+					const char* name = SDL_GetScancodeName(
+						static_cast<SDL_Scancode>(codes[i]));
+					if (ImGui::SmallButton(
+						name != nullptr && *name != '\0' ? name : "?")) {
+						remove_at = static_cast<int>(i);
+					}
+					if (ImGui::IsItemHovered()) {
+						ImGui::SetTooltip("Click to unbind");
+					}
+					ImGui::PopID();
+					ImGui::SameLine();
+				}
+				if (remove_at >= 0) {
+					codes.erase(codes.begin() + remove_at);
+				}
+				if (app.rebinding == action.id) {
+					ImGui::TextColored(ImVec4(1.f, 0.82f, 0.29f, 1.f),
+						"press a key...");
+				} else if (ImGui::SmallButton("+")) {
+					// The next key pressed lands here; escape backs out. A key
+					// taken from another action leaves it, so nothing fires
+					// twice.
+					app.rebinding = action.id;
+				}
+				ImGui::PopID();
+			}
+			ImGui::Spacing();
+			if (ImGui::Button("Reset keys")) {
+				app.config.keys = default_keys();
+				app.rebinding.clear();
+			}
+			ImGui::TextDisabled("Escape pauses and cannot be bound.");
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem("Layout")) {
+			ImGui::Spacing();
+			ImGui::TextDisabled("The panels beside the board while you play.");
+			ImGui::Spacing();
+			if (ImGui::BeginTable("statgrid", 2)) {
+				for (const StatDef& stat : all_stats()) {
+					StatSpot& spot = app.config.stats[stat.id];
+					ImGui::TableNextColumn();
+					if (ImGui::Checkbox(stat.label, &spot.shown) && spot.shown) {
+						app.place_panels = true;
+					}
+				}
+				ImGui::EndTable();
+			}
+			ImGui::Spacing();
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted("Presets");
+			for (const std::string& name : preset_names()) {
+				ImGui::SameLine();
+				if (ImGui::Button(name.c_str())) {
+					apply_preset(app.config, name);
+					app.place_panels = true;
+				}
+			}
+			ImGui::Spacing();
+			if (ImGui::Button("Edit stat layout", ImVec2(ui(240), 0))) {
+				// Over the running game if one is on, over a preview board
+				// if not - either way the panels become draggable.
+				open_layout_editor(app);
+			}
 			ImGui::SameLine();
+			ImGui::TextDisabled("drag the panels where you want them");
+			ImGui::EndTabItem();
 		}
-		if (remove_at >= 0) {
-			codes.erase(codes.begin() + remove_at);
-		}
-		if (app.rebinding == action.id) {
-			ImGui::TextColored(ImVec4(1.f, 0.82f, 0.29f, 1.f), "press a key...");
-		} else if (ImGui::SmallButton("+")) {
-			// The next key pressed lands here; escape backs out. A key taken
-			// from another action leaves it, so nothing fires twice.
-			app.rebinding = action.id;
-		}
-		ImGui::PopID();
-	}
-	if (ImGui::Button("Reset keys")) {
-		app.config.keys = default_keys();
-		app.rebinding.clear();
+		ImGui::EndTabBar();
 	}
 	ImGui::Separator();
-	ImGui::TextDisabled("Escape pauses and cannot be bound.");
-	ImGui::TextDisabled("Handling applies from the next game.");
-	if (ImGui::Button("Save")) {
+	if (ImGui::Button("Save", ImVec2(ui(140), 0))) {
 		save_config(app.config, app.config_file);
 		app.show_settings = false;
 	}
@@ -589,38 +876,43 @@ void draw_analysis_rows (const replay::Replay& game) {
 // shows the same rows inline, since a finished game is already looking at
 // them.
 void draw_analysis (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, 50),
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(6)),
 		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(470, 0));
+	ImGui::SetNextWindowSize(ImVec2(ui(470), 0));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(6)));
+	ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui(8), ui(3)));
 	ImGui::Begin("Analysis", nullptr, ImGuiWindowFlags_AlwaysAutoResize
-		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings);
 	if (app.studying.has_value()) {
 		ImGui::TextDisabled("%s", app.studying->title().c_str());
 		ImGui::Separator();
 		draw_analysis_rows(*app.studying);
 		ImGui::Separator();
-		if (ImGui::Button("Watch replay", ImVec2(220, 0))) {
+		if (ImGui::Button("Watch replay", ImVec2(ui(240), 0))) {
 			watch(app, *app.studying, Screen::Analysis);
 		}
 	} else {
 		ImGui::TextDisabled("That run was too short to record.");
 	}
-	if (ImGui::Button("Back", ImVec2(220, 0))) {
+	if (ImGui::Button("Back", ImVec2(ui(240), 0))) {
 		app.screen = app.study_back;
 		app.studying.reset();
 	}
 	ImGui::End();
+	ImGui::PopStyleVar(2);
 }
 
 // How to play: the keys as they are bound right now, and the one rule no
 // other Tetris has. The Python help screen's text, read off the live
 // bindings the same way.
 void draw_help (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, 50),
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(50)),
 		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(620, 0));
+	ImGui::SetNextWindowSize(ImVec2(ui(620), 0));
 	ImGui::Begin("How to Play", nullptr, ImGuiWindowFlags_AlwaysAutoResize
-		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings);
 	if (ImGui::BeginTable("keys", 2)) {
 		for (const ActionDef& action : all_actions()) {
 			// Every key bound to the action, or the word for none - the same
@@ -663,7 +955,7 @@ void draw_help (App& app) {
 		ImGui::TextUnformatted("Turn it on under Settings to train placement speed.");
 	}
 	ImGui::Separator();
-	if (ImGui::Button("Back", ImVec2(220, 0))) {
+	if (ImGui::Button("Back", ImVec2(ui(240), 0))) {
 		app.screen = app.help_back;
 	}
 	ImGui::End();
@@ -694,7 +986,7 @@ void advance_viewer (App& app) {
 
 void draw_row_strings (App& app, const std::vector<std::string>& rows) {
 	SDL_Renderer* renderer = app.renderer;
-	fill(renderer, kBoardX - 3, kBoardY - 3, kBoardW + 6, kBoardH + 6, {32, 40, 53, 255});
+	fill(renderer, kBoardX - px(3), kBoardY - px(3), kBoardW + px(6), kBoardH + px(6), {32, 40, 53, 255});
 	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {14, 18, 24, 255});
 	for (size_t y = 0; y < rows.size() && y < kHeight; ++y) {
 		for (size_t x = 0; x < rows[y].size() && x < kWidth; ++x) {
@@ -732,18 +1024,20 @@ void draw_viewer (App& app) {
 	}
 
 	// What the player could see at the time: the hold box and the previews.
-	fill(app.renderer, kBoardX - 122, kBoardY, 104, 86, {20, 26, 34, 255});
-	draw_preview(app.renderer, place.stored, kBoardX - 122 + 16, kBoardY + 12, 18);
+	fill(app.renderer, kBoardX - px(122), kBoardY, px(104), px(86), {20, 26, 34, 255});
+	draw_preview(app.renderer, place.stored,
+		kBoardX - px(122) + px(16), kBoardY + px(12), px(18));
 	for (size_t slot = 0; slot < place.queue.size() && slot < 3; ++slot) {
-		fill(app.renderer, kBoardX + kBoardW + 18,
-			kBoardY + static_cast<int>(slot) * 92, 104, 86, {20, 26, 34, 255});
+		fill(app.renderer, kBoardX + kBoardW + px(18),
+			kBoardY + static_cast<int>(slot) * px(92), px(104), px(86),
+			{20, 26, 34, 255});
 		draw_preview(app.renderer, place.queue[slot],
-			kBoardX + kBoardW + 18 + 16,
-			kBoardY + static_cast<int>(slot) * 92 + 12, 18);
+			kBoardX + kBoardW + px(18) + px(16),
+			kBoardY + static_cast<int>(slot) * px(92) + px(12), px(18));
 	}
 
 	// The placement, in words.
-	ImGui::SetNextWindowPos(ImVec2(kBoardX + kBoardW + 140.f, kBoardY));
+	ImGui::SetNextWindowPos(ImVec2(kBoardX + kBoardW + ui(140), kBoardY));
 	ImGui::Begin("viewer info", nullptr, ImGuiWindowFlags_NoTitleBar
 		| ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoSavedSettings);
@@ -777,7 +1071,7 @@ void draw_viewer (App& app) {
 	ImGui::End();
 
 	// The controls, mouse-first.
-	ImGui::SetNextWindowPos(ImVec2(kBoardX - 3.f, kBoardY + kBoardH + 26.f));
+	ImGui::SetNextWindowPos(ImVec2(kBoardX - ui(3), kBoardY + kBoardH + ui(14)));
 	ImGui::Begin("viewer controls", nullptr, ImGuiWindowFlags_NoTitleBar
 		| ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoSavedSettings);
@@ -803,7 +1097,7 @@ void draw_viewer (App& app) {
 	ImGui::SameLine();
 	const char* speeds[] = {"1x", "2x", "4x"};
 	int gear = show.speed == 4 ? 2 : show.speed - 1;
-	ImGui::SetNextItemWidth(60);
+	ImGui::SetNextItemWidth(ui(80));
 	if (ImGui::Combo("##speed", &gear, speeds, 3)) {
 		show.speed = gear == 2 ? 4 : gear + 1;
 	}
@@ -821,42 +1115,44 @@ void draw_viewer (App& app) {
 }
 
 void draw_replays (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, 60),
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(60)),
 		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(560, 0));
+	ImGui::SetNextWindowSize(ImVec2(ui(580), 0));
 	ImGui::Begin("Replays", nullptr, ImGuiWindowFlags_AlwaysAutoResize
-		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings);
 	if (app.shelf.empty()) {
 		ImGui::TextDisabled("No replays yet. Finish a game first.");
 	}
 	for (size_t i = 0; i < app.shelf.size(); ++i) {
 		ImGui::PushID(static_cast<int>(i));
 		ImGui::TextUnformatted(app.shelf[i].title().c_str());
-		ImGui::SameLine(370);
+		ImGui::SameLine(ui(380));
 		if (ImGui::SmallButton("Analysis")) {
 			app.studying = app.shelf[i];
 			app.study_back = Screen::Replays;
 			app.screen = Screen::Analysis;
 		}
-		ImGui::SameLine(440);
+		ImGui::SameLine(ui(470));
 		if (ImGui::SmallButton("Watch")) {
 			watch(app, app.shelf[i], Screen::Replays);
 		}
 		ImGui::PopID();
 	}
 	ImGui::Separator();
-	if (ImGui::Button("Back", ImVec2(120, 0))) {
+	if (ImGui::Button("Back", ImVec2(ui(140), 0))) {
 		app.screen = Screen::Menu;
 	}
 	ImGui::End();
 }
 
 void draw_scores (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, 50),
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(50)),
 		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(640, 0));
+	ImGui::SetNextWindowSize(ImVec2(ui(660), 0));
 	ImGui::Begin("High scores", nullptr, ImGuiWindowFlags_AlwaysAutoResize
-		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings);
 	static const char* kPages[] = {"Arcade", "Timed", "Free"};
 	for (int page = 0; page < 3; ++page) {
 		if (page > 0) {
@@ -888,7 +1184,7 @@ void draw_scores (App& app) {
 		ImGui::EndTable();
 	}
 	ImGui::Separator();
-	if (ImGui::Button("Back", ImVec2(120, 0))) {
+	if (ImGui::Button("Back", ImVec2(ui(140), 0))) {
 		app.screen = Screen::Menu;
 	}
 	ImGui::End();
@@ -904,36 +1200,38 @@ void draw_menus (App& app) {
 	if (app.screen == Screen::Menu) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 		ImGui::Begin("main menu", nullptr, box);
-		ImGui::SetWindowFontScale(1.8f);
-		ImGui::TextUnformatted("FORCETRIS");
-		ImGui::SetWindowFontScale(1.f);
+		ImGui::PushFont(app.fonts.title);
+		ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f), "FORCETRIS");
+		ImGui::PopFont();
 		ImGui::TextDisabled("the forced hard drop trainer");
-		ImGui::Spacing();
-		if (ImGui::Button("Play", ImVec2(220, 0))) {
+		ImGui::Dummy(ImVec2(0.f, ui(10)));
+		if (ImGui::Button("Play", ImVec2(ui(260), ui(40)))) {
 			start_game(app, 0);
 		}
-		if (ImGui::Button("Play timed", ImVec2(220, 0))) {
+		if (ImGui::Button("Play timed", ImVec2(ui(260), ui(40)))) {
 			start_game(app, 1);
 		}
-		if (ImGui::Button("Play arcade", ImVec2(220, 0))) {
+		if (ImGui::Button("Play arcade", ImVec2(ui(260), ui(40)))) {
 			start_game(app, 2);
 		}
-		if (ImGui::Button("How to play", ImVec2(220, 0))) {
+		ImGui::Dummy(ImVec2(0.f, ui(6)));
+		if (ImGui::Button("How to play", ImVec2(ui(260), 0))) {
 			app.help_back = Screen::Menu;
 			app.screen = Screen::Help;
 		}
-		if (ImGui::Button("High scores", ImVec2(220, 0))) {
+		if (ImGui::Button("High scores", ImVec2(ui(260), 0))) {
 			app.score_page = 2;
 			app.screen = Screen::Scores;
 		}
-		if (ImGui::Button("Replays", ImVec2(220, 0))) {
+		if (ImGui::Button("Replays", ImVec2(ui(260), 0))) {
 			app.shelf = replay::listing(replay::folder(app.root));
 			app.screen = Screen::Replays;
 		}
-		if (ImGui::Button("Settings", ImVec2(220, 0))) {
+		if (ImGui::Button("Settings", ImVec2(ui(260), 0))) {
 			app.show_settings = true;
 		}
-		if (ImGui::Button("Quit", ImVec2(220, 0))) {
+		ImGui::Dummy(ImVec2(0.f, ui(6)));
+		if (ImGui::Button("Quit", ImVec2(ui(260), 0))) {
 			app.quit = true;
 		}
 		ImGui::End();
@@ -942,37 +1240,38 @@ void draw_menus (App& app) {
 		ImGui::Begin("paused", nullptr, box);
 		ImGui::TextUnformatted("Paused");
 		ImGui::Spacing();
-		if (ImGui::Button("Resume", ImVec2(220, 0))) {
+		if (ImGui::Button("Resume", ImVec2(ui(240), 0))) {
 			app.paused = false;
 		}
-		if (ImGui::Button("Restart", ImVec2(220, 0))) {
+		if (ImGui::Button("Restart", ImVec2(ui(240), 0))) {
 			start_game(app, app.mode);
 		}
-		if (ImGui::Button("Edit stat layout", ImVec2(220, 0))) {
-			app.paused = false;
-			app.editing = true;
-			app.place_panels = true;
+		if (ImGui::Button("Edit stat layout", ImVec2(ui(240), 0))) {
+			open_layout_editor(app);
 		}
-		if (ImGui::Button("Settings", ImVec2(220, 0))) {
+		if (ImGui::Button("Settings", ImVec2(ui(240), 0))) {
 			app.show_settings = true;
 		}
-		if (ImGui::Button("Back to menu", ImVec2(220, 0))) {
+		if (ImGui::Button("Back to menu", ImVec2(ui(240), 0))) {
 			app.screen = Screen::Menu;
 		}
 		ImGui::End();
 	} else if (app.screen == Screen::Over) {
-		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+		ImGui::SetNextWindowPos(ImVec2(middle.x, ui(6)),
+			ImGuiCond_Always, ImVec2(0.5f, 0.f));
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(6)));
+		ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui(8), ui(3)));
 		ImGui::Begin("game over", nullptr, box);
-		ImGui::SetWindowFontScale(1.4f);
+		ImGui::PushFont(app.fonts.head);
 		ImGui::TextUnformatted("Game over");
-		ImGui::SetWindowFontScale(1.f);
+		ImGui::PopFont();
 		ImGui::Spacing();
 		// What the run was made of, as the Python analysis screen lists it -
 		// which needs the recording. A game too short for a file says so and
 		// falls back to the totals the panels were already showing.
 		if (app.last_replay.has_value()) {
 			draw_analysis_rows(*app.last_replay);
-		} else {
+		} else if (app.session.has_value()) {
 			ImGui::TextDisabled("That run was too short to record.");
 			draw_summary(*app.session);
 		}
@@ -981,7 +1280,7 @@ void draw_menus (App& app) {
 			ImGui::TextColored(ImVec4(1.f, 0.82f, 0.29f, 1.f),
 				"You got the %s place high score!",
 				place_string(app.hiscore_place).c_str());
-			ImGui::SetNextItemWidth(140);
+			ImGui::SetNextItemWidth(ui(150));
 			ImGui::InputText("##name", app.name_entry, sizeof app.name_entry,
 				ImGuiInputTextFlags_CallbackCharFilter,
 				[] (ImGuiInputTextCallbackData* data) {
@@ -1015,19 +1314,20 @@ void draw_menus (App& app) {
 			ImGui::TextDisabled("Score saved.");
 		}
 		if (app.last_replay.has_value()) {
-			if (ImGui::Button("Watch replay", ImVec2(220, 0))) {
+			if (ImGui::Button("Watch replay", ImVec2(ui(240), 0))) {
 				watch(app, *app.last_replay, Screen::Over);
 			}
 		} else {
 			ImGui::TextDisabled("Too short to record.");
 		}
-		if (ImGui::Button("Play again", ImVec2(220, 0))) {
+		if (ImGui::Button("Play again", ImVec2(ui(240), 0))) {
 			start_game(app, app.mode);
 		}
-		if (ImGui::Button("Back to menu", ImVec2(220, 0))) {
+		if (ImGui::Button("Back to menu", ImVec2(ui(240), 0))) {
 			app.screen = Screen::Menu;
 		}
 		ImGui::End();
+		ImGui::PopStyleVar(2);
 	}
 
 	if (app.show_settings) {
@@ -1040,7 +1340,45 @@ void draw_menus (App& app) {
 // The screens the smoke run visits between games, in order. Each is opened
 // the way a player opens it - with the data the screen reads actually
 // loaded - so the headless run proves they draw, not merely that they build.
-constexpr int kTour = 6;
+// A picture of the frame as drawn, before the present wipes it.
+void capture_frame (SDL_Renderer* renderer, const std::string& path) {
+	int w = 0;
+	int h = 0;
+	SDL_GetRendererOutputSize(renderer, &w, &h);
+	SDL_Surface* grab = SDL_CreateRGBSurfaceWithFormat(
+		0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+	if (grab != nullptr && SDL_RenderReadPixels(renderer, nullptr,
+		grab->format->format, grab->pixels, grab->pitch) == 0) {
+		SDL_SaveBMP(grab, path.c_str());
+	}
+	SDL_FreeSurface(grab);
+}
+
+// Which screen the frame shows, for the one-shot-per-screen gallery
+// FORCETRIS_SHOTS collects - the way a design change is looked at without a
+// display, one BMP per screen the run visits.
+std::string screen_shot_key (const App& app) {
+	if (app.editing) {
+		return "editor";
+	}
+	if (app.show_settings) {
+		return "settings";
+	}
+	switch (app.screen) {
+		case Screen::Menu: return "menu";
+		case Screen::Game: return app.paused ? "pause" : "game";
+		case Screen::Over: return "over";
+		case Screen::Replays: return "replays";
+		case Screen::Viewer: return "viewer";
+		case Screen::Scores: return "scores";
+		case Screen::Help: return "help";
+		case Screen::Analysis:
+			return app.studying.has_value() ? "analysis" : "analysis_empty";
+	}
+	return "screen";
+}
+
+constexpr int kTour = 11;
 
 void tour_screen (App& app, int stop) {
 	switch (stop) {
@@ -1070,12 +1408,36 @@ void tour_screen (App& app, int stop) {
 			app.study_back = Screen::Over;
 			app.screen = Screen::Analysis;
 			break;
-		default:
+		case 5:
 			// And the same screen with nothing to show, which is what a run
 			// too short to record leaves it holding.
 			app.studying.reset();
 			app.study_back = Screen::Over;
 			app.screen = Screen::Analysis;
+			break;
+		case 6:
+			app.screen = Screen::Menu;
+			app.show_settings = true;
+			break;
+		case 7:
+			// The layout editor over the finished game's board.
+			app.screen = Screen::Game;
+			app.editing = true;
+			app.place_panels = true;
+			break;
+		case 8:
+			app.screen = Screen::Game;
+			app.paused = true;
+			break;
+		case 9:
+			// The editor as the settings screen opens it: over a throwaway
+			// preview board, no game running.
+			app.session.reset();
+			app.screen = Screen::Menu;
+			open_layout_editor(app);
+			break;
+		default:
+			app.screen = Screen::Menu;
 			break;
 	}
 }
@@ -1085,6 +1447,13 @@ int run (bool smoke, long smoke_frames) {
 	app.config_file = config_path();
 	app.config = load_config(app.config_file);
 
+#ifdef SDL_HINT_WINDOWS_DPI_AWARENESS
+	// Without this Windows draws the window at 96dpi and stretches the
+	// bitmap to the display's scale, which blurs every pixel in it. With it
+	// the window is laid out in real pixels and the scale below re-derives
+	// the same design at the display's density.
+	SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
+#endif
 	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
 		SDL_Log("SDL_Init: %s", SDL_GetError());
 		return 1;
@@ -1098,8 +1467,23 @@ int run (bool smoke, long smoke_frames) {
 	} else {
 		app.root = game_root();
 	}
+	float scale = 1.f;
+	float dpi = 0.f;
+	if (SDL_GetDisplayDPI(0, &dpi, nullptr, nullptr) == 0 && dpi > 0.f) {
+		scale = std::clamp(dpi / 96.f, 1.f, 3.f);
+	}
+	// The escape hatch for displays that misreport their density - WSLg says
+	// 96dpi while Windows stretches the result - and for anyone who simply
+	// wants the whole game bigger.
+	if (const char* forced = std::getenv("FORCETRIS_SCALE")) {
+		const float wanted = static_cast<float>(std::atof(forced));
+		if (wanted > 0.f) {
+			scale = std::clamp(wanted, 1.f, 3.f);
+		}
+	}
+	apply_ui_scale(scale);
 	app.window = SDL_CreateWindow("Forcetris",
-		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1180, 700,
+		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, px(1180), px(700),
 		SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
 	if (app.window == nullptr) {
 		SDL_Log("SDL_CreateWindow: %s", SDL_GetError());
@@ -1119,11 +1503,8 @@ int run (bool smoke, long smoke_frames) {
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGui::GetIO().IniFilename = nullptr;
-	ImGui::StyleColorsDark();
-	ImGui::GetStyle().WindowRounding = 6.f;
-	ImFontConfig font;
-	font.SizePixels = 17.f;
-	ImGui::GetIO().Fonts->AddFontDefault(&font);
+	apply_theme();
+	app.fonts = load_fonts();
 	ImGui_ImplSDL2_InitForSDLRenderer(app.window, app.renderer);
 	ImGui_ImplSDLRenderer2_Init(app.renderer);
 
@@ -1135,6 +1516,14 @@ int run (bool smoke, long smoke_frames) {
 	Uint64 previous = SDL_GetPerformanceCounter();
 	double behind = 0.;
 	long frames = 0;
+	// Where the per-screen gallery goes, if anywhere.
+	const char* shots_dir = std::getenv("FORCETRIS_SHOTS");
+	std::map<std::string, int> shot_frames;
+	if (shots_dir != nullptr) {
+		std::error_code ignored;
+		std::filesystem::create_directories(shots_dir, ignored);
+	}
+
 	// The smoke run's tour of the screens a game never opens. It only starts
 	// once a game has ended, and the viewer mode skips it, so the run is only
 	// held to finishing a tour it was in a position to start.
@@ -1210,14 +1599,14 @@ int run (bool smoke, long smoke_frames) {
 		if (app.session.has_value()
 			&& (app.screen == Screen::Game || app.screen == Screen::Over)) {
 			draw_board(app);
-			draw_label("HOLD", kBoardX - 122.f, kBoardY - 22.f);
-			draw_label("NEXT", kBoardX + kBoardW + 18.f, kBoardY - 22.f);
+			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
+			draw_label("NEXT", kBoardX + kBoardW + ui(18), kBoardY - ui(24));
 			draw_stat_panels(app);
 			draw_banner(app);
 		}
 		if (app.screen == Screen::Viewer && app.viewing.has_value()) {
-			draw_label("HOLD", kBoardX - 122.f, kBoardY - 22.f);
-			draw_label("NEXT", kBoardX + kBoardW + 18.f, kBoardY - 22.f);
+			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
+			draw_label("NEXT", kBoardX + kBoardW + ui(18), kBoardY - ui(24));
 			draw_viewer(app);
 		}
 		if (app.screen == Screen::Replays) {
@@ -1235,6 +1624,14 @@ int run (bool smoke, long smoke_frames) {
 		if (app.editing) {
 			draw_layout_editor(app);
 		}
+		if (app.layout_preview && !app.editing) {
+			// The throwaway preview board goes with the editor, back to the
+			// settings screen it was opened from.
+			app.layout_preview = false;
+			app.session.reset();
+			app.screen = Screen::Menu;
+			app.show_settings = true;
+		}
 		draw_menus(app);
 
 		ImGui::Render();
@@ -1244,16 +1641,16 @@ int run (bool smoke, long smoke_frames) {
 			// A picture of the last frame, before the present wipes it, so a
 			// headless run can be looked at rather than taken on faith.
 			if (const char* shot = std::getenv("FORCETRIS_SHOT")) {
-				int w = 0;
-				int h = 0;
-				SDL_GetRendererOutputSize(app.renderer, &w, &h);
-				SDL_Surface* grab = SDL_CreateRGBSurfaceWithFormat(
-					0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
-				if (grab != nullptr && SDL_RenderReadPixels(app.renderer, nullptr,
-					grab->format->format, grab->pixels, grab->pitch) == 0) {
-					SDL_SaveBMP(grab, shot);
-				}
-				SDL_FreeSurface(grab);
+				capture_frame(app.renderer, shot);
+			}
+		}
+		if (shots_dir != nullptr) {
+			// One picture per screen, taken a few frames in so the layout
+			// has settled.
+			const std::string key = screen_shot_key(app);
+			if (++shot_frames[key] == 4) {
+				capture_frame(app.renderer,
+					(std::filesystem::path(shots_dir) / (key + ".bmp")).string());
 			}
 		}
 		SDL_RenderPresent(app.renderer);
@@ -1275,11 +1672,15 @@ int run (bool smoke, long smoke_frames) {
 					start_game(app, app.mode);
 				}
 			} else if (toured > 0 && toured <= kTour
-				&& app.screen != Screen::Game && app.screen != Screen::Viewer) {
-				if (++tour_frames >= 4) {
+				&& app.screen != Screen::Viewer
+				&& (app.screen != Screen::Game || app.paused || app.editing)) {
+				if (++tour_frames >= 6) {
 					tour_frames = 0;
 					app.screen = Screen::Over;
 					app.studying.reset();
+					app.show_settings = false;
+					app.editing = false;
+					app.paused = false;
 				}
 			}
 			if (frames >= smoke_frames) {
