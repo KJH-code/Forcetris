@@ -19,6 +19,7 @@ What is here:
 | `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, all three clear styles, the finesse retry, the scoring — spins, back to back, combos, cascade chains, attack, the score itself — the sound cues, timed mode's clock, arcade's level ramp and garbage, and everything the recorder writes down |
 | `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
+| `rating` | An estimated Tetra League standing - Glicko, TR by the official conversion formula, rank - interpolated from public per-rank averages, and labelled the estimate it is |
 | `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, the replay browser and viewer, the three game modes, the high score screens, the how-to-play screen and the analysis of a finished run |
 
 ## The GUI
@@ -69,9 +70,19 @@ A finished run is laid out the way the Python analysis screen lays it out -
 score, pieces, lines and time; the finesse rate, the faults, what the run
 cost in presses and what it would have cost without them; attack, VS, the
 clears by size, spins, perfect clears and the best chains - and the same
-rows open from the replay browser for any saved recording. Those rows are
-built in the core and graded against the Python screen's own text, so the
-two games say the same thing about the same run. How to Play lists every
+rows open from the replay browser for any saved recording. Those overview
+rows are built in the core and graded against the Python screen's own text,
+so the two games say the same thing about the same run. Around them the
+analysis screen grows tabs the Python game never had: Attack (APM, APP,
+APL, downstack per piece and per second, VS/APM), Speed (peak ten-piece
+PPS, the run's halves, KPP, KPS, holds, forced drops), Pieces (the deal by
+form, clears by size, spins and minis, the best chains) - and Rating, an
+estimated Glicko, TR and rank for the run. The estimate places your APM,
+PPS and VS against public per-rank Tetra League averages and runs the
+official TR conversion over the result; there is no opponent in a trainer,
+so it is an entertainment-grade placement, and the screen says so in as
+many words. Play opens a mode picker - Free, Timed, Arcade - with a line on
+what each one does. How to Play lists every
 action against the keys bound to it right now, and explains the forced
 drop, in the Python screen's words.
 

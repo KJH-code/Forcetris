@@ -518,8 +518,10 @@ to the same replay files the Python game writes, and either game can browse
 and watch the other's, corrected finesse and all; high scores go into the
 same `data/hiscore.dat`, byte for byte. A finished run gets the same
 analysis the Python loss screen gives it — down to the wording, which the
-cross test grades — and How to Play explains the forced drop against
-whatever keys are bound at the time.
+cross test grades — plus detail tabs of its own (attack, speed, the pieces,
+and an estimated Glicko/TR/rank, clearly labelled as the entertainment it
+is), and How to Play explains the forced drop against whatever keys are
+bound at the time.
 
 ```bash
 sudo apt install libsdl2-dev    # or vcpkg install sdl2 on Windows
@@ -554,6 +556,9 @@ gives, two ways:
 - `cascade_check` — the cascade movement loop's collision verdicts, pinned on
   the same hand-built boards `tools/test_cascade.py` pins the Python engine
   with: the one corner no natural game, and so no trace, can reach.
+- `rating_check` — the analysis screen's rating estimate: the official TR
+  conversion's fixed points, monotonicity in the inputs, and the rank
+  ladder's order.
 
 ```bash
 ctest --test-dir cpp/build --output-on-failure

@@ -11,6 +11,7 @@
 // machines with no display.
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
@@ -30,6 +31,7 @@
 #include "audio.hpp"
 #include "config.hpp"
 #include "forcetris/hiscore.hpp"
+#include "forcetris/rating.hpp"
 #include "forcetris/replay.hpp"
 #include "session.hpp"
 #include "stats.hpp"
@@ -249,7 +251,8 @@ const SDL_Color kFormColors[8] = {
 	{122, 122, 122, 255},  // garbage
 };
 
-enum class Screen { Menu, Game, Over, Replays, Viewer, Scores, Help, Analysis };
+enum class Screen {
+	Menu, Modes, Game, Over, Replays, Viewer, Scores, Help, Analysis };
 
 // A replay being watched: which placement, which stop along its journey.
 struct Viewing {
@@ -442,6 +445,8 @@ void handle_event (App& app, const SDL_Event& event) {
 		} else if (app.screen == Screen::Analysis) {
 			app.screen = app.study_back;
 			app.studying.reset();
+		} else if (app.screen == Screen::Modes) {
+			app.screen = Screen::Menu;
 		} else if (app.screen == Screen::Help) {
 			app.screen = app.help_back;
 		} else if (app.screen == Screen::Replays
@@ -875,10 +880,174 @@ void draw_analysis_rows (const replay::Replay& game) {
 // The analysis of a saved replay, opened from the browser. The loss screen
 // shows the same rows inline, since a finished game is already looking at
 // them.
+// One label-value line in an analysis table.
+void detail_row (const char* label, const std::string& value) {
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex(0);
+	ImGui::TextColored(ImVec4(0.59f, 0.65f, 0.73f, 1.f), "%s", label);
+	ImGui::TableSetColumnIndex(1);
+	ImGui::TextUnformatted(value.c_str());
+}
+
+std::string detail_text (const char* spec, ...) {
+	char buffer[96];
+	va_list args;
+	va_start(args, spec);
+	std::vsnprintf(buffer, sizeof buffer, spec, args);
+	va_end(args);
+	return buffer;
+}
+
+// The attack tab: what the run sent and dug, per minute, per piece, per
+// line - the figures the TetraStats crowd reads a league game by.
+void draw_analysis_attack (const replay::Replay& game) {
+	const replay::Summary s = game.summary(false);
+	const double pieces = std::max(1, s.placements);
+	const double seconds = std::max(1e-9, s.seconds);
+	const int ds = game.meta.downstack;
+	if (ImGui::BeginTable("attack", 2)) {
+		detail_row("Attack", detail_text("%d", s.attack));
+		detail_row("APM", detail_text("%.1f", s.apm));
+		detail_row("APP (attack/piece)", detail_text("%.2f", s.attack / pieces));
+		detail_row("APL (attack/line)", detail_text("%.2f",
+			s.lines > 0 ? s.attack / static_cast<double>(s.lines) : 0.));
+		detail_row("Downstack", detail_text("%d", ds));
+		detail_row("DS/piece", detail_text("%.2f", ds / pieces));
+		detail_row("DS/second", detail_text("%.2f", ds / seconds));
+		detail_row("VS", detail_text("%.1f", s.vs));
+		detail_row("VS/APM", detail_text("%.2f",
+			s.apm > 0. ? s.vs / s.apm : 0.));
+		ImGui::EndTable();
+	}
+}
+
+// The speed tab: pace, its peak and its halves, and what the hands did.
+void draw_analysis_speed (const replay::Replay& game) {
+	const replay::Summary s = game.summary(false);
+	const auto& places = game.placements;
+	const int count = static_cast<int>(places.size());
+	double peak = 0.;
+	for (int i = 0; i + 9 < count; ++i) {
+		const double start = i > 0 ? places[i - 1].elapsed : 0.;
+		const double span = places[i + 9].elapsed - start;
+		if (span > 0.) {
+			peak = std::max(peak, 10. / span);
+		}
+	}
+	const int half = count / 2;
+	double first = 0.;
+	double second = 0.;
+	if (half > 0 && places[half - 1].elapsed > 0.) {
+		first = half / places[half - 1].elapsed;
+	}
+	if (count > half && places[count - 1].elapsed > places[half - 1].elapsed) {
+		second = (count - half)
+			/ (places[count - 1].elapsed - places[half - 1].elapsed);
+	}
+	int holds = 0;
+	int forced = 0;
+	for (const replay::Placement& place : places) {
+		holds += place.held ? 1 : 0;
+		forced += place.forced ? 1 : 0;
+	}
+	if (ImGui::BeginTable("speed", 2)) {
+		detail_row("PPS", detail_text("%.2f", s.pps));
+		detail_row("Peak PPS (10 pieces)", detail_text("%.2f", peak));
+		detail_row("First half", detail_text("%.2f PPS", first));
+		detail_row("Second half", detail_text("%.2f PPS", second));
+		detail_row("Key presses", detail_text("%d", s.presses));
+		detail_row("KPP (keys/piece)", detail_text("%.2f", s.ppp));
+		detail_row("KPS (keys/second)", detail_text("%.2f",
+			s.seconds > 0. ? s.presses / s.seconds : 0.));
+		detail_row("Holds", detail_text("%d", holds));
+		detail_row("Forced drops", detail_text("%d", forced));
+		ImGui::EndTable();
+	}
+}
+
+// The pieces tab: what was dealt, what it cleared, and how it spun.
+void draw_analysis_pieces (const replay::Replay& game) {
+	const replay::Summary s = game.summary(false);
+	const auto& places = game.placements;
+	const double count = std::max<size_t>(1, places.size());
+	int forms[7] = {};
+	int spins = 0;
+	int minis = 0;
+	int max_combo = 0;
+	int max_b2b = 0;
+	for (const replay::Placement& place : places) {
+		if (place.form >= 0 && place.form <= 6) {
+			++forms[place.form];
+		}
+		if (!place.spin.empty()) {
+			++spins;
+			if (place.spin.rfind("MINI", 0) == 0) {
+				++minis;
+			}
+		}
+		max_combo = std::max(max_combo, place.combo);
+		max_b2b = std::max(max_b2b, place.b2b);
+	}
+	if (ImGui::BeginTable("pieces", 2)) {
+		static const char* names[] = {"I", "O", "T", "S", "Z", "J", "L"};
+		for (int form = 0; form < 7; ++form) {
+			detail_row(names[form], detail_text("%d  (%.0f%%)",
+				forms[form], forms[form] * 100. / count));
+		}
+		static const char* sizes[] = {"Singles", "Doubles", "Triples", "Quads"};
+		for (int size = 1; size <= 4; ++size) {
+			const auto found = s.clears.find(size);
+			detail_row(sizes[size - 1], detail_text("%d",
+				found == s.clears.end() ? 0 : found->second));
+		}
+		detail_row("Spins", detail_text("%d  (%d mini)", spins, minis));
+		detail_row("Perfect clears", detail_text("%d", s.perfects));
+		detail_row("Best combo", detail_text("%d", max_combo));
+		detail_row("Best B2B", detail_text("%d", max_b2b));
+		ImGui::EndTable();
+	}
+}
+
+// The rating tab: where the run's figures sit against the public shape of
+// Tetra League. An estimate over community averages, and it says so.
+void draw_analysis_rating (App& app, const replay::Replay& game) {
+	const replay::Summary s = game.summary(false);
+	const rating::Estimate guess = rating::estimate(s.apm, s.pps, s.vs);
+	if (std::string(guess.rank).empty()) {
+		ImGui::TextDisabled("Not enough of a game to place.");
+		return;
+	}
+	ImGui::Spacing();
+	ImGui::PushFont(app.fonts.title);
+	ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f), "%s", guess.rank);
+	ImGui::PopFont();
+	ImGui::SameLine();
+	ImGui::PushFont(app.fonts.head);
+	ImGui::Text("  %.0f TR", guess.tr);
+	ImGui::PopFont();
+	ImGui::Spacing();
+	if (ImGui::BeginTable("rating", 2)) {
+		detail_row("Estimated Glicko", detail_text("%.0f", guess.glicko));
+		detail_row("Estimated TR", detail_text("%.0f / 25000", guess.tr));
+		detail_row("From APM", detail_text("%.1f", s.apm));
+		detail_row("From PPS", detail_text("%.2f", s.pps));
+		detail_row("From VS", detail_text("%.1f", s.vs));
+		ImGui::EndTable();
+	}
+	ImGui::Spacing();
+	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui(430));
+	ImGui::TextDisabled(
+		"An estimate, not a rating: your figures placed against public "
+		"Tetra League averages per rank. Only real league games rate.");
+	ImGui::PopTextWrapPos();
+}
+
+// The analysis of a saved replay, opened from the browser or the loss
+// screen: the graded overview first, the deeper cuts on their own tabs.
 void draw_analysis (App& app) {
 	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(6)),
 		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(ui(470), 0));
+	ImGui::SetNextWindowSize(ImVec2(ui(490), 0));
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(6)));
 	ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui(8), ui(3)));
 	ImGui::Begin("Analysis", nullptr, ImGuiWindowFlags_AlwaysAutoResize
@@ -886,8 +1055,29 @@ void draw_analysis (App& app) {
 		| ImGuiWindowFlags_NoSavedSettings);
 	if (app.studying.has_value()) {
 		ImGui::TextDisabled("%s", app.studying->title().c_str());
-		ImGui::Separator();
-		draw_analysis_rows(*app.studying);
+		if (ImGui::BeginTabBar("analysis_tabs")) {
+			if (ImGui::BeginTabItem("Overview")) {
+				draw_analysis_rows(*app.studying);
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem("Attack")) {
+				draw_analysis_attack(*app.studying);
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem("Speed")) {
+				draw_analysis_speed(*app.studying);
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem("Pieces")) {
+				draw_analysis_pieces(*app.studying);
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem("Rating")) {
+				draw_analysis_rating(app, *app.studying);
+				ImGui::EndTabItem();
+			}
+			ImGui::EndTabBar();
+		}
 		ImGui::Separator();
 		if (ImGui::Button("Watch replay", ImVec2(ui(240), 0))) {
 			watch(app, *app.studying, Screen::Analysis);
@@ -1205,14 +1395,8 @@ void draw_menus (App& app) {
 		ImGui::PopFont();
 		ImGui::TextDisabled("the forced hard drop trainer");
 		ImGui::Dummy(ImVec2(0.f, ui(10)));
-		if (ImGui::Button("Play", ImVec2(ui(260), ui(40)))) {
-			start_game(app, 0);
-		}
-		if (ImGui::Button("Play timed", ImVec2(ui(260), ui(40)))) {
-			start_game(app, 1);
-		}
-		if (ImGui::Button("Play arcade", ImVec2(ui(260), ui(40)))) {
-			start_game(app, 2);
+		if (ImGui::Button("Play", ImVec2(ui(260), ui(44)))) {
+			app.screen = Screen::Modes;
 		}
 		ImGui::Dummy(ImVec2(0.f, ui(6)));
 		if (ImGui::Button("How to play", ImVec2(ui(260), 0))) {
@@ -1233,6 +1417,33 @@ void draw_menus (App& app) {
 		ImGui::Dummy(ImVec2(0.f, ui(6)));
 		if (ImGui::Button("Quit", ImVec2(ui(260), 0))) {
 			app.quit = true;
+		}
+		ImGui::End();
+	} else if (app.screen == Screen::Modes) {
+		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+		ImGui::Begin("mode select", nullptr, box);
+		ImGui::PushFont(app.fonts.head);
+		ImGui::TextUnformatted("Choose a mode");
+		ImGui::PopFont();
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		if (ImGui::Button("Free", ImVec2(ui(280), ui(44)))) {
+			start_game(app, 0);
+		}
+		ImGui::TextDisabled("No clock, no ramp: play until you top out.");
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		if (ImGui::Button("Timed", ImVec2(ui(280), ui(44)))) {
+			start_game(app, 1);
+		}
+		ImGui::TextDisabled("Five minutes; the score multiplier climbs as");
+		ImGui::TextDisabled("the clock drains.");
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		if (ImGui::Button("Arcade", ImVec2(ui(280), ui(44)))) {
+			start_game(app, 2);
+		}
+		ImGui::TextDisabled("The level ramps and garbage rises from below.");
+		ImGui::Dummy(ImVec2(0.f, ui(8)));
+		if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
+			app.screen = Screen::Menu;
 		}
 		ImGui::End();
 	} else if (app.screen == Screen::Game && app.paused) {
@@ -1314,6 +1525,11 @@ void draw_menus (App& app) {
 			ImGui::TextDisabled("Score saved.");
 		}
 		if (app.last_replay.has_value()) {
+			if (ImGui::Button("Full analysis", ImVec2(ui(240), 0))) {
+				app.studying = app.last_replay;
+				app.study_back = Screen::Over;
+				app.screen = Screen::Analysis;
+			}
 			if (ImGui::Button("Watch replay", ImVec2(ui(240), 0))) {
 				watch(app, *app.last_replay, Screen::Over);
 			}
@@ -1366,6 +1582,7 @@ std::string screen_shot_key (const App& app) {
 	}
 	switch (app.screen) {
 		case Screen::Menu: return "menu";
+		case Screen::Modes: return "modes";
 		case Screen::Game: return app.paused ? "pause" : "game";
 		case Screen::Over: return "over";
 		case Screen::Replays: return "replays";
@@ -1378,7 +1595,7 @@ std::string screen_shot_key (const App& app) {
 	return "screen";
 }
 
-constexpr int kTour = 11;
+constexpr int kTour = 12;
 
 void tour_screen (App& app, int stop) {
 	switch (stop) {
@@ -1435,6 +1652,9 @@ void tour_screen (App& app, int stop) {
 			app.session.reset();
 			app.screen = Screen::Menu;
 			open_layout_editor(app);
+			break;
+		case 10:
+			app.screen = Screen::Modes;
 			break;
 		default:
 			app.screen = Screen::Menu;

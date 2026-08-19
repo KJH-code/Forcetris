@@ -33,6 +33,7 @@ add_library(forcetris_core
 	src/sim.cpp
 	src/replay.cpp
 	src/hiscore.cpp
+	src/rating.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
 # nlohmann/json.hpp, vendored, for the replay files.
@@ -58,6 +59,10 @@ target_compile_options(hiscorecheck PRIVATE ${FORCETRIS_WARNINGS})
 add_executable(cascadecheck tests/cascadecheck.cpp)
 target_link_libraries(cascadecheck PRIVATE forcetris_core)
 target_compile_options(cascadecheck PRIVATE ${FORCETRIS_WARNINGS})
+
+add_executable(ratingcheck tests/ratingcheck.cpp)
+target_link_libraries(ratingcheck PRIVATE forcetris_core)
+target_compile_options(ratingcheck PRIVATE ${FORCETRIS_WARNINGS})
 
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
@@ -128,6 +133,9 @@ add_test(NAME hiscore_cross
 # tools/test_cascade.py pins the Python engine with - the one corner no
 # natural game, and so no trace, can reach.
 add_test(NAME cascade_check COMMAND cascadecheck)
+# The rating estimate's arithmetic: the official TR conversion's fixed
+# points, monotonicity, and the rank ladder's order.
+add_test(NAME rating_check COMMAND ratingcheck)
 if (SDL2_FOUND)
 	# The whole window run headlessly under scripted-random input: proves the
 	# loop, the drawing and the shutdown hold together with no display.
