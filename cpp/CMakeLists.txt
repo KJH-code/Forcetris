@@ -64,6 +64,10 @@ add_executable(ratingcheck tests/ratingcheck.cpp)
 target_link_libraries(ratingcheck PRIVATE forcetris_core)
 target_compile_options(ratingcheck PRIVATE ${FORCETRIS_WARNINGS})
 
+add_executable(cheesecheck tests/cheesecheck.cpp)
+target_link_libraries(cheesecheck PRIVATE forcetris_core)
+target_compile_options(cheesecheck PRIVATE ${FORCETRIS_WARNINGS})
+
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
 find_package(SDL2 QUIET)
@@ -136,6 +140,9 @@ add_test(NAME cascade_check COMMAND cascadecheck)
 # The rating estimate's arithmetic: the official TR conversion's fixed
 # points, monotonicity, and the rank ladder's order.
 add_test(NAME rating_check COMMAND ratingcheck)
+# The cheese modes, which are this side's own: the race's priming, cap,
+# quota and win, and survival's rising floor, spelled out against the sim.
+add_test(NAME cheese_check COMMAND cheesecheck)
 if (SDL2_FOUND)
 	# The whole window run headlessly under scripted-random input: proves the
 	# loop, the drawing and the shutdown hold together with no display.

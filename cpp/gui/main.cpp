@@ -292,6 +292,8 @@ struct App {
 	bool place_panels = false;   // Push saved positions into ImGui this frame.
 	std::string rebinding;       // Action waiting for its next key, if any.
 	int mode = 0;                // The gametype the current game was started as.
+	int cheese_total = 18;       // The race's quota, set by the mode picker.
+	int cheese_period = 250;     // Survival's frames per rising row.
 	int score_page = 2;          // The high score table being looked at.
 	int hiscore_place = -1;      // Where the finished game would place, if it does.
 	char name_entry[9] = "";
@@ -301,7 +303,13 @@ struct App {
 };
 
 const char* gametype_name (int mode) {
-	return mode == 1 ? "timed" : mode == 2 ? "arcade" : "free";
+	switch (mode) {
+		case 1: return "timed";
+		case 2: return "arcade";
+		case 3: return "cheese_race";
+		case 4: return "cheese_survival";
+		default: return "free";
+	}
 }
 
 std::string place_string (int at) {
@@ -336,6 +344,8 @@ void start_game (App& app, int mode) {
 	app.mode = mode;
 	SimConfig config = app.config.sim();
 	config.gametype = mode;
+	config.cheese_total = app.cheese_total;
+	config.cheese_period = app.cheese_period;
 	app.session.emplace(config, app.seeds(), meta_for(app.config, mode));
 	app.screen = Screen::Game;
 	app.paused = false;
@@ -361,15 +371,21 @@ void end_game (App& app) {
 	// only happens if a name is entered and the score actually submitted.
 	// The loss-time counters: eval_loss probes before a still-resolving
 	// clear lands its points, so the snapshot does too.
-	const Sim& sim = app.session->sim();
-	hiscore::Entry probe;
-	probe.score = static_cast<std::uint64_t>(
-		std::max<long long>(0, sim.final_score()));
-	probe.lines = static_cast<std::uint32_t>(std::max(0, sim.final_lines()));
-	probe.timer = static_cast<std::uint32_t>(std::max(0L, sim.timer_ms()));
-	const int at = hiscore::place(
-		hiscore::load(hiscore::folder(app.root)), gametype_name(app.mode), probe);
-	app.hiscore_place = at < hiscore::kPerTable ? at : -1;
+	if (app.mode >= 3) {
+		// The cheese modes are this side's own; the score file is the Python
+		// game's, three tables and no more, and stays byte-compatible.
+		app.hiscore_place = -1;
+	} else {
+		const Sim& sim = app.session->sim();
+		hiscore::Entry probe;
+		probe.score = static_cast<std::uint64_t>(
+			std::max<long long>(0, sim.final_score()));
+		probe.lines = static_cast<std::uint32_t>(std::max(0, sim.final_lines()));
+		probe.timer = static_cast<std::uint32_t>(std::max(0L, sim.timer_ms()));
+		const int at = hiscore::place(
+			hiscore::load(hiscore::folder(app.root)), gametype_name(app.mode), probe);
+		app.hiscore_place = at < hiscore::kPerTable ? at : -1;
+	}
 	app.name_entry[0] = '\0';
 	app.score_saved = false;
 }
@@ -1441,6 +1457,46 @@ void draw_menus (App& app) {
 			start_game(app, 2);
 		}
 		ImGui::TextDisabled("The level ramps and garbage rises from below.");
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted("Cheese race");
+		ImGui::SameLine();
+		if (ImGui::Button("10", ImVec2(ui(52), 0))) {
+			app.cheese_total = 10;
+			start_game(app, 3);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("18", ImVec2(ui(52), 0))) {
+			app.cheese_total = 18;
+			start_game(app, 3);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("100", ImVec2(ui(52), 0))) {
+			app.cheese_total = 100;
+			start_game(app, 3);
+		}
+		ImGui::TextDisabled("Dig that many rows of holey garbage. The clock");
+		ImGui::TextDisabled("stops when the last of it is gone.");
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted("Cheese survival");
+		ImGui::SameLine();
+		if (ImGui::Button("8s", ImVec2(ui(52), 0))) {
+			app.cheese_period = 400;
+			start_game(app, 4);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("5s", ImVec2(ui(52), 0))) {
+			app.cheese_period = 250;
+			start_game(app, 4);
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("3s", ImVec2(ui(52), 0))) {
+			app.cheese_period = 150;
+			start_game(app, 4);
+		}
+		ImGui::TextDisabled("The floor rises on that clock. Last as long as");
+		ImGui::TextDisabled("you can.");
 		ImGui::Dummy(ImVec2(0.f, ui(8)));
 		if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
 			app.screen = Screen::Menu;
@@ -1473,9 +1529,16 @@ void draw_menus (App& app) {
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(6)));
 		ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui(8), ui(3)));
 		ImGui::Begin("game over", nullptr, box);
+		const bool won = app.session.has_value() && app.session->sim().won();
 		ImGui::PushFont(app.fonts.head);
-		ImGui::TextUnformatted("Game over");
+		ImGui::TextUnformatted(won ? "Finished!" : "Game over");
 		ImGui::PopFont();
+		if (won) {
+			const double seconds = app.session->sim().frame() * 0.02;
+			ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f),
+				"All the cheese in %d:%05.2f",
+				static_cast<int>(seconds) / 60, std::fmod(seconds, 60.));
+		}
 		ImGui::Spacing();
 		// What the run was made of, as the Python analysis screen lists it -
 		// which needs the recording. A game too short for a file says so and
@@ -1730,7 +1793,17 @@ int run (bool smoke, long smoke_frames) {
 
 	std::mt19937 mash(20260818);
 	if (smoke) {
-		start_game(app, 0);
+		// FORCETRIS_SMOKE_MODE picks which mode the scripted run plays, so
+		// every mode's whole loop - dealer, session, end screen - can be
+		// proven headlessly, not only free's.
+		int mode = 0;
+		if (const char* forced = std::getenv("FORCETRIS_SMOKE_MODE")) {
+			mode = std::clamp(std::atoi(forced), 0, 4);
+		}
+		if (mode == 4) {
+			app.cheese_period = 150;
+		}
+		start_game(app, mode);
 	}
 
 	Uint64 previous = SDL_GetPerformanceCounter();

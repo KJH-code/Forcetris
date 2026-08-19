@@ -47,9 +47,13 @@ struct SimConfig {
 	// the guideline's and the trainer's default; the cascade styles let what
 	// was left hanging fall, one row per frame, and clear again.
 	int cleartype = 0;
-	// The mode: 0 free, 1 timed, 2 arcade. Timed runs its clock down and ends
-	// the game at zero; arcade ramps gravity with the level and pushes garbage
-	// rows up from the floor.
+	// The mode: 0 free, 1 timed, 2 arcade, 3 cheese race, 4 cheese survival.
+	// Timed runs its clock down and ends the game at zero; arcade ramps
+	// gravity with the level and pushes garbage rows up from the floor. The
+	// cheese modes are this side's own (the Python game has no counterpart):
+	// the race deals a quota of holey garbage to dig through as fast as
+	// possible and ends won when the last of it is gone; survival pushes a
+	// row up on a fixed clock until the stack wins.
 	int gametype = 0;
 	// Timed mode's clock, in milliseconds. The game's own five minutes by
 	// default; a trace shortens it to something a trace can outlive.
@@ -57,6 +61,10 @@ struct SimConfig {
 	// Lines already on the counter when the game starts: zero in play, set by
 	// a trace that needs arcade's high levels within a trace's reach.
 	int start_lines = 0;
+	// The cheese race's quota of garbage rows, and survival's frames between
+	// one row rising and the next.
+	int cheese_total = 18;
+	int cheese_period = 250;
 };
 
 enum class Key : int { Left, Right, Soft, Hard, Hold, Ccw, Cw, Flip };
@@ -158,6 +166,9 @@ public:
 	long long score () const { return score_; }
 	int downstack () const { return downstack_; }
 	int level () const { return level_; }
+	// The race's undealt quota; the rows still standing are on the board.
+	int cheese_left () const { return cheese_left_; }
+	bool won () const { return won_; }
 	// The counters as they stood at the loss, which is what the loss screens
 	// read: a timed game can die with a clear still resolving, and Python's
 	// eval_loss takes its high score entry and replay before that clear
@@ -200,6 +211,7 @@ private:
 	void note_input (const char* name);
 	void settle_move ();
 	void ramp_arcade ();
+	void eval_cheese ();
 	void eval_timer ();
 	void cue (std::string name) { cues_.push_back(std::move(name)); }
 
@@ -286,6 +298,11 @@ private:
 
 	std::vector<std::string> cues_;
 	bool gameover_cued_ = false;
+	// The cheese modes' bookkeeping: the race's undealt rows, survival's
+	// countdown to the next rise, and the finished-rather-than-lost state.
+	int cheese_left_ = 0;
+	int cheese_frame_ = 0;
+	bool won_ = false;
 
 	// The forced drop clock, in the same arithmetic Python runs.
 	double now_ = 0.;

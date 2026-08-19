@@ -513,7 +513,8 @@ Python game — and a stat layout editor where every figure (PPS, APM, APS,
 VS, finesse, back to back, combo, level, and more) is a panel you tick on
 and drag wherever you want it, starting from presets, persisted between
 runs. All three modes are there — free, timed, arcade with its garbage ramp
-— and all three clear styles, cascades included. Finished games are recorded
+— plus two of its own: a cheese race and cheese survival — and all three
+clear styles, cascades included. Finished games are recorded
 to the same replay files the Python game writes, and either game can browse
 and watch the other's, corrected finesse and all; high scores go into the
 same `data/hiscore.dat`, byte for byte. A finished run gets the same
@@ -559,6 +560,10 @@ gives, two ways:
 - `rating_check` — the analysis screen's rating estimate: the official TR
   conversion's fixed points, monotonicity in the inputs, and the rank
   ladder's order.
+- `cheese_check` — the C++-only cheese modes, spelled out against the sim:
+  the race primes nine rows and no more, holds the rest of its quota back,
+  ends won - not lost - when the last row is dug, and survival's floor
+  rises exactly on its clock.
 
 ```bash
 ctest --test-dir cpp/build --output-on-failure

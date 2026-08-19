@@ -16,7 +16,7 @@ What is here:
 | `finesse` | The search for the fewest presses a placement could have taken |
 | `spins` | The three corner rule and the immobility rule, under each spin setting |
 | `attack` | TETR.IO's garbage table, and the APM / VS arithmetic on top of it |
-| `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, all three clear styles, the finesse retry, the scoring — spins, back to back, combos, cascade chains, attack, the score itself — the sound cues, timed mode's clock, arcade's level ramp and garbage, and everything the recorder writes down |
+| `sim` | The game loop, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, all three clear styles, the finesse retry, the scoring — spins, back to back, combos, cascade chains, attack, the score itself — the sound cues, timed mode's clock, arcade's level ramp and garbage, the cheese race and cheese survival, and everything the recorder writes down |
 | `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
 | `rating` | An estimated Tetra League standing - Glicko, TR by the official conversion formula, rank - interpolated from TETR.IO's own reported per-rank averages, and labelled the estimate it is |
@@ -61,7 +61,17 @@ from the next game; keys, volumes and layout apply at once.
 All three of the Python game's modes are here - free, timed with its five
 minute clock and closing score multiplier, arcade with its level ramp and
 rising garbage - and so are all three clear styles, the two cascade ones
-included. A finished game that places on the high score table is offered a
+included. Two more modes are this side's own, with no Python counterpart:
+a cheese race - ten, eighteen or a hundred rows of holey garbage, holes
+never aligned, dug as fast as you can, the clock stopping the moment the
+last of it is gone - and cheese survival, where the floor rises on a
+clock you pick (every eight, five or three seconds) until the stack wins.
+Their behaviour is spelled out by the `cheese_check` ctest instead of a
+cross-grading, since there is nothing to cross against; a Cheese stat
+panel counts what is left to dig, or what has risen. Cheese games are
+recorded and analysed like any other, but stay off the high score file.
+
+A finished game that places on the high score table is offered a
 name entry, and the table is the Python game's own data/hiscore.dat, read
 and written byte-compatibly; the High scores screen shows the same three
 pages the Python game shows.
@@ -82,8 +92,9 @@ PPS and VS against TETR.IO's own reported per-rank averages (APM, PPS, VS
 and TR, taken off the live leaderboard breakdown) and runs the official TR
 conversion over the result; there is no opponent in a trainer,
 so it is an entertainment-grade placement, and the screen says so in as
-many words. Play opens a mode picker - Free, Timed, Arcade - with a line on
-what each one does. How to Play lists every
+many words. Play opens a mode picker - Free, Timed, Arcade, the cheese race at three
+lengths and cheese survival at three paces - with a line on what each one
+does. How to Play lists every
 action against the keys bound to it right now, and explains the forced
 drop, in the Python screen's words.
 

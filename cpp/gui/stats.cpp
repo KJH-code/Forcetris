@@ -46,6 +46,19 @@ const std::vector<StatDef>& all_stats () {
 		{"level", "Level", [] (const Session& s) {
 			return count(s.sim().level());
 		}},
+		{"cheese", "Cheese", [] (const Session& s) {
+			// The race counts what is left to dig, standing rows included;
+			// survival counts what has risen so far.
+			const int gametype = s.sim().config().gametype;
+			if (gametype == 3) {
+				return count(s.sim().cheese_left()
+					+ s.sim().board().garbage_rows());
+			}
+			if (gametype == 4) {
+				return count(s.sim().board().garbage_rows());
+			}
+			return std::string("-");
+		}},
 		{"pieces", "Pieces", [] (const Session& s) { return count(s.pieces()); }},
 		{"pps", "PPS", [] (const Session& s) {
 			return fmt("%.2f", per_second(s.pieces(), s.seconds()));

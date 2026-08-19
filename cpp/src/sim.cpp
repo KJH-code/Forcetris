@@ -65,6 +65,11 @@ Sim::Sim (const SimConfig& config, std::vector<int> pieces)
 		fall_delay_ = config.fall_delay;
 		entry_frame_ = 20;
 	}
+	if (config.gametype == 3) {
+		cheese_left_ = std::max(0, config.cheese_total);
+	} else if (config.gametype == 4) {
+		cheese_frame_ = std::max(1, config.cheese_period);
+	}
 	soft_delay_ = std::max(1, py_round(fall_delay_ / static_cast<double>(config.sdf)));
 	timer_ms_ = config.gametype == 1 ? config.timer_ms : 0;
 	lines_cleared_ = config.start_lines;
@@ -681,8 +686,45 @@ void Sim::resolve_score () {
 	last.downstack = downstack_;
 }
 
+void Sim::eval_cheese () {
+	if (config_.gametype == 3) {
+		// The race: the board carries up to nine rows of cheese at once; as
+		// they are dug, the quota sends more up from the floor, one row a
+		// frame, the piece riding the push the way arcade's does.
+		if (cheese_left_ > 0 && board_.garbage_rows() < 9 && !holes_.empty()) {
+			board_.push_garbage(holes_.front());
+			holes_.pop_front();
+			--cheese_left_;
+			if (board_.collides(piece_)) {
+				piece_.y -= 1;
+			}
+		}
+		// Finished when the quota is spent and none of it still stands. The
+		// clearer settles first: the last row's cascade may still be falling
+		// on the frame the row itself vanished.
+		if (!won_ && !lost_ && cheese_left_ == 0 && !clearing_
+			&& board_.garbage_rows() == 0) {
+			won_ = true;
+			loss_frame_ = frame_;
+			piece_elapsed_.reset();
+		}
+	} else if (config_.gametype == 4) {
+		// Survival: the floor rises on its own clock, ready or not.
+		if (cheese_frame_ > 1) {
+			--cheese_frame_;
+		} else if (!holes_.empty()) {
+			board_.push_garbage(holes_.front());
+			holes_.pop_front();
+			if (board_.collides(piece_)) {
+				piece_.y -= 1;
+			}
+			cheese_frame_ = std::max(1, config_.cheese_period);
+		}
+	}
+}
+
 bool Sim::step (const std::optional<Event>& event) {
-	if (lost_) {
+	if (lost_ || won_) {
 		return false;
 	}
 	cues_.clear();
@@ -728,9 +770,11 @@ bool Sim::step (const std::optional<Event>& event) {
 	// gravity section and the clearing block, every frame, clearing or not.
 	if (config_.gametype == 2) {
 		ramp_arcade();
+	} else if (config_.gametype == 3 || config_.gametype == 4) {
+		eval_cheese();
 	}
 	eval_timer();
-	if (lost_ && !gameover_cued_) {
+	if ((lost_ || won_) && !gameover_cued_) {
 		// eval_loss runs between the clock tick and the frame's clearing
 		// resume: the gameover cue fires first, and the high score entry and
 		// the recorder are finished before a still-resolving clear lands its
@@ -747,7 +791,7 @@ bool Sim::step (const std::optional<Event>& event) {
 		clearing_step();
 	}
 	++frame_;
-	return !lost_;
+	return !(lost_ || won_);
 }
 
 } // namespace forcetris

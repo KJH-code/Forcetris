@@ -178,6 +178,19 @@ void Board::push_garbage (int hole) {
 	}
 }
 
+int Board::garbage_rows () const {
+	int rows = 0;
+	for (int y = 0; y < kHeight; ++y) {
+		for (int x = 0; x < kWidth; ++x) {
+			if (cells_[y][x] == GARBAGE) {
+				++rows;
+				break;
+			}
+		}
+	}
+	return rows;
+}
+
 int Board::clear_pass (int cleartype, int& base_row, int& downstacked) {
 	// One iteration of the clearer's `while cleared` loop: the bottom-up row
 	// scan, the link surgery, and either the in-place blanking the cascade

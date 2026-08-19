@@ -56,10 +56,18 @@ void Session::refill () {
 			sim_.feed(form);
 		}
 	}
-	// Arcade's garbage holes: the sim never rolls its own dice, so the dice
-	// are rolled here and dealt in ahead of need.
-	while (sim_.config().gametype == 2 && sim_.garbage_queued() < 8) {
-		sim_.feed_garbage(static_cast<int>(rng_() % 10));
+	// The garbage holes: the sim never rolls its own dice, so the dice are
+	// rolled here and dealt in ahead of need. Arcade's holes land anywhere;
+	// the cheese modes never repeat one - two aligned holes stack into a
+	// clean well, and a clean well is not cheese.
+	const int gametype = sim_.config().gametype;
+	while (gametype >= 2 && sim_.garbage_queued() < 10) {
+		int hole = static_cast<int>(rng_() % 10);
+		if (gametype >= 3 && last_hole_ >= 0) {
+			hole = (last_hole_ + 1 + static_cast<int>(rng_() % 9)) % 10;
+		}
+		last_hole_ = hole;
+		sim_.feed_garbage(hole);
 	}
 }
 
