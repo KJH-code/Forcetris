@@ -515,9 +515,11 @@ and drag wherever you want it, starting from presets, persisted between
 runs. All three modes are there — free, timed, arcade with its garbage ramp
 — plus three of its own: a cheese race, cheese survival, and a versus mode
 against a bot picked by TETR.IO rank, paced to that rank's real league
-speed, that finds tucks and T-spins through the game's own kick tables
-and plays under TETR.IO-style garbage rules, Surge included — and all three
-clear styles, cascades included. Finished games are recorded
+speed, that finds tucks and T-spins through the game's own kick tables,
+stacks a quad well at the upper ranks, and plays under TETR.IO-style
+garbage rules, Surge included — and all three
+clear styles, cascades included. Versus replays carry the bot's side too,
+re-enacted on a second board in the viewer. Finished games are recorded
 to the same replay files the Python game writes, and either game can browse
 and watch the other's, corrected finesse and all; high scores go into the
 same `data/hiscore.dat`, byte for byte. A finished run gets the same
@@ -574,8 +576,13 @@ gives, two ways:
 - `bot_check` — the versus bot, driven through the real sim: it survives
   hundreds of pieces, lands exactly where it planned, repeats itself under
   a seed, holds its rank's pace, digs under fire, tucks into a cavity only
-  a slide can enter and spins a T into a real TSD slot — while a rank
-  without the technique must not.
+  a slide can enter, spins a T into a real TSD slot, and — at the building
+  ranks — reserves a quad well, fires quads, charges Surge and out-attacks
+  the plain downstacker — while a rank without the technique must not.
+- `opponent_check` — the bot's side of a versus round, embedded in the
+  player's replay file under an optional key both engines' readers ignore
+  when they do not know it: the round trip, the absence, and the tolerant
+  reading of files that only half-have one.
 
 ```bash
 ctest --test-dir cpp/build --output-on-failure

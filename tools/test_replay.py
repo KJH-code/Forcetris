@@ -404,8 +404,22 @@ wrong = os.path.join(rp.FOLDER, 'zzz-future.json')
 with open(wrong, 'w') as out:
     json.dump({'format': rp.FORMAT + 99, 'meta': {}, 'placements': []}, out)
 check('a replay from a later format is declined', rp.load(wrong) is None)
+
+# The C++ game embeds the bot's side of a versus round under an extra
+# top-level key; this reader must keep ignoring keys it does not know.
+versus = os.path.join(rp.FOLDER, 'zzz-versus.json')
+with open(versus, 'w') as out:
+    json.dump({
+        'format': rp.FORMAT, 'meta': {'gametype': 'versus'}, 'placements': [],
+        'opponent': {'meta': {}, 'placements': []},
+    }, out)
+loaded = rp.load(versus)
+check(
+    'a versus file with an embedded opponent still loads',
+    loaded is not None and loaded.meta.get('gametype') == 'versus')
 os.remove(junk)
 os.remove(wrong)
+os.remove(versus)
 
 # A run too short to be worth anything is not written at all.
 new_game()

@@ -51,15 +51,22 @@ std::array<int, kCells> cell_key (const Piece& piece) {
 }
 
 // The classic Dellacherie reading of a board, computed after the clear.
-// Cells outside the walls count filled, above the top empty.
-double shape_score (const Board& board) {
+// Cells outside the walls count filled, above the top empty. A building
+// rank reads it differently around wells: one well is not a flaw but the
+// point - the deepest run is exempt from the well penalty, and every row
+// standing complete except that column is credit in the bank, the way the
+// classic open bots reserve a quad well instead of fearing one.
+double shape_score (const Board& board, bool build = false) {
 	double holes = 0.;
 	double col_transitions = 0.;
 	double row_transitions = 0.;
 	double wells = 0.;
+	double deepest_run = 0.;
+	int well_column = -1;
 	for (int x = 0; x < kWidth; ++x) {
 		bool above_filled = false;
 		int well_depth = 0;
+		double run_value = 0.;
 		for (int y = 0; y < kHeight; ++y) {
 			const bool filled = board.at(x, y) >= 0;
 			const bool up = y == 0 ? false : board.at(x, y - 1) >= 0;
@@ -76,8 +83,14 @@ double shape_score (const Board& board) {
 			if (!filled && !above_filled && left && right) {
 				++well_depth;
 				wells += well_depth;   // 1 + 2 + ... per deepening run.
+				run_value += well_depth;
+				if (run_value > deepest_run) {
+					deepest_run = run_value;
+					well_column = x;
+				}
 			} else if (filled) {
 				well_depth = 0;
+				run_value = 0.;
 			}
 		}
 		// The floor counts filled.
@@ -98,10 +111,40 @@ double shape_score (const Board& board) {
 			row_transitions += 1.;   // The right wall.
 		}
 	}
-	return -3.2178882868487753 * row_transitions
+	double score = -3.2178882868487753 * row_transitions
 		+ -9.348695305445199 * col_transitions
 		+ -7.899265427351652 * holes
 		+ -3.3855972247263626 * wells;
+	if (build) {
+		// A builder hates holes even more than Dellacherie does: a hole
+		// under the stack is rows that can never bank.
+		score += -4. * holes;
+	}
+	if (build && well_column >= 0) {
+		// Give the reserved well its penalty back, and pay for the rows
+		// banked against it: complete except the well column, counted up
+		// from the floor and capped where a quad already pays out.
+		score += 3.3855972247263626 * deepest_run;
+		int banked = 0;
+		for (int y = kHeight - 1; y >= 0 && banked < 8; --y) {
+			if (board.at(well_column, y) >= 0) {
+				break;
+			}
+			bool complete = true;
+			for (int x = 0; x < kWidth; ++x) {
+				if (x != well_column && board.at(x, y) < 0) {
+					complete = false;
+					break;
+				}
+			}
+			if (!complete) {
+				break;
+			}
+			++banked;
+		}
+		score += 11. * banked;
+	}
+	return score;
 }
 
 // A standing T-slot: a notch a T could spin into for a double. Coarse on
@@ -147,6 +190,22 @@ struct Outcome {
 	int spin = 0;
 };
 
+// Covered empty cells, for telling a dig from a wasted clear.
+int count_holes (const Board& board) {
+	int holes = 0;
+	for (int x = 0; x < kWidth; ++x) {
+		bool above = false;
+		for (int y = 0; y < kHeight; ++y) {
+			const bool filled = board.at(x, y) >= 0;
+			if (!filled && above) {
+				++holes;
+			}
+			above = above || filled;
+		}
+	}
+	return holes;
+}
+
 Outcome play_out (Board& board, const Plan& plan, const Options& options) {
 	Outcome out;
 	// How tall the stack already stands: past the danger line the bot stops
@@ -161,6 +220,7 @@ Outcome play_out (Board& board, const Plan& plan, const Options& options) {
 		}
 	}
 	const bool danger = peak >= 12;
+	const int holes_before = options.build ? count_holes(board) : 0;
 	// The verdict is judged where the piece rests, before it joins the stack.
 	int spin = attack::NOT_SPIN;
 	if (plan.rotated_last) {
@@ -223,18 +283,36 @@ Outcome play_out (Board& board, const Plan& plan, const Options& options) {
 	}
 	// The transient: real attack dominates, the classic transient terms
 	// keep the low-rank stacking sane, and the chain is worth keeping -
-	// until the stack is tall, when any clear beats a saved-up one.
+	// until the stack is tall, when any clear beats a saved-up one. A
+	// building rank plays it the way the strong ranks actually play: a
+	// clear that is not a quad or a spin is stack spent for nothing and
+	// costs, the erosion credit only pays on the clears worth making, and
+	// the chain - the surge banked on it above all - is dear to break.
+	const bool shaping = options.build && !danger;
 	out.transient = attack_value * (danger ? 5. : 12.)
-		+ -4.500158825082766 * landing
-		+ 3.4181268101392694 * (cleared * eroded_cells);
+		+ -4.500158825082766 * landing;
+	// A small clear that opens a covered hole is a dig, not a waste - the
+	// stack cannot bank rows over a hole, so digging promptly is the fast
+	// way back to quads.
+	const bool digs = shaping && cleared > 0
+		&& count_holes(board) < holes_before;
+	const bool worth = cleared >= 4 || (cleared > 0 && spin != attack::NOT_SPIN);
+	if (!shaping || worth) {
+		out.transient += 3.4181268101392694 * (cleared * eroded_cells);
+	} else if (cleared > 0) {
+		static const double waste[4] = {0., 26., 22., 16.};
+		out.transient -= waste[cleared] * (digs ? 0.5 : 1.);
+	}
 	if (danger) {
 		out.transient += cleared * 14.;
 	} else if (cleared > 0 && cleared < 4 && spin == attack::NOT_SPIN
 		&& options.b2b > 0) {
-		out.transient -= 6.;   // Breaking the chain cheaply.
+		// Breaking the chain cheaply.
+		out.transient -= shaping
+			? 24. + 6. * std::min(options.surge_charge, 4) : 6.;
 	}
 	if (out.b2b > options.b2b) {
-		out.transient += 4.;   // Growing it.
+		out.transient += shaping ? 10. : 4.;   // Growing it.
 	}
 	return out;
 }
@@ -262,7 +340,8 @@ double best_drop_score (const Board& board, int form, const Options& options,
 			ply.combo = combo;
 			ply.surge_charge = surge;
 			const Outcome out = play_out(after, plan, ply);
-			const double score = out.transient + shape_score(after);
+			const double score = out.transient
+				+ shape_score(after, options.build);
 			if (score > best) {
 				best = score;
 			}
@@ -429,13 +508,13 @@ std::vector<Plan> plan (const Board& board, const Piece& piece,
 				score += best_drop_score(
 					after, next_form, options, out.b2b, out.combo, out.surge);
 			} else {
-				score += shape_score(after);
-				// Keep a T-spin slot standing when a T is on its way.
-				const bool t_coming = hold == T
-					|| (!queue.empty() && queue.front() == T);
-				if (options.spins && t_coming && t_slot_standing(after)) {
-					score += 6.;
-				}
+				score += shape_score(after, options.build);
+			}
+			// Keep a T-spin slot standing when a T is on its way.
+			const bool t_coming = hold == T
+				|| (!queue.empty() && queue.front() == T);
+			if (options.spins && t_coming && t_slot_standing(after)) {
+				score += options.build ? 16. : 6.;
 			}
 			candidate.score = score;
 			ranked.push_back(std::move(candidate));
@@ -462,14 +541,14 @@ const std::vector<Rank>& ranks () {
 	// Real Tetra League averages per rank; the upper half plays the way the
 	// upper half actually plays.
 	static const std::vector<Rank> table = {
-		{"D", 0.71, 0.25, 1, false, false},
-		{"C", 0.88, 0.18, 1, false, false},
-		{"B", 1.06, 0.12, 1, true, false},
-		{"A", 1.27, 0.08, 1, true, false},
-		{"S", 1.59, 0.05, 2, true, true},
-		{"SS", 1.97, 0.03, 2, true, true},
-		{"U", 2.33, 0.015, 2, true, true},
-		{"X", 2.83, 0.005, 2, true, true},
+		{"D", 0.71, 0.25, 1, false, false, false},
+		{"C", 0.88, 0.18, 1, false, false, false},
+		{"B", 1.06, 0.12, 1, true, false, false},
+		{"A", 1.27, 0.08, 1, true, false, true},
+		{"S", 1.59, 0.05, 2, true, true, true},
+		{"SS", 1.97, 0.03, 2, true, true, true},
+		{"U", 2.33, 0.015, 2, true, true, true},
+		{"X", 2.83, 0.005, 2, true, true, true},
 	};
 	return table;
 }
@@ -487,6 +566,7 @@ void Driver::adopt (const Sim& sim) {
 	options.b2b = sim.b2b();
 	options.combo = sim.combo();
 	options.surge_charge = sim.surge_charge();
+	options.build = rank_.build;
 	const auto ranked = plan(
 		sim.board(), sim.piece(), sim.floor_kick(), sim.stored(),
 		sim.queue(), options);

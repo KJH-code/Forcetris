@@ -34,8 +34,10 @@ struct VersusMatch {
 	VersusMatch (int rank, int ft) : rank_index(rank), first_to(ft) {}
 
 	// A fresh board and a fresh driver for the next round; the match
-	// counters stay.
-	void begin_round (const SimConfig& player_config, unsigned seed);
+	// counters stay. `player_meta` seeds the bot's own recording - same
+	// stamp and rules, the handling overridden below.
+	void begin_round (const SimConfig& player_config, unsigned seed,
+	                  const replay::Meta& player_meta);
 
 	// One 20ms tick, called right after the player's session stepped: drive
 	// the bot, step it, ferry the attack both ways, and notice the round

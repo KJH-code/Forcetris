@@ -42,8 +42,10 @@ public:
 	// The sound cues fired since the last drain, in firing order.
 	std::vector<std::string> take_cues ();
 
-	// The finished recording, or nothing for a game too short to keep.
-	std::optional<replay::Replay> finish ();
+	// The finished recording, or nothing for a game too short to keep -
+	// unless `keep_short` waives the gate, for a side embedded in another
+	// file rather than saved as one.
+	std::optional<replay::Replay> finish (bool keep_short = false);
 
 	const Sim& sim () const { return sim_; }
 	bool over () const { return over_; }

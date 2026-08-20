@@ -77,6 +77,10 @@ add_executable(botcheck tests/botcheck.cpp)
 target_link_libraries(botcheck PRIVATE forcetris_core)
 target_compile_options(botcheck PRIVATE ${FORCETRIS_WARNINGS})
 
+add_executable(opponentcheck tests/opponentcheck.cpp)
+target_link_libraries(opponentcheck PRIVATE forcetris_core)
+target_compile_options(opponentcheck PRIVATE ${FORCETRIS_WARNINGS})
+
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
 find_package(SDL2 QUIET)
@@ -159,10 +163,18 @@ add_test(NAME versus_check COMMAND versuscheck)
 # The opponent: the planner reaches tucks and spins, plays what it plans,
 # survives, digs, and repeats itself under a seed.
 add_test(NAME bot_check COMMAND botcheck)
+# The embedded opponent in a versus replay: round trip, absence, and the
+# tolerant reading of files that only half-have one.
+add_test(NAME opponent_check COMMAND opponentcheck)
 if (SDL2_FOUND)
 	# The whole window run headlessly under scripted-random input: proves the
 	# loop, the drawing and the shutdown hold together with no display.
 	add_test(NAME gui_smoke COMMAND forcetris)
 	set_tests_properties(gui_smoke PROPERTIES ENVIRONMENT
 		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR}")
+	# The same run in versus mode, ending in the viewer: proves the round is
+	# recorded with the bot's side embedded and the two-board viewer draws.
+	add_test(NAME gui_smoke_versus COMMAND forcetris)
+	set_tests_properties(gui_smoke_versus PROPERTIES ENVIRONMENT
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_SMOKE_MODE=5;FORCETRIS_SMOKE_VIEW=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR}")
 endif()

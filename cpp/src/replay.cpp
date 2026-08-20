@@ -451,8 +451,10 @@ void Recorder::begin (const Meta& meta) {
 }
 
 std::optional<Replay> Recorder::finish (
-	long long score, int lines, int downstack, double seconds) {
-	if (static_cast<int>(placements_.size()) < kMinPlacements) {
+	long long score, int lines, int downstack, double seconds,
+	bool keep_short) {
+	if (!keep_short
+		&& static_cast<int>(placements_.size()) < kMinPlacements) {
 		return std::nullopt;
 	}
 	Replay replay;
@@ -499,6 +501,25 @@ std::optional<Replay> load (const std::string& path) {
 			replay.placements.push_back(read_placement(row));
 		}
 	}
+	// The other board of a versus round, when the file carries one. Read in
+	// the same tolerant spirit as everything else: anything not shaped like
+	// an opponent - or with nothing to show - is simply not one.
+	const auto other = data.find("opponent");
+	if (other != data.end() && other->is_object()) {
+		const auto their_rows = other->find("placements");
+		if (their_rows != other->end() && their_rows->is_array()) {
+			Opponent opponent;
+			opponent.meta = read_meta(other->value("meta", json::object()));
+			for (const json& row : *their_rows) {
+				if (row.is_object()) {
+					opponent.placements.push_back(read_placement(row));
+				}
+			}
+			if (!opponent.placements.empty()) {
+				replay.opponent = std::move(opponent);
+			}
+		}
+	}
 	replay.path = path;
 	return replay;
 }
@@ -521,6 +542,16 @@ bool save (Replay& replay, const std::string& folder) {
 		placements.push_back(write_placement(place));
 	}
 	data["placements"] = placements;
+	if (replay.opponent.has_value()) {
+		json other;
+		other["meta"] = write_meta(replay.opponent->meta);
+		json theirs = json::array();
+		for (const Placement& place : replay.opponent->placements) {
+			theirs.push_back(write_placement(place));
+		}
+		other["placements"] = theirs;
+		data["opponent"] = other;
+	}
 	out << data.dump();
 	if (!out.good()) {
 		return false;

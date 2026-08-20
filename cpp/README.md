@@ -79,14 +79,20 @@ And there is someone to play against: a versus mode, first to one, two or
 three rounds, against a bot picked by TETR.IO rank - D through X, each
 paced to that rank's real league speed, blundering as often as its rank
 would, and gated to its rank's technique: the low ranks hard-drop, tucks
-arrive around B, spins and T-slot building around S, and the top ranks
-read one piece ahead. The bot is our own, written referencing the
-published techniques of the well-known bots (MisaMino, ColdClear): a
-full-reachability search - taps, sonic drops, and rotations through the
-game's own kick tables, so a slide under an overhang or a kicked T-spin
-is found the way a strong player finds it, and behaves exactly as the sim
-will judge it - under an attack-aware evaluation that keeps a back-to-back
-chain alive and digs when the garbage gets tall. No bot code is copied.
+arrive around B, quad-well building around A, spins and T-slot keeping
+around S, and the top ranks read one piece ahead. The bot is our own,
+written referencing the published techniques of the well-known bots
+(MisaMino, ColdClear): a full-reachability search - taps, sonic drops,
+and rotations through the game's own kick tables, so a slide under an
+overhang or a kicked T-spin is found the way a strong player finds it,
+and behaves exactly as the sim will judge it - under an attack-aware
+evaluation. From A up that evaluation plays for keeps the way those
+ranks actually play: it reserves one well and banks rows against it
+instead of fearing the hole, treats a clear that is not a quad or a spin
+as stack spent for nothing - unless it is digging out a buried hole -
+holds its back-to-back chain (and the Surge charged on it) dearly, and
+past a dangerous stack height drops all of that and digs with whatever
+clears at all. No bot code is copied.
 The garbage rules are TETR.IO's multiplayer shape: attack in flight
 cancels first, what survives rises through the floor up to eight rows a
 lock, and a back-to-back chain held to four or more starts charging
@@ -95,13 +101,20 @@ breaks - an approximation of TETR.IO's current chaining, charge-at-four
 and fire-on-break, not a byte-exact port. The bot's board stands beside
 yours with both sides' incoming garbage metered in red; rounds replay on
 a draw, and the match verdict takes over the finish screen. Versus games
-are analysed like any other and stay off the high score file. The
-exchange, the cap, the cancellation and Surge are pinned by the
-`versus_check` ctest; the bot itself by `bot_check` - it must survive
-hundreds of pieces through the real sim, land exactly where it planned,
-repeat itself under a seed, hold its pace, dig under fire, reach a cavity
-only a tuck can enter and spin a T into a real TSD slot, while a rank
-without the technique must not.
+are analysed like any other and stay off the high score file - and every
+round leaves a replay, not just the match's last: the file carries the
+bot's whole side embedded under an optional key both engines' readers
+simply skip when they do not know it, and the viewer stands the bot's
+board up beside the re-enactment, synced to the player's clock, so a
+watched round shows both halves of the fight. The exchange, the cap, the
+cancellation and Surge are pinned by the `versus_check` ctest; the bot
+by `bot_check` - it must survive hundreds of pieces through the real
+sim, land exactly where it planned, repeat itself under a seed, hold its
+pace, dig under fire, reach a cavity only a tuck can enter, spin a T
+into a real TSD slot, and - building - fire quads, charge Surge and
+out-attack the plain downstacker, while a rank without the technique
+must not; the embedded side by `opponent_check`, and the whole loop -
+record, save, watch with two boards - by `gui_smoke_versus`, headlessly.
 
 A finished game that places on the high score table is offered a
 name entry, and the table is the Python game's own data/hiscore.dat, read

@@ -46,6 +46,7 @@ struct Options {
 	int depth = 1;           // 1, or 2 to look at the next piece too.
 	bool tucks = true;       // Moves after a drop.
 	bool spins = true;       // Rotations after a drop.
+	bool build = false;      // Reserve a quad well and spend clears dearly.
 	bool kicks = true;       // The game's kick setting.
 	int spin_rule = 2;       // spins::Rule, for the verdicts.
 	int b2b = 0;             // The chain counters as the sim holds them.
@@ -78,6 +79,7 @@ struct Rank {
 	int depth;
 	bool tucks;
 	bool spins;
+	bool build = false;   // Quad-well stacking instead of plain downstack.
 };
 const std::vector<Rank>& ranks ();
 

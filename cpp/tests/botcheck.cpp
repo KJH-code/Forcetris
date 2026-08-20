@@ -61,6 +61,9 @@ struct RunResult {
 	bool lost = false;
 	std::vector<std::array<int, 4>> locks;   // frame, form, x, y.
 	bool plan_matched = true;
+	int quads = 0;
+	int attack = 0;
+	int max_b2b = 0;
 };
 
 RunResult run_bot (const bot::Rank& rank, unsigned seed, int piece_limit,
@@ -126,6 +129,16 @@ RunResult run_bot (const bot::Rank& rank, unsigned seed, int piece_limit,
 	result.pieces = static_cast<int>(sim.locked().size());
 	result.lines = sim.lines_cleared();
 	result.frames = sim.frame();
+	for (const Locked& lock : sim.locked()) {
+		if (!lock.scored) {
+			continue;
+		}
+		if (lock.lines == 4) {
+			++result.quads;
+		}
+		result.attack += lock.attack;
+		result.max_b2b = std::max(result.max_b2b, lock.b2b);
+	}
 	return result;
 }
 
@@ -300,6 +313,78 @@ int main () {
 			cleared_two_spin);
 	}
 
+	// The builder: reserves a well, banks rows against it, spends its
+	// clears on quads, keeps the chain long enough to charge surge - and
+	// out-attacks the plain downstacker by a wide margin.
+	{
+		const bot::Rank builder{"Q", 2.0, 0., 2, true, true, true};
+		const RunResult run = run_bot(builder, 20260821, 300);
+		const RunResult plain = run_bot(steady, 20260821, 300);
+		check("the builder survives three hundred pieces", !run.lost,
+			"lost after " + std::to_string(run.pieces));
+		check("and fires quads", run.quads >= 10, std::to_string(run.quads));
+		check("and chains far enough to charge surge", run.max_b2b >= 4,
+			std::to_string(run.max_b2b));
+		const double rate = run.attack / std::max(1., double(run.pieces));
+		const double plain_rate
+			= plain.attack / std::max(1., double(plain.pieces));
+		check("and out-attacks the plain downstacker",
+			rate > plain_rate * 1.5,
+			std::to_string(rate) + " vs " + std::to_string(plain_rate));
+		// ~0.4 attack a piece is what this depth of search sustains; the
+		// pin sits under the five-seed floor (0.407) so a regression back
+		// to downstacking (~0.2) fails loudly without the seed being magic.
+		check("with real output per piece", rate >= 0.36,
+			std::to_string(rate));
+	}
+
+	// The well is sacred while it is banked: two rows standing complete
+	// against it, an I in hand. A building rank stacks on; a plain rank
+	// dumps it in for the cheap double.
+	{
+		Board board;
+		for (int y = kHeight - 2; y < kHeight; ++y) {
+			for (int x = 0; x < kWidth - 1; ++x) {
+				board.set(x, y, S);
+			}
+		}
+		bot::Options building;
+		building.build = true;
+		const auto kept = bot::plan(
+			board, Piece{I, 0, kSpawnX, kSpawnY}, true, -1, {}, building);
+		bool keeps = !kept.empty() && kept.front().cleared == 0;
+		if (keeps) {
+			for (const Offset cell : cells_of(kept.front().landed)) {
+				keeps = keeps && cell.x != kWidth - 1;
+			}
+		}
+		check("a building rank keeps its well", keeps);
+		bot::Options plain;
+		const auto spent = bot::plan(
+			board, Piece{I, 0, kSpawnX, kSpawnY}, true, -1, {}, plain);
+		check("where a plain rank spends it",
+			!spent.empty() && spent.front().cleared > 0);
+	}
+
+	// And it pays out: four rows banked, the quad is the best move on the
+	// board.
+	{
+		Board board;
+		for (int y = kHeight - 4; y < kHeight; ++y) {
+			for (int x = 0; x < kWidth - 1; ++x) {
+				board.set(x, y, S);
+			}
+		}
+		bot::Options building;
+		building.build = true;
+		const auto ranked = bot::plan(
+			board, Piece{I, 0, kSpawnX, kSpawnY}, true, -1, {}, building);
+		check("the banked well pays out in a quad",
+			!ranked.empty() && ranked.front().cleared == 4,
+			ranked.empty() ? "no plans"
+				: "cleared=" + std::to_string(ranked.front().cleared));
+	}
+
 	// The ladder is sane: pace climbs, blunders fall, the top tucks and
 	// spins and the bottom does not.
 	{
@@ -313,10 +398,11 @@ int main () {
 		check("pace climbs the ladder", pace_climbs);
 		check("blunders fall down it", blunder_falls);
 		check("the bottom plays plainly",
-			!ladder.front().tucks && !ladder.front().spins);
+			!ladder.front().tucks && !ladder.front().spins
+			&& !ladder.front().build);
 		check("the top plays everything",
 			ladder.back().tucks && ladder.back().spins
-			&& ladder.back().depth == 2);
+			&& ladder.back().build && ladder.back().depth == 2);
 	}
 
 	if (failures > 0) {

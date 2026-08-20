@@ -3,7 +3,8 @@
 namespace forcetris {
 namespace gui {
 
-void VersusMatch::begin_round (const SimConfig& player_config, unsigned seed) {
+void VersusMatch::begin_round (const SimConfig& player_config, unsigned seed,
+                               const replay::Meta& player_meta) {
 	// The bot plays under the same rules, minus the trainer's chrome: no
 	// forced drop slamming its slow ranks, no finesse retry handing its
 	// pieces back, instant soft drop so a planned sonic drop is one press,
@@ -14,8 +15,15 @@ void VersusMatch::begin_round (const SimConfig& player_config, unsigned seed) {
 	config.sdf = 40;
 	config.das_ms = 330;
 	config.cleartype = 0;
-	replay::Meta meta;
+	// Its recording carries the same stamp and rules, with the handling it
+	// actually played under - so an embedded bot side analyses truthfully.
+	replay::Meta meta = player_meta;
 	meta.gametype = "versus";
+	meta.forced_delay = config.forced_delay;
+	meta.finesse = config.finesse_rule;
+	meta.cleartype = config.cleartype;
+	meta.das = config.das_ms;
+	meta.sdf = config.sdf;
 	bot.emplace(config, seed, meta);
 	driver.emplace(seed, bot::ranks()[rank_index]);
 	phase = Phase::Playing;

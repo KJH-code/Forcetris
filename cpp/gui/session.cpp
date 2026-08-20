@@ -37,13 +37,13 @@ std::vector<std::string> Session::take_cues () {
 	return drained;
 }
 
-std::optional<replay::Replay> Session::finish () {
+std::optional<replay::Replay> Session::finish (bool keep_short) {
 	// The loss-time counters, not the live ones: a timed game can die with a
 	// clear still resolving, and the Python recorder is finished before that
 	// clear lands its points.
 	return recorder_.finish(
 		sim_.final_score(), sim_.final_lines(), sim_.final_downstack(),
-		sim_.frame() * 0.02);
+		sim_.frame() * 0.02, keep_short);
 }
 
 void Session::refill () {

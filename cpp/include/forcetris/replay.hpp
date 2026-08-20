@@ -108,10 +108,20 @@ struct Summary {
 	double vs = 0.;
 };
 
+// The other board of a versus round, embedded in the player's file under an
+// optional top-level key: the bot's settings and every placement it made.
+// Readers that do not know the key skip it - both engines only look up the
+// names they know - so the format number does not move.
+struct Opponent {
+	Meta meta;
+	std::vector<Placement> placements;
+};
+
 struct Replay {
 	Meta meta;
 	std::vector<Placement> placements;
 	std::string path;
+	std::optional<Opponent> opponent;
 
 	// The board a placement was made onto: whatever the one before it left.
 	std::vector<std::string> before (size_t index) const;
@@ -147,9 +157,11 @@ public:
 	void add (Placement place) { placements_.push_back(std::move(place)); }
 	size_t count () const { return placements_.size(); }
 	// Stamp the totals and hand back the replay, or nothing if the game was
-	// too short to keep.
+	// too short to keep. `keep_short` waives the length gate - for a side
+	// embedded in another file, where even a buried opening is worth showing.
 	std::optional<Replay> finish (
-		long long score, int lines, int downstack, double seconds);
+		long long score, int lines, int downstack, double seconds,
+		bool keep_short = false);
 
 private:
 	Meta meta_;

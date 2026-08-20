@@ -375,9 +375,10 @@ void start_versus (App& app) {
 	config.gametype = 5;
 	config.cheese_holes = 1;
 	config.cheese_messiness = 30;
-	app.session.emplace(config, app.seeds(), meta_for(app.config, 5));
+	const replay::Meta meta = meta_for(app.config, 5);
+	app.session.emplace(config, app.seeds(), meta);
 	app.versus.emplace(app.bot_rank, app.first_to);
-	app.versus->begin_round(config, app.seeds());
+	app.versus->begin_round(config, app.seeds(), meta);
 	app.screen = Screen::Game;
 	app.paused = false;
 	app.editing = false;
@@ -387,14 +388,34 @@ void start_versus (App& app) {
 	app.audio.start_music();
 }
 
+// The finished round, both boards: the player's replay with the bot's side
+// embedded under it. Nothing when the player's half was too short to keep.
+std::optional<replay::Replay> finish_round (App& app) {
+	std::optional<replay::Replay> done = app.session->finish();
+	if (done.has_value() && app.versus.has_value()
+		&& app.versus->bot.has_value()) {
+		if (auto other = app.versus->bot->finish(true)) {
+			done->opponent.emplace(replay::Opponent{
+				std::move(other->meta), std::move(other->placements)});
+		}
+	}
+	return done;
+}
+
 void next_versus_round (App& app) {
+	// The round just decided is a game in its own right: save it - both
+	// boards - before the fresh sessions sweep it away.
+	if (auto done = finish_round(app)) {
+		replay::save(*done, replay::folder(app.root));
+	}
 	SimConfig config = app.config.sim();
 	config.gametype = 5;
 	config.cheese_holes = 1;
 	config.cheese_messiness = 30;
-	app.session.emplace(config, app.seeds(), meta_for(app.config, 5));
+	const replay::Meta meta = meta_for(app.config, 5);
+	app.session.emplace(config, app.seeds(), meta);
 	app.versus->round += 1;
-	app.versus->begin_round(config, app.seeds());
+	app.versus->begin_round(config, app.seeds(), meta);
 }
 
 void end_game (App& app) {
@@ -403,7 +424,7 @@ void end_game (App& app) {
 	// to look at it.
 	app.screen = Screen::Over;
 	app.audio.fade_music(2.5);
-	app.last_replay = app.session->finish();
+	app.last_replay = finish_round(app);
 	if (app.last_replay.has_value()) {
 		replay::save(*app.last_replay, replay::folder(app.root));
 	}
@@ -1307,19 +1328,38 @@ void advance_viewer (App& app) {
 	}
 }
 
-void draw_row_strings (App& app, const std::vector<std::string>& rows) {
+void draw_row_strings (App& app, const std::vector<std::string>& rows,
+                       int left = kBoardX, int top = kBoardY, int size = kCell) {
 	SDL_Renderer* renderer = app.renderer;
-	fill(renderer, kBoardX - px(3), kBoardY - px(3), kBoardW + px(6), kBoardH + px(6), {32, 40, 53, 255});
-	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {14, 18, 24, 255});
+	const int w = kWidth * size;
+	const int h = kHeight * size;
+	fill(renderer, left - px(3), top - px(3), w + px(6), h + px(6), {32, 40, 53, 255});
+	fill(renderer, left, top, w, h, {14, 18, 24, 255});
 	for (size_t y = 0; y < rows.size() && y < kHeight; ++y) {
 		for (size_t x = 0; x < rows[y].size() && x < kWidth; ++x) {
 			const char cell = rows[y][x];
 			if (cell >= '0' && cell <= '7') {
-				draw_cell(renderer, kBoardX + static_cast<int>(x) * kCell,
-					kBoardY + static_cast<int>(y) * kCell, kFormColors[cell - '0']);
+				draw_cell(renderer, left + static_cast<int>(x) * size,
+					top + static_cast<int>(y) * size, kFormColors[cell - '0'],
+					size);
 			}
 		}
 	}
+}
+
+// The player's clock at the current frame of the re-enactment: a placement
+// spans from the previous lock time to its own, walked linearly across its
+// stops. At the last stop the clock is exactly the lock time, so the fixed
+// (finesse) view - fewer stops, same endpoints - stays in sync.
+double viewer_clock (const Viewing& show, size_t stop_count) {
+	const auto& places = show.game.placements;
+	const double at = places[show.index].elapsed;
+	const double from = show.index > 0
+		? std::min(places[show.index - 1].elapsed, at) : 0.;
+	const double frac = stop_count <= 1 ? 1.
+		: static_cast<double>(show.step)
+			/ static_cast<double>(stop_count - 1);
+	return from + (at - from) * frac;
 }
 
 void draw_viewer (App& app) {
@@ -1344,6 +1384,28 @@ void draw_viewer (App& app) {
 					kBoardY + cell.y * kCell, kFormColors[place.form]);
 			}
 		}
+	}
+
+	// The other board, when the file carries one: the bot's own snapshots,
+	// shown as they stood at this moment of the player's walk. Stateless -
+	// a scan per frame - so scrubbing backwards is just as correct.
+	if (show.game.opponent.has_value()) {
+		const double clock = viewer_clock(show, stops.size());
+		const replay::Placement* seen = nullptr;
+		for (const replay::Placement& theirs : show.game.opponent->placements) {
+			if (theirs.elapsed <= clock) {
+				seen = &theirs;
+			}
+		}
+		// Below the info window, which owns the top of this margin.
+		const int mini_left = px(940);
+		const int mini_top = kBoardY + px(340);
+		draw_row_strings(app,
+			replay::padded(seen != nullptr ? seen->rows
+				: std::vector<std::string>{}),
+			mini_left, mini_top, px(13));
+		draw_label("BOT", static_cast<float>(mini_left),
+			static_cast<float>(mini_top - ui(22)));
 	}
 
 	// What the player could see at the time: the hold box and the previews.
