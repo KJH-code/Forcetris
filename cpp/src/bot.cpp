@@ -314,6 +314,32 @@ Outcome play_out (Board& board, const Plan& plan, const Options& options) {
 	if (out.b2b > options.b2b) {
 		out.transient += shaping ? 10. : 4.;   // Growing it.
 	}
+	// The two terms below are gated on the beam (depth >= 3) on purpose:
+	// the depth <= 2 evaluation is pinned by botcheck's builder checks and
+	// calibrated floors, and enabling these there means re-calibrating all
+	// of that. Widen the gate only with the pins in hand.
+	if (options.depth >= 3) {
+		// Banking a surge row is worth chasing at depth - this is what
+		// makes a chain of small spin clears read as the battery it is.
+		if (shaping && out.surge > options.surge_charge) {
+			out.transient += 8.;
+		}
+		// A stack shadowing the spawn is a round about to end: dwarf every
+		// other consideration without going infinite, so among doomed
+		// continuations the least-buried still orders.
+		bool blocked = false;
+		for (int x = kSpawnX - 2; x <= kSpawnX + 2 && !blocked; ++x) {
+			for (int y = 0; y <= kSpawnY + 2; ++y) {
+				if (board.at(x, y) >= 0) {
+					blocked = true;
+					break;
+				}
+			}
+		}
+		if (blocked) {
+			out.transient -= 1000.;
+		}
+	}
 	return out;
 }
 
@@ -369,39 +395,55 @@ bool moves_after_drop (const std::vector<Move>& route, bool rotations) {
 
 } // namespace
 
-std::vector<Plan> candidates (const Board& board, const Piece& from,
-                              bool floor_kick, const Options& options) {
-	std::vector<Plan> found;
-	if (board.collides(from)) {
-		return found;
-	}
-	// BFS: fewest moves first, so the first route to a placement is the one
-	// kept. Parents rebuild the route; the arrival move marks rotations for
-	// the spin verdict.
-	std::vector<int> parent(4 * kXSpan * kYSpan * 2, -1);
+// The reachability search itself, shared by the routed planner and the
+// beam's route-free one. The arena is reused call to call - a beam plan
+// runs this dozens of times a piece, and the allocations were the cost.
+struct Reach {
+	std::vector<int> parent;
 	std::vector<Node> nodes;
 	std::vector<Move> arrived;
 	std::vector<bool> arrived_kicked;
 	std::vector<int> order;
-	const Node start{from.state, from.x, from.y, floor_kick};
-	parent[node_index(start)] = -2;
-	nodes.push_back(start);
-	arrived.push_back(Move::Left);   // Unused for the root.
-	arrived_kicked.push_back(false);
-	order.push_back(0);
 	std::map<std::array<int, kCells>, size_t> placements;
+};
 
-	for (size_t at = 0; at < order.size(); ++at) {
-		const int here = order[at];
-		const Node node = nodes[here];
+Reach& reach_scratch () {
+	static Reach reach;
+	return reach;
+}
+
+// BFS: fewest moves first, so the first route to a placement is the one
+// kept. Parents rebuild the route; the arrival move marks rotations for
+// the spin verdict. Returns false when the start itself collides.
+bool search_reach (const Board& board, const Piece& from, bool floor_kick,
+                   const Options& options, Reach& reach) {
+	reach.parent.assign(4 * kXSpan * kYSpan * 2, -1);
+	reach.nodes.clear();
+	reach.arrived.clear();
+	reach.arrived_kicked.clear();
+	reach.order.clear();
+	reach.placements.clear();
+	if (board.collides(from)) {
+		return false;
+	}
+	const Node start{from.state, from.x, from.y, floor_kick};
+	reach.parent[node_index(start)] = -2;
+	reach.nodes.push_back(start);
+	reach.arrived.push_back(Move::Left);   // Unused for the root.
+	reach.arrived_kicked.push_back(false);
+	reach.order.push_back(0);
+
+	for (size_t at = 0; at < reach.order.size(); ++at) {
+		const int here = reach.order[at];
+		const Node node = reach.nodes[here];
 		const Piece piece{from.form, node.state, node.x, node.y};
 		// Resting here is a placement.
 		Piece below = piece;
 		below.y += 1;
 		if (board.collides(below)) {
 			const auto key = cell_key(piece);
-			if (placements.find(key) == placements.end()) {
-				placements[key] = static_cast<size_t>(here);
+			if (reach.placements.find(key) == reach.placements.end()) {
+				reach.placements[key] = static_cast<size_t>(here);
 			}
 		}
 		const auto push = [&] (const Node& next, Move move, bool kicked) {
@@ -409,14 +451,15 @@ std::vector<Plan> candidates (const Board& board, const Piece& from,
 				return;
 			}
 			const int slot = node_index(next);
-			if (parent[slot] != -1) {
+			if (reach.parent[slot] != -1) {
 				return;
 			}
-			parent[slot] = here;
-			nodes.push_back(next);
-			arrived.push_back(move);
-			arrived_kicked.push_back(kicked);
-			order.push_back(static_cast<int>(nodes.size()) - 1);
+			reach.parent[slot] = here;
+			reach.nodes.push_back(next);
+			reach.arrived.push_back(move);
+			reach.arrived_kicked.push_back(kicked);
+			reach.order.push_back(
+				static_cast<int>(reach.nodes.size()) - 1);
 		};
 		// Taps.
 		for (const int dir : {-1, 1}) {
@@ -448,26 +491,70 @@ std::vector<Plan> candidates (const Board& board, const Piece& from,
 				Move::Drop, false);
 		}
 	}
+	return true;
+}
 
-	for (const auto& [key, index] : placements) {
+// A reachable resting place without its route: what the beam's inner plies
+// need. No route walk, no per-placement allocation - the arrival move alone
+// carries the spin flags. Route-gated rank limits (tucks, spins) are not
+// applied here; the beam ranks all have both.
+struct Landing {
+	Piece landed;
+	bool rotated_last = false;
+	bool kicked_last = false;
+};
+
+std::vector<Landing> landings (const Board& board, const Piece& from,
+                               bool floor_kick, const Options& options) {
+	std::vector<Landing> found;
+	Reach& reach = reach_scratch();
+	if (!search_reach(board, from, floor_kick, options, reach)) {
+		return found;
+	}
+	found.reserve(reach.placements.size());
+	for (const auto& [key, index] : reach.placements) {
+		(void) key;
+		Landing landing;
+		const Node& landed = reach.nodes[index];
+		landing.landed = Piece{from.form, landed.state, landed.x, landed.y};
+		const Move move = reach.arrived[index];
+		landing.rotated_last = index != 0
+			&& (move == Move::Cw || move == Move::Ccw || move == Move::Flip);
+		landing.kicked_last = landing.rotated_last
+			&& reach.arrived_kicked[index];
+		found.push_back(landing);
+	}
+	return found;
+}
+
+std::vector<Plan> candidates (const Board& board, const Piece& from,
+                              bool floor_kick, const Options& options) {
+	std::vector<Plan> found;
+	Reach& reach = reach_scratch();
+	if (!search_reach(board, from, floor_kick, options, reach)) {
+		return found;
+	}
+
+	for (const auto& [key, index] : reach.placements) {
 		(void) key;
 		Plan plan;
 		int walk = static_cast<int>(index);
 		std::vector<Move> route;
 		bool last_set = false;
-		while (parent[node_index(nodes[walk])] != -2) {
-			const Move move = arrived[walk];
+		while (reach.parent[node_index(reach.nodes[walk])] != -2) {
+			const Move move = reach.arrived[walk];
 			if (!last_set) {
 				plan.rotated_last = move == Move::Cw || move == Move::Ccw
 					|| move == Move::Flip;
-				plan.kicked_last = plan.rotated_last && arrived_kicked[walk];
+				plan.kicked_last = plan.rotated_last
+					&& reach.arrived_kicked[walk];
 				last_set = true;
 			}
 			route.push_back(move);
-			walk = parent[node_index(nodes[walk])];
+			walk = reach.parent[node_index(reach.nodes[walk])];
 		}
 		std::reverse(route.begin(), route.end());
-		const Node& landed = nodes[index];
+		const Node& landed = reach.nodes[index];
 		plan.landed = Piece{from.form, landed.state, landed.x, landed.y};
 		plan.route = std::move(route);
 		if (!options.tucks && moves_after_drop(plan.route, false)) {
@@ -485,10 +572,208 @@ std::vector<Plan> candidates (const Board& board, const Piece& from,
 	return found;
 }
 
+namespace {
+
+// Later plies are less certain - garbage lands, the plan is remade every
+// lock, the queue past the previews is unknown - so their worth decays:
+// a real chain still dominates, but the same attack sooner wins ties.
+constexpr double kDamp = 0.95;
+
+// One line of play the beam is carrying: the board as it stands after the
+// path so far, the chain counters, the piece supply, and which root
+// placement the whole line hangs from.
+struct BeamNode {
+	Board board;
+	double sum = 0.;      // Damped transient total along the path.
+	double score = 0.;    // sum + damped shape: the selection key.
+	int b2b = 0;
+	int combo = 0;
+	int surge = 0;
+	int hold = -1;
+	int next_at = 0;      // The queue index the next draw comes from.
+	int root = -1;        // Index into the ply-one ranked vector.
+};
+
+// The beam: full reachability at every ply - so a spin set up now and hit
+// two pieces later is seen, which no hard-drop lookahead can do - with the
+// hold considered at every step, pruned to a fixed width. Deterministic:
+// no clocks, no dice, stable ordering throughout.
+std::vector<Plan> beam_plan (const Board& board, const Piece& piece,
+                             bool floor_kick, int hold,
+                             const std::deque<int>& queue,
+                             const Options& options) {
+	std::vector<Plan> ranked;
+	std::vector<BeamNode> beam;
+	// Ply one is the routed planner's own expansion - these routes are the
+	// ones the driver will type.
+	const auto consider = [&] (bool use_hold, int form, int held_after,
+	                           int next_at) {
+		Piece from = piece;
+		from.form = form;
+		if (use_hold) {
+			from = Piece{form, 0, kSpawnX, kSpawnY};
+		}
+		for (Plan candidate : candidates(board, from, floor_kick, options)) {
+			candidate.use_hold = use_hold;
+			Board after = board;
+			const Outcome out = play_out(after, candidate, options);
+			candidate.cleared = out.cleared;
+			candidate.spin = out.spin;
+			BeamNode node;
+			node.sum = out.transient;
+			node.score = node.sum
+				+ kDamp * shape_score(after, options.build);
+			node.board = after;
+			node.b2b = out.b2b;
+			node.combo = out.combo;
+			node.surge = out.surge;
+			node.hold = held_after;
+			node.next_at = next_at;
+			node.root = static_cast<int>(ranked.size());
+			candidate.score = node.score;
+			ranked.push_back(std::move(candidate));
+			beam.push_back(std::move(node));
+		}
+	};
+	const int next = queue.empty() ? -1 : queue.front();
+	consider(false, piece.form, hold, 0);
+	if (hold >= 0) {
+		if (hold != piece.form) {
+			consider(true, hold, piece.form, 0);
+		}
+	} else if (next >= 0) {
+		consider(true, next, piece.form, 1);
+	}
+	if (ranked.empty()) {
+		return ranked;
+	}
+
+	// Every root starts a long way down; a beam-explored line lifts its
+	// root above all unexplored ones while their relative order holds, so
+	// the blunder picks stay sane even when few roots survive the width.
+	std::vector<double> best(ranked.size());
+	for (size_t i = 0; i < ranked.size(); ++i) {
+		best[i] = ranked[i].score - 1e6;
+	}
+	const auto by_score = [] (const BeamNode& a, const BeamNode& b) {
+		if (a.score != b.score) {
+			return a.score > b.score;
+		}
+		return a.root < b.root;
+	};
+	const int width = std::max(1, options.width);
+	std::stable_sort(beam.begin(), beam.end(), by_score);
+	if (static_cast<int>(beam.size()) > width) {
+		beam.resize(width);
+	}
+
+	// A line's final word. The T-slot bonus lands only here, and only when
+	// the T is beyond the horizon - within it the beam sees the actual
+	// spin, and paying twice would double-count.
+	const auto finalize = [&] (const BeamNode& node, int ply) {
+		double score = node.score;
+		bool t_beyond = node.hold == T;
+		for (size_t at = node.next_at;
+			at < queue.size() && !t_beyond; ++at) {
+			t_beyond = queue[at] == T;
+		}
+		if (options.spins && t_beyond && t_slot_standing(node.board)) {
+			score += std::pow(kDamp, ply) * 16.;
+		}
+		if (score > best[node.root]) {
+			best[node.root] = score;
+		}
+	};
+
+	std::vector<BeamNode> children;
+	for (int ply = 2; ply <= options.depth && !beam.empty(); ++ply) {
+		children.clear();
+		const double damp_sum = std::pow(kDamp, ply - 1);
+		const double damp_shape = std::pow(kDamp, ply);
+		for (const BeamNode& node : beam) {
+			if (node.next_at >= static_cast<int>(queue.size())) {
+				finalize(node, ply - 1);   // The queue ran dry: a leaf.
+				continue;
+			}
+			const int form = queue[node.next_at];
+			const size_t had = children.size();
+			const auto expand = [&] (int play_form, int held_after,
+			                         int next_at) {
+				const Piece from{play_form, 0, kSpawnX, kSpawnY};
+				for (const Landing& landing
+					: landings(node.board, from, true, options)) {
+					Plan shim;
+					shim.landed = landing.landed;
+					shim.rotated_last = landing.rotated_last;
+					shim.kicked_last = landing.kicked_last;
+					Board after = node.board;
+					Options counters = options;
+					counters.b2b = node.b2b;
+					counters.combo = node.combo;
+					counters.surge_charge = node.surge;
+					const Outcome out = play_out(after, shim, counters);
+					BeamNode child;
+					child.sum = node.sum + damp_sum * out.transient;
+					child.score = child.sum
+						+ damp_shape * shape_score(after, options.build);
+					child.board = after;
+					child.b2b = out.b2b;
+					child.combo = out.combo;
+					child.surge = out.surge;
+					child.hold = held_after;
+					child.next_at = next_at;
+					child.root = node.root;
+					children.push_back(std::move(child));
+				}
+			};
+			expand(form, node.hold, node.next_at + 1);
+			if (node.hold >= 0) {
+				if (node.hold != form) {
+					expand(node.hold, form, node.next_at + 1);
+				}
+			} else if (node.next_at + 1 < static_cast<int>(queue.size())
+				&& queue[node.next_at + 1] != form) {
+				expand(queue[node.next_at + 1], form, node.next_at + 2);
+			}
+			if (children.size() == had) {
+				// Nowhere to put anything: the spawn is buried. The line
+				// still reports, as the disaster it is.
+				if (node.sum - 1e9 > best[node.root]) {
+					best[node.root] = node.sum - 1e9;
+				}
+			}
+		}
+		if (ply == options.depth) {
+			for (const BeamNode& child : children) {
+				finalize(child, ply);
+			}
+			beam.clear();
+		} else {
+			std::stable_sort(children.begin(), children.end(), by_score);
+			if (static_cast<int>(children.size()) > width) {
+				children.resize(width);
+			}
+			beam.swap(children);
+		}
+	}
+
+	for (size_t i = 0; i < ranked.size(); ++i) {
+		ranked[i].score = best[i];
+	}
+	std::stable_sort(ranked.begin(), ranked.end(),
+		[] (const Plan& a, const Plan& b) { return a.score > b.score; });
+	return ranked;
+}
+
+} // namespace
+
 std::vector<Plan> plan (const Board& board, const Piece& piece,
                         bool floor_kick, int hold,
                         const std::deque<int>& queue,
                         const Options& options) {
+	if (options.depth >= 3) {
+		return beam_plan(board, piece, floor_kick, hold, queue, options);
+	}
 	std::vector<Plan> ranked;
 	const auto consider = [&] (bool use_hold, int form, int next_form) {
 		Piece from = piece;
@@ -545,10 +830,10 @@ const std::vector<Rank>& ranks () {
 		{"C", 0.88, 0.18, 1, false, false, false},
 		{"B", 1.06, 0.12, 1, true, false, false},
 		{"A", 1.27, 0.08, 1, true, false, true},
-		{"S", 1.59, 0.05, 2, true, true, true},
-		{"SS", 1.97, 0.03, 2, true, true, true},
-		{"U", 2.33, 0.015, 2, true, true, true},
-		{"X", 2.83, 0.005, 2, true, true, true},
+		{"S", 1.59, 0.05, 2, true, true, true, 0},
+		{"SS", 1.97, 0.03, 3, true, true, true, 12},
+		{"U", 2.33, 0.015, 3, true, true, true, 16},
+		{"X", 2.83, 0.005, 3, true, true, true, 24},
 	};
 	return table;
 }
@@ -567,6 +852,9 @@ void Driver::adopt (const Sim& sim) {
 	options.combo = sim.combo();
 	options.surge_charge = sim.surge_charge();
 	options.build = rank_.build;
+	if (rank_.width > 0) {
+		options.width = rank_.width;
+	}
 	const auto ranked = plan(
 		sim.board(), sim.piece(), sim.floor_kick(), sim.stored(),
 		sim.queue(), options);

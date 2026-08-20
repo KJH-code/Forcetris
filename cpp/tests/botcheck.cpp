@@ -2,6 +2,7 @@
 // sim, lands where it planned, repeats itself under a seed, digs when shot
 // at, and - the parts the finesse model never had - reaches a tuck-only
 // cavity and spins a T into a real TSD slot.
+#include <chrono>
 #include <cstdio>
 #include <deque>
 #include <optional>
@@ -64,6 +65,7 @@ struct RunResult {
 	int quads = 0;
 	int attack = 0;
 	int max_b2b = 0;
+	int spin_clears = 0;
 };
 
 RunResult run_bot (const bot::Rank& rank, unsigned seed, int piece_limit,
@@ -135,6 +137,9 @@ RunResult run_bot (const bot::Rank& rank, unsigned seed, int piece_limit,
 		}
 		if (lock.lines == 4) {
 			++result.quads;
+		}
+		if (lock.lines > 0 && lock.spin != 0) {
+			++result.spin_clears;
 		}
 		result.attack += lock.attack;
 		result.max_b2b = std::max(result.max_b2b, lock.b2b);
@@ -385,6 +390,121 @@ int main () {
 				: "cleared=" + std::to_string(ranked.front().cleared));
 	}
 
+	// A spin the greedy lookahead cannot value: the TSD slot with no roof
+	// yet. Rolling the roof on is a quiet move whose payoff is a ply away -
+	// the beam's full-reachability second ply sees the spin behind it, a
+	// hard-drop lookahead never can. The tower on the right keeps the
+	// immediate T-double from being a perfect clear, which would win fairly.
+	{
+		Board board;
+		for (int x = 0; x < kWidth; ++x) {
+			if (x != 4) {
+				board.set(x, 21, S);
+			}
+			if (x != 3 && x != 4 && x != 5) {
+				board.set(x, 20, S);
+			}
+		}
+		for (int y = 17; y <= 19; ++y) {
+			for (int x = 7; x < kWidth; ++x) {
+				board.set(x, y, S);
+			}
+		}
+		bot::Options beam;
+		beam.depth = 3;
+		beam.width = 12;
+		beam.build = true;
+		const std::deque<int> queue{T};
+		const auto ranked = bot::plan(
+			board, Piece{O, 0, kSpawnX, kSpawnY}, true, -1, queue, beam);
+		bool roofed = false;
+		if (!ranked.empty() && !ranked.front().use_hold) {
+			for (const Offset cell : cells_of(ranked.front().landed)) {
+				roofed = roofed || (cell.x == 5 && cell.y == 19);
+			}
+			for (const Offset cell : cells_of(ranked.front().landed)) {
+				// Filling the notch itself would kill the slot instead.
+				roofed = roofed && cell.y < 20;
+			}
+		}
+		check("the beam roofs the slot for the T behind it", roofed);
+		if (roofed) {
+			board.paste(ranked.front().landed);
+			const auto spun = bot::plan(
+				board, Piece{T, 0, kSpawnX, kSpawnY}, true, -1, {}, beam);
+			check("and the T then spins in for two",
+				!spun.empty() && spun.front().cleared == 2
+				&& spun.front().spin == attack::SPIN_FULL,
+				spun.empty() ? "no plans"
+					: "cleared=" + std::to_string(spun.front().cleared)
+						+ " spin=" + std::to_string(spun.front().spin));
+		}
+	}
+
+	// The beam bot end to end: deterministic, alive, on budget, and a
+	// different animal from the greedy builder - more attack, real spins.
+	{
+		const bot::Rank beamer{"XB", 2.8, 0., 3, true, true, true, 24};
+		const auto started = std::chrono::steady_clock::now();
+		const RunResult run = run_bot(beamer, 20260821, 300);
+		const double wall = std::chrono::duration<double>(
+			std::chrono::steady_clock::now() - started).count();
+		check("the beam bot survives three hundred pieces", !run.lost,
+			"lost after " + std::to_string(run.pieces));
+		check("inside its time budget", wall < 10., std::to_string(wall));
+		const RunResult one = run_bot(beamer, 31, 100);
+		const RunResult two = run_bot(beamer, 31, 100);
+		check("the beam repeats itself under a seed", one.locks == two.locks);
+		const double rate = run.attack / std::max(1., double(run.pieces));
+		// Measured 0.75-0.83 over five seeds at this width; the floor sits
+		// under that so a regression to greedy-builder output (~0.43) fails.
+		check("the beam out-attacks the greedy builder", rate >= 0.55,
+			std::to_string(rate));
+		check("and plays real spins along the way", run.spin_clears >= 10,
+			std::to_string(run.spin_clears));
+	}
+
+	// The spawn's shadow: with the beam's survival term, stacking over the
+	// spawn columns is worse than anything else on the board.
+	{
+		Board board;
+		for (int y = 4; y < kHeight; ++y) {
+			board.set(4, y, S);
+			board.set(5, y, S);
+		}
+		bot::Options deep;
+		deep.depth = 3;
+		deep.build = true;
+		const auto ranked = bot::plan(
+			board, Piece{O, 0, kSpawnX, kSpawnY}, true, -1, {}, deep);
+		check("nothing is stacked over the spawn",
+			[&] {
+				if (ranked.empty()) {
+					return false;
+				}
+				for (const Offset cell : cells_of(ranked.front().landed)) {
+					if (cell.y <= kSpawnY + 2) {
+						return false;
+					}
+				}
+				return true;
+			}());
+		bool spike_sank = false;
+		for (const Plan& plan : ranked) {
+			for (const Offset cell : cells_of(plan.landed)) {
+				if (cell.y <= kSpawnY + 2) {
+					spike_sank = plan.score < ranked.front().score - 900.;
+					break;
+				}
+			}
+			if (spike_sank) {
+				break;
+			}
+		}
+		check("and the placement that would be is sunk by the penalty",
+			spike_sank);
+	}
+
 	// The ladder is sane: pace climbs, blunders fall, the top tucks and
 	// spins and the bottom does not.
 	{
@@ -402,7 +522,8 @@ int main () {
 			&& !ladder.front().build);
 		check("the top plays everything",
 			ladder.back().tucks && ladder.back().spins
-			&& ladder.back().build && ladder.back().depth == 2);
+			&& ladder.back().build && ladder.back().depth >= 3
+			&& ladder.back().width >= 12);
 	}
 
 	if (failures > 0) {

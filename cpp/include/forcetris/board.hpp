@@ -44,14 +44,39 @@ public:
 
 	// -1 for an empty cell, otherwise the form that fills it. Anything outside
 	// the walls or below the floor reads as filled, which is what makes the
-	// spin rules treat a wall as a block.
-	int at (int x, int y) const;
+	// spin rules treat a wall as a block. Inline: the bot's search and its
+	// evaluation read cells by the million, and the call was the cost.
+	int at (int x, int y) const {
+		if (x < 0 || x >= kWidth || y >= kHeight) {
+			// The walls and the floor. Solid, so a piece wedged against one
+			// counts as wedged in for the spin rules.
+			return GARBAGE;
+		}
+		if (y < 0) {
+			// Above the matrix, where a spawning piece legitimately sits.
+			return -1;
+		}
+		return cells_[y][x];
+	}
 	void set (int x, int y, int form);
 
 	// True if any of the piece's cells is out of bounds or on top of a block.
 	// Cells above the top of the matrix are ignored, as they are in Python:
 	// pieces spawn partly above the visible field.
-	bool collides (const Piece& piece) const;
+	bool collides (const Piece& piece) const {
+		for (const Offset cell : cells_of(piece)) {
+			if (cell.y < 0) {
+				continue;
+			}
+			if (cell.x < 0 || cell.x >= kWidth || cell.y >= kHeight) {
+				return true;
+			}
+			if (cells_[cell.y][cell.x] >= 0) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	// The piece dropped straight down as far as it will go.
 	Piece dropped (const Piece& piece) const;

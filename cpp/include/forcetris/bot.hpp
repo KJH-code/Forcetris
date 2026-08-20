@@ -43,7 +43,9 @@ struct Plan {
 
 // What the planner is allowed and told.
 struct Options {
-	int depth = 1;           // 1, or 2 to look at the next piece too.
+	int depth = 1;           // 1 greedy, 2 adds the next piece's hard drops,
+	                         // 3+ runs a beam that deep with full reach.
+	int width = 16;          // The beam's width; read only when depth >= 3.
 	bool tucks = true;       // Moves after a drop.
 	bool spins = true;       // Rotations after a drop.
 	bool build = false;      // Reserve a quad well and spend clears dearly.
@@ -80,6 +82,7 @@ struct Rank {
 	bool tucks;
 	bool spins;
 	bool build = false;   // Quad-well stacking instead of plain downstack.
+	int width = 0;        // Beam width when depth >= 3.
 };
 const std::vector<Rank>& ranks ();
 

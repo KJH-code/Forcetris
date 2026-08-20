@@ -45,19 +45,6 @@ Board Board::from_rows (const std::vector<std::string>& rows) {
 	return board;
 }
 
-int Board::at (int x, int y) const {
-	if (x < 0 || x >= kWidth || y >= kHeight) {
-		// The walls and the floor. Solid, so a piece wedged against one counts as
-		// wedged in for the spin rules.
-		return GARBAGE;
-	}
-	if (y < 0) {
-		// Above the matrix, where a spawning piece legitimately sits.
-		return -1;
-	}
-	return cells_[y][x];
-}
-
 void Board::set (int x, int y, int form) {
 	// Hand-placed cells are settled rubble with no links, the way a seeded
 	// board's blocks are built.
@@ -86,21 +73,6 @@ bool Board::fallen_at (int x, int y) const {
 		return true;
 	}
 	return fallen_[y][x];
-}
-
-bool Board::collides (const Piece& piece) const {
-	for (const Offset cell : cells_of(piece)) {
-		if (cell.y < 0) {
-			continue;
-		}
-		if (cell.x < 0 || cell.x >= kWidth || cell.y >= kHeight) {
-			return true;
-		}
-		if (cells_[cell.y][cell.x] >= 0) {
-			return true;
-		}
-	}
-	return false;
 }
 
 Piece Board::dropped (const Piece& piece) const {
