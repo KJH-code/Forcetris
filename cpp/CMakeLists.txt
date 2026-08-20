@@ -34,6 +34,7 @@ add_library(forcetris_core
 	src/replay.cpp
 	src/hiscore.cpp
 	src/rating.cpp
+	src/bot.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
 # nlohmann/json.hpp, vendored, for the replay files.
@@ -68,6 +69,14 @@ add_executable(cheesecheck tests/cheesecheck.cpp)
 target_link_libraries(cheesecheck PRIVATE forcetris_core)
 target_compile_options(cheesecheck PRIVATE ${FORCETRIS_WARNINGS})
 
+add_executable(versuscheck tests/versuscheck.cpp)
+target_link_libraries(versuscheck PRIVATE forcetris_core)
+target_compile_options(versuscheck PRIVATE ${FORCETRIS_WARNINGS})
+
+add_executable(botcheck tests/botcheck.cpp)
+target_link_libraries(botcheck PRIVATE forcetris_core)
+target_compile_options(botcheck PRIVATE ${FORCETRIS_WARNINGS})
+
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
 find_package(SDL2 QUIET)
@@ -95,6 +104,7 @@ if (SDL2_FOUND)
 		gui/stats.cpp
 		gui/config.cpp
 		gui/audio.cpp
+		gui/versus.cpp
 	)
 	target_link_libraries(forcetris PRIVATE forcetris_core imgui)
 	# stb_vorbis, vendored, for the music.
@@ -143,6 +153,12 @@ add_test(NAME rating_check COMMAND ratingcheck)
 # The cheese modes, which are this side's own: the race's priming, cap,
 # quota and win, and survival's rising floor, spelled out against the sim.
 add_test(NAME cheese_check COMMAND cheesecheck)
+# The versus wire: queued attack rising on quiet locks, cancellation, the
+# eight-row lift, and the surge bank - this side's own rules, spelled out.
+add_test(NAME versus_check COMMAND versuscheck)
+# The opponent: the planner reaches tucks and spins, plays what it plans,
+# survives, digs, and repeats itself under a seed.
+add_test(NAME bot_check COMMAND botcheck)
 if (SDL2_FOUND)
 	# The whole window run headlessly under scripted-random input: proves the
 	# loop, the drawing and the shutdown hold together with no display.

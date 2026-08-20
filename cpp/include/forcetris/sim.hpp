@@ -14,6 +14,7 @@
 // point is that a replay or a trace means the same thing on both engines.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <deque>
 #include <optional>
@@ -47,7 +48,9 @@ struct SimConfig {
 	// the guideline's and the trainer's default; the cascade styles let what
 	// was left hanging fall, one row per frame, and clear again.
 	int cleartype = 0;
-	// The mode: 0 free, 1 timed, 2 arcade, 3 cheese race, 4 cheese survival.
+	// The mode: 0 free, 1 timed, 2 arcade, 3 cheese race, 4 cheese survival,
+	// 5 versus - two sims exchanging attack, the GUI ferrying it between
+	// them. Versus is this side's own, like the cheese modes.
 	// Timed runs its clock down and ends the game at zero; arcade ramps
 	// gravity with the level and pushes garbage rows up from the floor. The
 	// cheese modes are this side's own (the Python game has no counterpart):
@@ -164,6 +167,9 @@ public:
 	long loss_frame () const { return loss_frame_; }
 	int stored () const { return stored_; }
 	const std::deque<int>& queue () const { return queue_; }
+	// The floor kick allowance as it stands, for a planner that must model
+	// rotations exactly as the sim will perform them.
+	bool floor_kick () const { return floor_kick_; }
 
 	// The chain counters and totals, as the analysis screen reads them. The
 	// counters show one behind their HUD figures: the HUD prints b2b - 1.
@@ -177,6 +183,21 @@ public:
 	// The race's undealt quota; the rows still standing are on the board.
 	int cheese_left () const { return cheese_left_; }
 	bool won () const { return won_; }
+
+	// Versus: attack arriving from the other board queues here and rises as
+	// garbage on the next lock that clears nothing, eight rows at a time.
+	void receive_attack (int rows) { pending_garbage_ += std::max(0, rows); }
+	// Attack going the other way, after cancellation ate what it ate. The
+	// ferry drains this every frame.
+	int take_outgoing () {
+		const int out = outgoing_;
+		outgoing_ = 0;
+		return out;
+	}
+	int pending_garbage () const { return pending_garbage_; }
+	// The surge charge: a back-to-back chain four deep starts banking a row
+	// per link, and the clear that breaks the chain fires the bank at once.
+	int surge_charge () const { return surge_charge_; }
 	// The counters as they stood at the loss, which is what the loss screens
 	// read: a timed game can die with a clear still resolving, and Python's
 	// eval_loss takes its high score entry and replay before that clear
@@ -220,6 +241,7 @@ private:
 	void settle_move ();
 	void ramp_arcade ();
 	void eval_cheese ();
+	void apply_pending_garbage ();
 	void eval_timer ();
 	void cue (std::string name) { cues_.push_back(std::move(name)); }
 
@@ -311,6 +333,11 @@ private:
 	int cheese_left_ = 0;
 	int cheese_frame_ = 0;
 	bool won_ = false;
+	// Versus bookkeeping: what has been sent at us and not yet risen, what
+	// we have sent past cancellation, and the banked surge.
+	int pending_garbage_ = 0;
+	int outgoing_ = 0;
+	int surge_charge_ = 0;
 
 	// The forced drop clock, in the same arithmetic Python runs.
 	double now_ = 0.;

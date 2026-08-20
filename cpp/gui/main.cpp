@@ -35,6 +35,7 @@
 #include "forcetris/replay.hpp"
 #include "session.hpp"
 #include "stats.hpp"
+#include "versus.hpp"
 
 namespace forcetris {
 namespace gui {
@@ -296,6 +297,10 @@ struct App {
 	int cheese_period = 250;     // Survival's frames per rising row.
 	int cheese_holes = 1;        // Holes per cheese row.
 	int cheese_messiness = 100;  // Percent chance a row re-rolls its holes.
+	// The match against the bot, when one is on; who it is and how long.
+	std::optional<VersusMatch> versus;
+	int bot_rank = 4;            // Index into bot::ranks(); 4 is S.
+	int first_to = 1;
 	int score_page = 2;          // The high score table being looked at.
 	int hiscore_place = -1;      // Where the finished game would place, if it does.
 	char name_entry[9] = "";
@@ -310,6 +315,7 @@ const char* gametype_name (int mode) {
 		case 2: return "arcade";
 		case 3: return "cheese_race";
 		case 4: return "cheese_survival";
+		case 5: return "versus";
 		default: return "free";
 	}
 }
@@ -343,6 +349,7 @@ replay::Meta meta_for (const Config& config, int mode) {
 }
 
 void start_game (App& app, int mode) {
+	app.versus.reset();
 	app.mode = mode;
 	SimConfig config = app.config.sim();
 	config.gametype = mode;
@@ -358,6 +365,36 @@ void start_game (App& app, int mode) {
 	app.hiscore_place = -1;
 	app.score_saved = false;
 	app.audio.start_music();
+}
+
+// A match against the bot: the player's session as ever, the opponent and
+// the scoreboard beside it.
+void start_versus (App& app) {
+	app.mode = 5;
+	SimConfig config = app.config.sim();
+	config.gametype = 5;
+	config.cheese_holes = 1;
+	config.cheese_messiness = 30;
+	app.session.emplace(config, app.seeds(), meta_for(app.config, 5));
+	app.versus.emplace(app.bot_rank, app.first_to);
+	app.versus->begin_round(config, app.seeds());
+	app.screen = Screen::Game;
+	app.paused = false;
+	app.editing = false;
+	app.place_panels = true;
+	app.hiscore_place = -1;
+	app.score_saved = false;
+	app.audio.start_music();
+}
+
+void next_versus_round (App& app) {
+	SimConfig config = app.config.sim();
+	config.gametype = 5;
+	config.cheese_holes = 1;
+	config.cheese_messiness = 30;
+	app.session.emplace(config, app.seeds(), meta_for(app.config, 5));
+	app.versus->round += 1;
+	app.versus->begin_round(config, app.seeds());
 }
 
 void end_game (App& app) {
@@ -607,6 +644,82 @@ void draw_banner (App& app) {
 	ImGui::GetForegroundDrawList()->AddText(font, size,
 		ImVec2(kBoardX + (kBoardW - extent.x) / 2, kBoardY - ui(38)),
 		IM_COL32(255, 210, 74, static_cast<int>(alpha * 255)), banner.text.c_str());
+}
+
+// The other board, small, and the wire's state around both: the bot's
+// stack with its live piece, the scoreboard, and each side's incoming
+// garbage as a red column beside its board.
+void draw_versus_panel (App& app) {
+	if (!app.versus.has_value() || !app.versus->bot.has_value()) {
+		return;
+	}
+	VersusMatch& match = *app.versus;
+	const Sim& theirs = match.bot->sim();
+	SDL_Renderer* renderer = app.renderer;
+	const int cell = px(13);
+	const int left = px(940);
+	const int top = kBoardY + px(40);
+	fill(renderer, left - px(2), top - px(2),
+		kWidth * cell + px(4), kHeight * cell + px(4), {32, 40, 53, 255});
+	fill(renderer, left, top, kWidth * cell, kHeight * cell, {14, 18, 24, 255});
+	for (int y = 0; y < kHeight; ++y) {
+		for (int x = 0; x < kWidth; ++x) {
+			const int form = theirs.board().at(x, y);
+			if (form >= 0) {
+				fill(renderer, left + x * cell + 1, top + y * cell + 1,
+					cell - 2, cell - 2, kFormColors[std::min(form, 7)]);
+			}
+		}
+	}
+	if (theirs.entry() && theirs.piece().form <= 6) {
+		for (const Offset at : cells_of(theirs.piece())) {
+			if (at.y >= 0) {
+				fill(renderer, left + at.x * cell + 1, top + at.y * cell + 1,
+					cell - 2, cell - 2, kFormColors[theirs.piece().form]);
+			}
+		}
+	}
+	draw_label("BOT", static_cast<float>(left), top - ui(22));
+	// Incoming garbage, as red columns: theirs beside their board, the
+	// player's beside the player's.
+	const auto meter = [renderer] (int x, int bottom, int rows, int step) {
+		const int shown = std::min(rows, kHeight);
+		if (shown > 0) {
+			fill(renderer, x, bottom - shown * step, px(6), shown * step,
+				{224, 82, 82, 255});
+		}
+	};
+	meter(kBoardX - px(10), kBoardY + kBoardH,
+		app.session->sim().pending_garbage(), kCell);
+	meter(left - px(10), top + kHeight * cell,
+		theirs.pending_garbage(), cell);
+	// The scoreboard, under the bot's board.
+	ImGui::SetNextWindowPos(ImVec2(static_cast<float>(left) - ui(4),
+		static_cast<float>(top + kHeight * cell) + ui(10)));
+	ImGui::Begin("versus score", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_NoSavedSettings);
+	ImGui::Text("You %d - %d Bot (%s)", match.player_wins, match.bot_wins,
+		bot::ranks()[match.rank_index].name);
+	ImGui::TextDisabled("first to %d  round %d", match.first_to, match.round);
+	const int surge = app.session->sim().surge_charge();
+	if (surge > 0) {
+		ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f),
+			"SURGE +%d", surge);
+	}
+	ImGui::End();
+	// The round's verdict, front and centre while it lingers.
+	if (match.phase != VersusMatch::Phase::Playing) {
+		const char* verdict = match.round_draw ? "DRAW - AGAIN"
+			: match.round_player_won ? "ROUND WON" : "ROUND LOST";
+		ImFont* font = app.fonts.title;
+		const ImVec2 extent = font->CalcTextSizeA(
+			font->FontSize, FLT_MAX, 0.f, verdict);
+		ImGui::GetForegroundDrawList()->AddText(font, font->FontSize,
+			ImVec2(kBoardX + (kBoardW - extent.x) / 2,
+				kBoardY + kBoardH / 2.f - font->FontSize),
+			IM_COL32(255, 210, 74, 255), verdict);
+	}
 }
 
 void draw_stat_panels (App& app) {
@@ -1540,6 +1653,35 @@ void draw_menus (App& app) {
 		}
 		ImGui::TextDisabled("How the cheese is cut: holes per row, and how");
 		ImGui::TextDisabled("often they move between rows.");
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted("Versus");
+		const auto& ladder = bot::ranks();
+		for (size_t i = 0; i < ladder.size(); ++i) {
+			ImGui::SameLine();
+			if (option_button(ladder[i].name,
+				app.bot_rank == static_cast<int>(i), ui(34))) {
+				app.bot_rank = static_cast<int>(i);
+			}
+		}
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted("First to");
+		for (int ft = 1; ft <= 3; ++ft) {
+			ImGui::SameLine();
+			char label[8];
+			std::snprintf(label, sizeof label, "FT%d", ft);
+			if (option_button(label, app.first_to == ft, ui(52))) {
+				app.first_to = ft;
+			}
+		}
+		ImGui::SameLine();
+		ImGui::Dummy(ImVec2(ui(8), 0.f));
+		ImGui::SameLine();
+		if (ImGui::Button("Fight", ImVec2(ui(90), 0))) {
+			start_versus(app);
+		}
+		ImGui::TextDisabled("A bot paced at that rank's league-average PPS,");
+		ImGui::TextDisabled("garbage, cancelling and surge included.");
 		ImGui::Dummy(ImVec2(0.f, ui(6)));
 		if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
 			app.screen = Screen::Menu;
@@ -1555,7 +1697,11 @@ void draw_menus (App& app) {
 			app.paused = false;
 		}
 		if (ImGui::Button("Restart", ImVec2(ui(240), 0))) {
-			start_game(app, app.mode);
+			if (app.mode == 5) {
+				start_versus(app);
+			} else {
+				start_game(app, app.mode);
+			}
 		}
 		if (ImGui::Button("Edit stat layout", ImVec2(ui(240), 0))) {
 			open_layout_editor(app);
@@ -1564,6 +1710,7 @@ void draw_menus (App& app) {
 			app.show_settings = true;
 		}
 		if (ImGui::Button("Back to menu", ImVec2(ui(240), 0))) {
+			app.versus.reset();
 			app.screen = Screen::Menu;
 		}
 		ImGui::End();
@@ -1575,8 +1722,21 @@ void draw_menus (App& app) {
 		ImGui::Begin("game over", nullptr, box);
 		const bool won = app.session.has_value() && app.session->sim().won();
 		ImGui::PushFont(app.fonts.head);
-		ImGui::TextUnformatted(won ? "Finished!" : "Game over");
+		if (app.versus.has_value()) {
+			ImGui::TextUnformatted(
+				app.versus->player_wins > app.versus->bot_wins
+					? "You win the match!" : "You lose the match");
+		} else {
+			ImGui::TextUnformatted(won ? "Finished!" : "Game over");
+		}
 		ImGui::PopFont();
+		if (app.versus.has_value()) {
+			ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f),
+				"You %d - %d Bot (%s)  first to %d",
+				app.versus->player_wins, app.versus->bot_wins,
+				bot::ranks()[app.versus->rank_index].name,
+				app.versus->first_to);
+		}
 		if (won) {
 			const double seconds = app.session->sim().frame() * 0.02;
 			ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f),
@@ -1644,9 +1804,14 @@ void draw_menus (App& app) {
 			ImGui::TextDisabled("Too short to record.");
 		}
 		if (ImGui::Button("Play again", ImVec2(ui(240), 0))) {
-			start_game(app, app.mode);
+			if (app.mode == 5) {
+				start_versus(app);
+			} else {
+				start_game(app, app.mode);
+			}
 		}
 		if (ImGui::Button("Back to menu", ImVec2(ui(240), 0))) {
+			app.versus.reset();
 			app.screen = Screen::Menu;
 		}
 		ImGui::End();
@@ -1690,7 +1855,9 @@ std::string screen_shot_key (const App& app) {
 	switch (app.screen) {
 		case Screen::Menu: return "menu";
 		case Screen::Modes: return "modes";
-		case Screen::Game: return app.paused ? "pause" : "game";
+		case Screen::Game:
+			return app.paused ? "pause"
+				: app.versus.has_value() ? "versus" : "game";
 		case Screen::Over: return "over";
 		case Screen::Replays: return "replays";
 		case Screen::Viewer: return "viewer";
@@ -1842,12 +2009,16 @@ int run (bool smoke, long smoke_frames) {
 		// proven headlessly, not only free's.
 		int mode = 0;
 		if (const char* forced = std::getenv("FORCETRIS_SMOKE_MODE")) {
-			mode = std::clamp(std::atoi(forced), 0, 4);
+			mode = std::clamp(std::atoi(forced), 0, 5);
 		}
 		if (mode == 4) {
 			app.cheese_period = 150;
 		}
-		start_game(app, mode);
+		if (mode == 5) {
+			start_versus(app);
+		} else {
+			start_game(app, mode);
+		}
 	}
 
 	Uint64 previous = SDL_GetPerformanceCounter();
@@ -1906,7 +2077,22 @@ int run (bool smoke, long smoke_frames) {
 		while (behind >= 0.02) {
 			behind -= 0.02;
 			if (app.screen == Screen::Game && !app.paused && !app.editing) {
-				if (!app.session->step()) {
+				const bool live = app.session->step();
+				if (app.versus.has_value()) {
+					app.versus->step(*app.session);
+					// The round and match flow: linger on the verdict, then
+					// the next round or the loss screen.
+					if (app.versus->phase == VersusMatch::Phase::RoundOver) {
+						if (++app.versus->phase_frames >= 150) {
+							next_versus_round(app);
+						}
+					} else if (app.versus->phase
+						== VersusMatch::Phase::MatchOver) {
+						if (++app.versus->phase_frames >= 100) {
+							end_game(app);
+						}
+					}
+				} else if (!live) {
 					end_game(app);
 				}
 				++frames;
@@ -1940,6 +2126,9 @@ int run (bool smoke, long smoke_frames) {
 			draw_label("NEXT", kBoardX + kBoardW + ui(18), kBoardY - ui(24));
 			draw_stat_panels(app);
 			draw_banner(app);
+			if (app.versus.has_value()) {
+				draw_versus_panel(app);
+			}
 		}
 		if (app.screen == Screen::Viewer && app.viewing.has_value()) {
 			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
@@ -2005,6 +2194,8 @@ int run (bool smoke, long smoke_frames) {
 					// few frames each: every one of them has to build and
 					// draw with real data behind it, not merely compile.
 					tour_screen(app, toured++);
+				} else if (app.mode == 5) {
+					start_versus(app);
 				} else {
 					start_game(app, app.mode);
 				}

@@ -665,6 +665,28 @@ void Sim::resolve_score () {
 		total, static_cast<attack::SpinKind>(last.spin), b2b_ > 1,
 		std::max(0, combo_ - 1), perfect);
 	attack_sent_ += sent;
+	if (config_.gametype == 5) {
+		// The versus wire. A clear first banks or fires the surge: a back to
+		// back chain four deep banks a row per link, and the clear that
+		// breaks the chain fires the bank on top of its own attack. Whatever
+		// crosses the wire cancels against the garbage queued at us before
+		// the rest goes out; a lock that cleared nothing lets the queue rise.
+		if (total > 0) {
+			int fired = 0;
+			if (b2b_ >= 4) {
+				++surge_charge_;
+			} else if (b2b_ == 0 && surge_charge_ > 0) {
+				fired = surge_charge_;
+				surge_charge_ = 0;
+			}
+			const int wire = sent + fired;
+			const int cancelled = std::min(pending_garbage_, wire);
+			pending_garbage_ -= cancelled;
+			outgoing_ += wire - cancelled;
+		} else {
+			apply_pending_garbage();
+		}
+	}
 	// announce_chains, then the perfect on top of them.
 	if (total > 0) {
 		if (combo_ > 1) {
@@ -684,6 +706,23 @@ void Sim::resolve_score () {
 	last.attack = sent;
 	last.score = score_;
 	last.downstack = downstack_;
+}
+
+void Sim::apply_pending_garbage () {
+	// Up to eight rows of what has been sent at us rise at once, each with
+	// the hole the dealer rolled for it. The queue can outlast the dealt
+	// holes in a hand-fed test; what cannot rise now stays pending.
+	int rising = std::min(pending_garbage_, 8);
+	while (rising > 0 && !holes_.empty()) {
+		const int mask = holes_.front() & 0x3FF;
+		board_.push_garbage_mask(mask != 0 ? mask : 1 << 4);
+		holes_.pop_front();
+		--pending_garbage_;
+		--rising;
+		if (board_.collides(piece_)) {
+			piece_.y -= 1;
+		}
+	}
 }
 
 void Sim::eval_cheese () {

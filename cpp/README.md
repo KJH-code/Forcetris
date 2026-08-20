@@ -20,7 +20,8 @@ What is here:
 | `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
 | `rating` | An estimated Tetra League standing - Glicko, TR by the official conversion formula, rank - interpolated from TETR.IO's own reported per-rank averages, and labelled the estimate it is |
-| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, the replay browser and viewer, the three game modes, the high score screens, the how-to-play screen and the analysis of a finished run |
+| `bot` | The versus opponent: a full-reachability search over the real kick tables - so its tucks and spins are exactly the game's - an attack-and-shape evaluation, a rank ladder paced to TETR.IO's own per-rank speeds, and the driver that types the plan into a sim one key at a time |
+| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, the replay browser and viewer, the game modes - versus included, with the bot's board beside yours - the high score screens, the how-to-play screen and the analysis of a finished run |
 
 ## The GUI
 
@@ -74,6 +75,34 @@ cross-grading, since there is nothing to cross against; a Cheese stat
 panel counts what is left to dig, or what has risen. Cheese games are
 recorded and analysed like any other, but stay off the high score file.
 
+And there is someone to play against: a versus mode, first to one, two or
+three rounds, against a bot picked by TETR.IO rank - D through X, each
+paced to that rank's real league speed, blundering as often as its rank
+would, and gated to its rank's technique: the low ranks hard-drop, tucks
+arrive around B, spins and T-slot building around S, and the top ranks
+read one piece ahead. The bot is our own, written referencing the
+published techniques of the well-known bots (MisaMino, ColdClear): a
+full-reachability search - taps, sonic drops, and rotations through the
+game's own kick tables, so a slide under an overhang or a kicked T-spin
+is found the way a strong player finds it, and behaves exactly as the sim
+will judge it - under an attack-aware evaluation that keeps a back-to-back
+chain alive and digs when the garbage gets tall. No bot code is copied.
+The garbage rules are TETR.IO's multiplayer shape: attack in flight
+cancels first, what survives rises through the floor up to eight rows a
+lock, and a back-to-back chain held to four or more starts charging
+**Surge**, the whole charge landing in one burst when the chain finally
+breaks - an approximation of TETR.IO's current chaining, charge-at-four
+and fire-on-break, not a byte-exact port. The bot's board stands beside
+yours with both sides' incoming garbage metered in red; rounds replay on
+a draw, and the match verdict takes over the finish screen. Versus games
+are analysed like any other and stay off the high score file. The
+exchange, the cap, the cancellation and Surge are pinned by the
+`versus_check` ctest; the bot itself by `bot_check` - it must survive
+hundreds of pieces through the real sim, land exactly where it planned,
+repeat itself under a seed, hold its pace, dig under fire, reach a cavity
+only a tuck can enter and spin a T into a real TSD slot, while a rank
+without the technique must not.
+
 A finished game that places on the high score table is offered a
 name entry, and the table is the Python game's own data/hiscore.dat, read
 and written byte-compatibly; the High scores screen shows the same three
@@ -97,7 +126,8 @@ conversion over the result; there is no opponent in a trainer,
 so it is an entertainment-grade placement, and the screen says so in as
 many words. Play opens a mode picker - Free, Timed, Arcade, the cheese race at three
 lengths and cheese survival at three paces, with the holes-per-row and
-messiness of the cheese beside them - with a line on what each one does. How to Play lists every
+messiness of the cheese beside them, and Versus with its rank row and
+first-to count - with a line on what each one does. How to Play lists every
 action against the keys bound to it right now, and explains the forced
 drop, in the Python screen's words.
 

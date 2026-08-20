@@ -48,6 +48,10 @@ public:
 	const Sim& sim () const { return sim_; }
 	bool over () const { return over_; }
 
+	// Versus: the wire in and out of this side's sim.
+	void receive_attack (int rows) { sim_.receive_attack(rows); }
+	int take_outgoing () { return sim_.take_outgoing(); }
+
 	// The totals, kept per lock rather than recounted per frame.
 	double seconds () const { return sim_.frame() * 0.02; }
 	int pieces () const { return static_cast<int>(sim_.locked().size()); }
