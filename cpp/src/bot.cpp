@@ -911,8 +911,11 @@ void Driver::adopt (const Sim& sim) {
 	script_.push_back(Event{Key::Hard, true});
 	// The pace: think first, then type briskly - the tail of a route can sit
 	// on a resting piece whose lock grace is already running, so the typing
-	// must never dawdle. The 0.93 pays for the clear animations.
-	const long frames = std::lround(0.93 * 50. / rank_.pps);
+	// must never dawdle. The 0.93 pays for the clear animations; with the
+	// clear delay off there is nothing to pay for, and without the refund
+	// the bot would run visibly above its rank's dial.
+	const double pay = sim.config().clear_delay ? 0.93 : 1.0;
+	const long frames = std::lround(pay * 50. / rank_.pps);
 	const long typing = static_cast<long>(script_.size());
 	due_frame_ = sim.frame() + std::max(1L, frames - typing);
 }

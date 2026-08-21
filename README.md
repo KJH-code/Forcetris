@@ -588,6 +588,9 @@ gives, two ways:
   player's replay file under an optional key both engines' readers ignore
   when they do not know it: the round trip, the absence, and the tolerant
   reading of files that only half-have one.
+- `clear_check` — the clear-delay knob: the reference seven-frames-a-row
+  timing with it on, lock-frame resolution with it off, and an outcome —
+  score, counters, board, attack — identical either way.
 
 ```bash
 ctest --test-dir cpp/build --output-on-failure

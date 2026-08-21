@@ -925,6 +925,10 @@ void draw_settings (App& app) {
 			const char* clear_styles[] = {
 				"Naive", "Sticky cascade", "Linked cascade"};
 			ImGui::Combo("Line clears", &app.config.cleartype, clear_styles, 3);
+			ImGui::Checkbox("Clear delay", &app.config.clear_delay);
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", app.config.clear_delay
+				? "clears animate" : "clears resolve instantly");
 			const char* finesse_rules[] = {
 				"Off", "Count faults", "Retry on fault"};
 			ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);

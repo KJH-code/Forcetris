@@ -48,6 +48,11 @@ struct SimConfig {
 	// the guideline's and the trainer's default; the cascade styles let what
 	// was left hanging fall, one row per frame, and clear again.
 	int cleartype = 0;
+	// Whether a clear animates (seven frames a row, the reference timing the
+	// traces grade) or resolves on the lock frame like TETR.IO's zero clear
+	// delay. This side's own knob, like the cheese ones: the default stays
+	// the graded behaviour, and no trace ever sets it.
+	bool clear_delay = true;
 	// The mode: 0 free, 1 timed, 2 arcade, 3 cheese race, 4 cheese survival,
 	// 5 versus - two sims exchanging attack, the GUI ferrying it between
 	// them. Versus is this side's own, like the cheese modes.

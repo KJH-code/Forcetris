@@ -51,6 +51,7 @@ struct Config {
 	int finesse_rule = 1;   // 0 off, 1 count, 2 retry.
 	int spin_rule = 2;      // spins::Rule.
 	int cleartype = 0;      // 0 naive, 1 sticky cascade, 2 linked cascade.
+	bool clear_delay = true; // Animated clears, or resolved on the lock frame.
 
 	// Volumes, as fractions, matching the Python game's defaults.
 	float sfx_volume = 1.f;

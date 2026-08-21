@@ -554,10 +554,17 @@ void Sim::clearing_step () {
 	// One frame of the clearing block: six frames of sprite animation per
 	// pass, then one resume of the clearer - which is one pass of the row
 	// scan, or one settle step of the cascade, or the report that it is done.
+	// With the clear delay off the whole machine runs to completion inside
+	// this one call instead of yielding a frame per stage, so a clearing
+	// lock resolves on its lock frame the way a quiet lock always has.
+	const bool delayed = config_.clear_delay;
 	if (sprite_frames_ > 0) {
 		--sprite_frames_;
 		return;
 	}
+	// Without the delay, the per-pass cues would all land on this one frame
+	// and play over each other; only the last pass's verdict is voiced.
+	std::string last_cue;
 	while (true) {
 		if (clear_phase_ == 0) {
 			int base = 0;
@@ -571,15 +578,22 @@ void Sim::clearing_step () {
 				// it is the whole chain link at once.
 				line_list_.back() += rows;
 				clear_base_ = base;
-				sprite_frames_ = 6;
-				cue(line_list_.back() > 3 ? "tetris" : "clear");
 				if (config_.cleartype >= 1) {
 					clear_phase_ = 1;
 				}
-				return;
+				if (delayed) {
+					sprite_frames_ = 6;
+					cue(line_list_.back() > 3 ? "tetris" : "clear");
+					return;
+				}
+				last_cue = line_list_.back() > 3 ? "tetris" : "clear";
+				continue;
 			}
 			// The final yield: the clearer reports done, and the counters are
 			// final - which is the moment the placement can be scored in full.
+			if (!last_cue.empty()) {
+				cue(last_cue);
+			}
 			clearing_ = false;
 			resolve_score();
 			return;
@@ -588,7 +602,10 @@ void Sim::clearing_step () {
 		// nothing ends the loop and rolls straight into the next row scan,
 		// inside the same resume, exactly as the generator falls through.
 		if (board_.cascade_step(config_.cleartype, clear_base_)) {
-			return;
+			if (delayed) {
+				return;
+			}
+			continue;
 		}
 		line_list_.push_back(0);
 		clear_phase_ = 0;

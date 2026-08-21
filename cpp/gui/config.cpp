@@ -53,6 +53,7 @@ SimConfig Config::sim () const {
 	config.finesse_rule = finesse_rule;
 	config.spin_rule = spin_rule;
 	config.cleartype = cleartype;
+	config.clear_delay = clear_delay;
 	return config;
 }
 
@@ -121,6 +122,7 @@ Config load_config (const std::string& path) {
 		else if (key == "finesse") in >> config.finesse_rule;
 		else if (key == "spins") in >> config.spin_rule;
 		else if (key == "clears") in >> config.cleartype;
+		else if (key == "cleardelay") { int flag = 1; in >> flag; config.clear_delay = flag != 0; }
 		else if (key == "sfx_volume") in >> config.sfx_volume;
 		else if (key == "music_volume") in >> config.music_volume;
 		else if (key == "preset") in >> config.preset;
@@ -194,6 +196,7 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "finesse " << config.finesse_rule << "\n";
 	out << "spins " << config.spin_rule << "\n";
 	out << "clears " << config.cleartype << "\n";
+	out << "cleardelay " << (config.clear_delay ? 1 : 0) << "\n";
 	out << "sfx_volume " << config.sfx_volume << "\n";
 	out << "music_volume " << config.music_volume << "\n";
 	out << "preset " << config.preset << "\n";
