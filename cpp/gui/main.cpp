@@ -286,6 +286,11 @@ struct App {
 	Fonts fonts;
 	bool paused = false;
 	bool editing = false;        // The stat layout editor is live.
+	// The pre-game countdown: frames left before the sim starts stepping,
+	// and how many a fresh game deals (zero under the smoke harness, whose
+	// frame budget the countdown would silently eat).
+	int countdown = 0;
+	int start_delay = 150;
 	// The editor opened from the menu, over a throwaway board: closing it
 	// drops the preview game and lands back in the settings screen.
 	bool layout_preview = false;
@@ -364,6 +369,7 @@ void start_game (App& app, int mode) {
 	app.place_panels = true;
 	app.hiscore_place = -1;
 	app.score_saved = false;
+	app.countdown = app.start_delay;
 	app.audio.start_music();
 }
 
@@ -385,6 +391,7 @@ void start_versus (App& app) {
 	app.place_panels = true;
 	app.hiscore_place = -1;
 	app.score_saved = false;
+	app.countdown = app.start_delay;
 	app.audio.start_music();
 }
 
@@ -416,6 +423,7 @@ void next_versus_round (App& app) {
 	app.session.emplace(config, app.seeds(), meta);
 	app.versus->round += 1;
 	app.versus->begin_round(config, app.seeds(), meta);
+	app.countdown = app.start_delay;
 }
 
 void end_game (App& app) {
@@ -533,8 +541,24 @@ void handle_event (App& app, const SDL_Event& event) {
 		}
 		return;
 	}
+	// R restarts the run, hardcoded like Escape rather than rebindable - a
+	// binding would put it in the smoke masher's pool, and the masher would
+	// never finish a game again. Works paused and on the loss screen; stays
+	// out of the layout editor's preview board and of ImGui's text fields
+	// (the high score name entry types Rs of its own).
+	if (down && event.key.keysym.scancode == SDL_SCANCODE_R
+		&& !ImGui::GetIO().WantCaptureKeyboard
+		&& ((app.screen == Screen::Game && !app.editing && !app.layout_preview)
+			|| app.screen == Screen::Over)) {
+		if (app.mode == 5) {
+			start_versus(app);
+		} else {
+			start_game(app, app.mode);
+		}
+		return;
+	}
 	if (app.screen != Screen::Game || app.paused || app.editing
-		|| ImGui::GetIO().WantCaptureKeyboard) {
+		|| app.countdown > 0 || ImGui::GetIO().WantCaptureKeyboard) {
 		return;
 	}
 	if (const auto key = key_for(app.config, event.key.keysym.scancode)) {
@@ -743,6 +767,20 @@ void draw_versus_panel (App& app) {
 	}
 }
 
+// The pre-game count, front and centre over the frozen board: 3, 2, 1.
+void draw_countdown (App& app) {
+	const int number = app.countdown / 50 + 1;
+	char text[16];
+	std::snprintf(text, sizeof text, "%d", number);
+	ImFont* font = app.fonts.title;
+	const ImVec2 extent = font->CalcTextSizeA(
+		font->FontSize, FLT_MAX, 0.f, text);
+	ImGui::GetForegroundDrawList()->AddText(font, font->FontSize,
+		ImVec2(kBoardX + (kBoardW - extent.x) / 2,
+			kBoardY + kBoardH / 2.f - font->FontSize),
+		IM_COL32(255, 210, 74, 255), text);
+}
+
 void draw_stat_panels (App& app) {
 	const ImVec2 origin(kBoardX + kBoardW + ui(140), static_cast<float>(kBoardY));
 	for (const StatDef& stat : all_stats()) {
@@ -851,19 +889,32 @@ void draw_settings (App& app) {
 	if (ImGui::BeginTabBar("settings", ImGuiTabBarFlags_None)) {
 		if (ImGui::BeginTabItem("Handling")) {
 			ImGui::Spacing();
-			ImGui::SliderInt("DAS (ms)", &app.config.das, 0, 330);
-			ImGui::SliderInt("ARR (ms)", &app.config.arr, 0, 83);
-			ImGui::SliderInt("DCD (ms)", &app.config.dcd, 0, 330);
-			ImGui::SliderInt("SDF (x, 40 = instant)", &app.config.sdf, 5, 40);
-			ImGui::SliderInt("ARE (ms)", &app.config.are, 0, 500);
+			// AlwaysClamp: ctrl-click turns a slider into a raw input box,
+			// and an unclamped sdf of 0 would divide the gravity by zero.
+			ImGui::SliderInt("DAS (ms)", &app.config.das, 0, 330,
+				"%d", ImGuiSliderFlags_AlwaysClamp);
+			ImGui::SliderInt("ARR (ms)", &app.config.arr, 0, 83,
+				"%d", ImGuiSliderFlags_AlwaysClamp);
+			ImGui::SliderInt("DCD (ms)", &app.config.dcd, 0, 330,
+				"%d", ImGuiSliderFlags_AlwaysClamp);
+			ImGui::SliderInt("SDF (x, 40 = instant)", &app.config.sdf, 5, 40,
+				"%d", ImGuiSliderFlags_AlwaysClamp);
+			ImGui::SliderInt("ARE (ms)", &app.config.are, 0, 500,
+				"%d", ImGuiSliderFlags_AlwaysClamp);
 			ImGui::Spacing();
 			float forced = static_cast<float>(app.config.forced_delay);
 			if (ImGui::SliderFloat("Forced drop (s, 0 = off)", &forced,
-				0.f, 5.f, "%.1f")) {
-				app.config.forced_delay = forced;
+				0.f, 5.f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
+				// Stored to the hundredth, exactly - the sim compares this
+				// against a clock built from exact 0.02 steps, and a value
+				// laundered through float lands a frame late.
+				app.config.forced_delay
+					= std::round(forced * 100.f) / 100.;
 			}
 			ImGui::Spacing();
 			ImGui::TextDisabled("Handling applies from the next game.");
+			ImGui::TextDisabled(
+				"The engine runs 20ms frames; values land on that grid.");
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Rules")) {
@@ -936,7 +987,8 @@ void draw_settings (App& app) {
 				app.config.keys = default_keys();
 				app.rebinding.clear();
 			}
-			ImGui::TextDisabled("Escape pauses and cannot be bound.");
+			ImGui::TextDisabled(
+			"Escape pauses and R restarts; neither can be bound.");
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Layout")) {
@@ -1283,6 +1335,11 @@ void draw_help (App& app) {
 		ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "Escape");
 		ImGui::TableSetColumnIndex(1);
 		ImGui::TextUnformatted("Pause");
+		ImGui::TableNextRow();
+		ImGui::TableSetColumnIndex(0);
+		ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "R");
+		ImGui::TableSetColumnIndex(1);
+		ImGui::TextUnformatted("Restart the run");
 		ImGui::EndTable();
 	}
 	ImGui::Separator();
@@ -2066,6 +2123,12 @@ int run (bool smoke, long smoke_frames) {
 
 	std::mt19937 mash(20260818);
 	if (smoke) {
+		// The countdown would silently eat the smoke run's frame budget on
+		// every start, so scripted runs skip it - unless FORCETRIS_COUNTDOWN
+		// asks for it, which is how its overlay gets screenshotted.
+		if (std::getenv("FORCETRIS_COUNTDOWN") == nullptr) {
+			app.start_delay = 0;
+		}
 		// FORCETRIS_SMOKE_MODE picks which mode the scripted run plays, so
 		// every mode's whole loop - dealer, session, end screen - can be
 		// proven headlessly, not only free's.
@@ -2139,6 +2202,13 @@ int run (bool smoke, long smoke_frames) {
 		while (behind >= 0.02) {
 			behind -= 0.02;
 			if (app.screen == Screen::Game && !app.paused && !app.editing) {
+				if (app.countdown > 0) {
+					// The pre-game breath: both boards stand frozen - the
+					// versus step is skipped too, so the bot waits with you.
+					--app.countdown;
+					++frames;
+					continue;
+				}
 				const bool live = app.session->step();
 				if (app.versus.has_value()) {
 					app.versus->step(*app.session);
@@ -2190,6 +2260,9 @@ int run (bool smoke, long smoke_frames) {
 			draw_banner(app);
 			if (app.versus.has_value()) {
 				draw_versus_panel(app);
+			}
+			if (app.screen == Screen::Game && app.countdown > 0) {
+				draw_countdown(app);
 			}
 		}
 		if (app.screen == Screen::Viewer && app.viewing.has_value()) {

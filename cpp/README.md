@@ -39,8 +39,13 @@ a sharp window at the right size instead of a stretched blur of the 96dpi
 one.
 
 Arrows move, `Z`/`X`/`A` turn, space drops, down soft drops, shift or `C`
-holds, escape pauses. Everything else is the mouse — and all of it except
-escape is rebindable: the settings screen lists every action, a click on a
+holds, escape pauses, and `R` restarts the run - mid-game, paused, or from
+the loss screen. Every game opens on a three-second countdown over the
+frozen board, so clicking Play never throws the first piece at you cold;
+in a versus match the bot waits through it too, and every round gets its
+own. Everything else is the mouse — and all of it except
+escape and `R` is rebindable: the settings screen lists every action, a
+click on a
 bound key unbinds it, and `+` grabs the next key you press. An action can
 hold any number of keys, but a key serves one action - binding it somewhere
 new takes it away from where it was, so nothing fires twice.

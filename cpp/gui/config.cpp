@@ -1,5 +1,6 @@
 #include "config.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -165,6 +166,15 @@ Config load_config (const std::string& path) {
 			config.unknown.push_back(line);
 		}
 	}
+	// A hand-edited or damaged file must not smuggle values the sliders
+	// cannot reach - the sim divides gravity by sdf, and the Python side
+	// clamps its own file the same way on load.
+	config.das = std::clamp(config.das, 0, 330);
+	config.arr = std::clamp(config.arr, 0, 83);
+	config.dcd = std::clamp(config.dcd, 0, 330);
+	config.sdf = std::clamp(config.sdf, 5, 40);
+	config.are = std::clamp(config.are, 0, 500);
+	config.forced_delay = std::clamp(config.forced_delay, 0., 5.);
 	return config;
 }
 
