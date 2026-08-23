@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <optional>
 #include <random>
@@ -23,6 +24,10 @@
 #include <vector>
 
 #include <SDL.h>
+#ifdef __ANDROID__
+// On Android SDL owns the real entry point; main below becomes SDL_main.
+#include <SDL_main.h>
+#endif
 
 #include "imgui.h"
 #include "imgui_impl_sdl2.h"
@@ -62,6 +67,18 @@ int px (float units) {
 	return static_cast<int>(std::lround(units * kScale));
 }
 
+// The phone build: true on Android (or under FORCETRIS_MOBILE=1, which is
+// how the layouts are exercised on a desk). Off, nothing below changes a
+// pixel of the desktop game.
+bool kMobile = false;
+bool kPortrait = false;
+// Where the versus opponent's mini board sits - portrait has no right
+// margin to put it in, so the spot moves with the layout.
+int kMiniX = 940;
+int kMiniY = 88;
+int kMiniCell = 13;
+int kPreviews = 5;   // Portrait trims the queue to make room.
+
 void apply_ui_scale (float scale) {
 	kScale = scale;
 	kCell = px(26);
@@ -69,6 +86,38 @@ void apply_ui_scale (float scale) {
 	kBoardY = px(48);
 	kBoardW = kWidth * kCell;
 	kBoardH = kHeight * kCell;
+	kMiniX = px(940);
+	kMiniY = kBoardY + px(40);
+	kMiniCell = px(13);
+	kPreviews = 5;
+}
+
+// The phone layouts. Landscape is the desktop design fitted to the screen
+// and centred; portrait rebuilds the essential column - hold, board, queue
+// - across the width, pushes it to the top, and leaves the bottom of the
+// screen to the touch controls. The stat panels only draw in landscape.
+void apply_mobile_layout (int w, int h) {
+	kPortrait = h > w;
+	if (!kPortrait) {
+		const float scale = std::max(0.5f, std::min(w / 1180.f, h / 700.f));
+		apply_ui_scale(scale);
+		const int dx = std::max(0, (w - px(1180)) / 2);
+		kBoardX += dx;
+		kMiniX += dx;
+	} else {
+		// Essential units across: 122 of hold, 264 of board, 122 of queue,
+		// margins - 540 in all, centred when the screen is wider.
+		const float scale = std::max(0.5f, std::min(w / 540.f, h / 1150.f));
+		apply_ui_scale(scale);
+		kBoardX = px(134) + std::max(0, (w - px(540)) / 2);
+		kBoardY = px(56);
+		// Three previews instead of five, and the opponent's board shrinks
+		// and tucks under them.
+		kPreviews = 3;
+		kMiniCell = px(8);
+		kMiniX = kBoardX + kBoardW + px(18);
+		kMiniY = kBoardY + px(348);
+	}
 }
 
 // The typefaces, baked from a real vector font when one can be found: the
@@ -117,6 +166,7 @@ std::pair<std::string, std::string> find_font_files () {
 		"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
 		"/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
 		"/usr/share/fonts/TTF/DejaVuSans.ttf",
+		"/system/fonts/Roboto-Regular.ttf",
 	});
 	const std::string bold = first_file({
 		"C:\\Windows\\Fonts\\segoeuib.ttf",
@@ -126,6 +176,7 @@ std::pair<std::string, std::string> find_font_files () {
 		"/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
 		"/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
 		"/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+		"/system/fonts/Roboto-Bold.ttf",
 	});
 	return {regular, bold};
 }
@@ -302,6 +353,18 @@ struct App {
 	int cheese_period = 250;     // Survival's frames per rising row.
 	int cheese_holes = 1;        // Holes per cheese row.
 	int cheese_messiness = 100;  // Percent chance a row re-rolls its holes.
+	// The phone build's on-screen controls: buttons feeding the same key
+	// path the keyboard does. A hardware key hides them; a touch brings
+	// them back.
+	struct TouchButton {
+		Key key;
+		const char* label;
+		SDL_Rect rect;
+	};
+	std::vector<TouchButton> touch;
+	std::map<SDL_FingerID, size_t> touch_held;
+	bool touch_shown = true;
+	bool relayout = false;       // The screen rotated; rebuild before drawing.
 	// The match against the bot, when one is on; who it is and how long.
 	std::optional<VersusMatch> versus;
 	int bot_rank = 4;            // Index into bot::ranks(); 4 is S.
@@ -501,6 +564,51 @@ void handle_event (App& app, const SDL_Event& event) {
 		app.quit = true;
 		return;
 	}
+	if (kMobile && event.type == SDL_WINDOWEVENT
+		&& event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+		// The screen rotated (or the window changed shape): rebuild the
+		// layout and the fonts before the next frame, not mid-draw.
+		app.relayout = true;
+		return;
+	}
+	if (event.type == SDL_FINGERDOWN || event.type == SDL_FINGERUP
+		|| event.type == SDL_FINGERMOTION) {
+		if (!kMobile || app.renderer == nullptr) {
+			return;
+		}
+		int w = 0;
+		int h = 0;
+		SDL_GetRendererOutputSize(app.renderer, &w, &h);
+		const int x = static_cast<int>(event.tfinger.x * w);
+		const int y = static_cast<int>(event.tfinger.y * h);
+		if (event.type == SDL_FINGERDOWN) {
+			app.touch_shown = true;   // Any touch calls the buttons back.
+			if (app.screen == Screen::Game && !app.paused && !app.editing
+				&& app.countdown <= 0 && app.session.has_value()) {
+				for (size_t i = 0; i < app.touch.size(); ++i) {
+					const SDL_Rect& rect = app.touch[i].rect;
+					if (x >= rect.x && x < rect.x + rect.w
+						&& y >= rect.y && y < rect.y + rect.h) {
+						app.touch_held[event.tfinger.fingerId] = i;
+						app.session->key(app.touch[i].key, true);
+						break;
+					}
+				}
+			}
+		} else if (event.type == SDL_FINGERUP) {
+			// Always released, whatever screen we are on now - a finger
+			// that outlives its round must not leave a key stuck down.
+			const auto found = app.touch_held.find(event.tfinger.fingerId);
+			if (found != app.touch_held.end()) {
+				if (app.session.has_value()
+					&& found->second < app.touch.size()) {
+					app.session->key(app.touch[found->second].key, false);
+				}
+				app.touch_held.erase(found);
+			}
+		}
+		return;
+	}
 	if (event.type != SDL_KEYDOWN && event.type != SDL_KEYUP) {
 		return;
 	}
@@ -518,7 +626,8 @@ void handle_event (App& app, const SDL_Event& event) {
 		}
 		return;
 	}
-	if (down && event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+	if (down && (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE
+		|| event.key.keysym.scancode == SDL_SCANCODE_AC_BACK)) {
 		if (app.screen == Screen::Game) {
 			if (app.editing) {
 				app.editing = false;
@@ -562,6 +671,11 @@ void handle_event (App& app, const SDL_Event& event) {
 		return;
 	}
 	if (const auto key = key_for(app.config, event.key.keysym.scancode)) {
+		if (kMobile) {
+			// A hardware keyboard is talking; the buttons step aside until
+			// the next touch.
+			app.touch_shown = false;
+		}
 		app.session->key(*key, down);
 	}
 }
@@ -645,7 +759,8 @@ void draw_board (App& app) {
 	fill(renderer, kBoardX - px(122), kBoardY, px(104), px(86), {20, 26, 34, 255});
 	draw_preview(renderer, sim.stored(), kBoardX - px(122) + px(16), kBoardY + px(12), px(18));
 	const auto& queue = sim.queue();
-	for (int slot = 0; slot < 5 && slot < static_cast<int>(queue.size()); ++slot) {
+	for (int slot = 0; slot < kPreviews
+		&& slot < static_cast<int>(queue.size()); ++slot) {
 		fill(renderer, kBoardX + kBoardW + px(18), kBoardY + slot * px(92), px(104), px(86),
 			{20, 26, 34, 255});
 		draw_preview(renderer, queue[slot],
@@ -701,9 +816,9 @@ void draw_versus_panel (App& app) {
 	VersusMatch& match = *app.versus;
 	const Sim& theirs = match.bot->sim();
 	SDL_Renderer* renderer = app.renderer;
-	const int cell = px(13);
-	const int left = px(940);
-	const int top = kBoardY + px(40);
+	const int cell = kMiniCell;
+	const int left = kMiniX;
+	const int top = kMiniY;
 	fill(renderer, left - px(2), top - px(2),
 		kWidth * cell + px(4), kHeight * cell + px(4), {32, 40, 53, 255});
 	fill(renderer, left, top, kWidth * cell, kHeight * cell, {14, 18, 24, 255});
@@ -738,9 +853,15 @@ void draw_versus_panel (App& app) {
 		app.session->sim().pending_garbage(), kCell);
 	meter(left - px(10), top + kHeight * cell,
 		theirs.pending_garbage(), cell);
-	// The scoreboard, under the bot's board.
-	ImGui::SetNextWindowPos(ImVec2(static_cast<float>(left) - ui(4),
-		static_cast<float>(top + kHeight * cell) + ui(10)));
+	// The scoreboard: under the bot's board, except in portrait, where the
+	// right margin is too narrow for it - there it sits under the player's.
+	if (kPortrait) {
+		ImGui::SetNextWindowPos(ImVec2(static_cast<float>(kBoardX),
+			static_cast<float>(kBoardY + kBoardH) + ui(24)));
+	} else {
+		ImGui::SetNextWindowPos(ImVec2(static_cast<float>(left) - ui(4),
+			static_cast<float>(top + kHeight * cell) + ui(10)));
+	}
 	ImGui::Begin("versus score", nullptr, ImGuiWindowFlags_NoTitleBar
 		| ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoSavedSettings);
@@ -779,6 +900,79 @@ void draw_countdown (App& app) {
 		ImVec2(kBoardX + (kBoardW - extent.x) / 2,
 			kBoardY + kBoardH / 2.f - font->FontSize),
 		IM_COL32(255, 210, 74, 255), text);
+}
+
+// Where the phone's buttons sit. Portrait gets a two-row grid under the
+// board; landscape gets a thumb cluster in each bottom corner.
+void layout_touch (App& app, int w, int h) {
+	app.touch.clear();
+	app.touch_held.clear();
+	if (!kMobile) {
+		return;
+	}
+	const auto add = [&] (Key key, const char* label, int x, int y,
+	                      int bw, int bh) {
+		app.touch.push_back(App::TouchButton{key, label,
+			SDL_Rect{x, y, bw, bh}});
+	};
+	if (kPortrait) {
+		// Below the scoreboard's line, which owns the strip under the board.
+		const int top = kBoardY + kBoardH + px(96);
+		const int gap = px(8);
+		const int bw = (w - gap * 5) / 4;
+		const int bh = std::max(px(56), std::min(px(104),
+			(h - top - gap * 3) / 2));
+		const char* labels[8]
+			= {"<", ">", "CCW", "CW", "SOFT", "DROP", "180", "HOLD"};
+		const Key keys[8] = {Key::Left, Key::Right, Key::Ccw, Key::Cw,
+			Key::Soft, Key::Hard, Key::Flip, Key::Hold};
+		for (int i = 0; i < 8; ++i) {
+			add(keys[i], labels[i], gap + (i % 4) * (bw + gap),
+				top + (i / 4) * (bh + gap), bw, bh);
+		}
+	} else {
+		const int bw = px(84);
+		const int bh = px(84);
+		const int gap = px(10);
+		const int y1 = h - bh * 2 - gap * 2;
+		const int y2 = h - bh - gap;
+		add(Key::Soft, "SOFT", gap, y1, bw, bh);
+		add(Key::Hold, "HOLD", gap * 2 + bw, y1, bw, bh);
+		add(Key::Left, "<", gap, y2, bw, bh);
+		add(Key::Right, ">", gap * 2 + bw, y2, bw, bh);
+		add(Key::Ccw, "CCW", w - gap * 2 - bw * 2, y1, bw, bh);
+		add(Key::Cw, "CW", w - gap - bw, y1, bw, bh);
+		add(Key::Flip, "180", w - gap * 2 - bw * 2, y2, bw, bh);
+		add(Key::Hard, "DROP", w - gap - bw, y2, bw, bh);
+	}
+}
+
+void draw_touch (App& app) {
+	if (!kMobile || !app.touch_shown || app.touch.empty()) {
+		return;
+	}
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	for (size_t i = 0; i < app.touch.size(); ++i) {
+		const App::TouchButton& button = app.touch[i];
+		bool held = false;
+		for (const auto& [finger, at] : app.touch_held) {
+			(void) finger;
+			held = held || at == i;
+		}
+		const ImVec2 a(static_cast<float>(button.rect.x),
+			static_cast<float>(button.rect.y));
+		const ImVec2 b(a.x + button.rect.w, a.y + button.rect.h);
+		draw->AddRectFilled(a, b, held ? IM_COL32(64, 198, 224, 80)
+			: IM_COL32(255, 255, 255, 22), ui(12));
+		draw->AddRect(a, b, IM_COL32(150, 165, 185, 90), ui(12));
+		ImFont* font = app.fonts.head;
+		const ImVec2 extent = font->CalcTextSizeA(
+			font->FontSize, FLT_MAX, 0.f, button.label);
+		draw->AddText(font, font->FontSize,
+			ImVec2(a.x + (button.rect.w - extent.x) / 2,
+				a.y + (button.rect.h - extent.y) / 2),
+			IM_COL32(210, 220, 235, 210), button.label);
+	}
 }
 
 void draw_stat_panels (App& app) {
@@ -1458,13 +1652,14 @@ void draw_viewer (App& app) {
 				seen = &theirs;
 			}
 		}
-		// Below the info window, which owns the top of this margin.
-		const int mini_left = px(940);
-		const int mini_top = kBoardY + px(340);
+		// Below the info window, which owns the top of this margin (except
+		// on a phone, where the layout says where the mini board fits).
+		const int mini_left = kMiniX;
+		const int mini_top = kMobile ? kMiniY : kBoardY + px(340);
 		draw_row_strings(app,
 			replay::padded(seen != nullptr ? seen->rows
 				: std::vector<std::string>{}),
-			mini_left, mini_top, px(13));
+			mini_left, mini_top, kMiniCell);
 		draw_label("BOT", static_cast<float>(mini_left),
 			static_cast<float>(mini_top - ui(22)));
 	}
@@ -2059,10 +2254,65 @@ void tour_screen (App& app, int stop) {
 	}
 }
 
+#ifdef __ANDROID__
+// The assets ride inside the APK, where fopen cannot see them. On first
+// launch they are unpacked into the app's own storage - the build wrote
+// assets.txt listing every file - and that storage becomes the game root,
+// so every existing path in the game just works.
+std::string android_root () {
+	const char* base = SDL_AndroidGetInternalStoragePath();
+	const std::string root = base != nullptr ? base : ".";
+	SDL_RWops* list = SDL_RWFromFile("assets.txt", "rb");
+	if (list == nullptr) {
+		return root;
+	}
+	const Sint64 size = SDL_RWsize(list);
+	std::string names(size > 0 ? static_cast<size_t>(size) : 0, '\0');
+	SDL_RWread(list, names.data(), 1, names.size());
+	SDL_RWclose(list);
+	std::error_code ignored;
+	size_t at = 0;
+	while (at < names.size()) {
+		size_t end = names.find('\n', at);
+		if (end == std::string::npos) {
+			end = names.size();
+		}
+		const std::string name = names.substr(at, end - at);
+		at = end + 1;
+		if (name.empty()) {
+			continue;
+		}
+		const std::filesystem::path dest
+			= std::filesystem::path(root) / name;
+		if (std::filesystem::exists(dest, ignored)) {
+			continue;
+		}
+		SDL_RWops* in = SDL_RWFromFile(name.c_str(), "rb");
+		if (in == nullptr) {
+			continue;
+		}
+		const Sint64 length = SDL_RWsize(in);
+		std::vector<char> bytes(length > 0 ? static_cast<size_t>(length) : 0);
+		SDL_RWread(in, bytes.data(), 1, bytes.size());
+		SDL_RWclose(in);
+		std::filesystem::create_directories(dest.parent_path(), ignored);
+		std::ofstream out(dest, std::ios::binary);
+		out.write(bytes.data(),
+			static_cast<std::streamsize>(bytes.size()));
+	}
+	return root;
+}
+#endif
+
 int run (bool smoke, long smoke_frames) {
 	App app;
 	app.config_file = config_path();
 	app.config = load_config(app.config_file);
+#ifdef __ANDROID__
+	kMobile = true;
+#else
+	kMobile = std::getenv("FORCETRIS_MOBILE") != nullptr;
+#endif
 
 #ifdef SDL_HINT_WINDOWS_DPI_AWARENESS
 	// Without this Windows draws the window at 96dpi and stretches the
@@ -2075,14 +2325,16 @@ int run (bool smoke, long smoke_frames) {
 		SDL_Log("SDL_Init: %s", SDL_GetError());
 		return 1;
 	}
+#ifdef __ANDROID__
+	app.root = android_root();
+#else
+	app.root = game_root();
+#endif
 	// No audio device is not a reason not to play; the mixer just stays shut.
 	if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
-		app.root = game_root();
 		app.audio.open(app.root);
 		app.audio.set_sfx_volume(app.config.sfx_volume);
 		app.audio.set_music_volume(app.config.music_volume);
-	} else {
-		app.root = game_root();
 	}
 	float scale = 1.f;
 	float dpi = 0.f;
@@ -2099,8 +2351,26 @@ int run (bool smoke, long smoke_frames) {
 		}
 	}
 	apply_ui_scale(scale);
+	int want_w = px(1180);
+	int want_h = px(700);
+	if (kMobile) {
+		// On a device SDL ignores the size and fills the screen. On a desk
+		// FORCETRIS_MOBILE=WxH stands a phone-shaped window up, which is
+		// how the phone layouts are looked at without a phone.
+		want_w = 2280;
+		want_h = 1080;
+		if (const char* shape = std::getenv("FORCETRIS_MOBILE")) {
+			int w = 0;
+			int h = 0;
+			if (std::sscanf(shape, "%dx%d", &w, &h) == 2
+				&& w > 200 && h > 200) {
+				want_w = w;
+				want_h = h;
+			}
+		}
+	}
 	app.window = SDL_CreateWindow("Forcetris",
-		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, px(1180), px(700),
+		SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, want_w, want_h,
 		SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
 	if (app.window == nullptr) {
 		SDL_Log("SDL_CreateWindow: %s", SDL_GetError());
@@ -2115,6 +2385,13 @@ int run (bool smoke, long smoke_frames) {
 	if (app.renderer == nullptr) {
 		SDL_Log("SDL_CreateRenderer: %s", SDL_GetError());
 		return 1;
+	}
+	if (kMobile) {
+		int w = 0;
+		int h = 0;
+		SDL_GetRendererOutputSize(app.renderer, &w, &h);
+		apply_mobile_layout(w, h);
+		layout_touch(app, w, h);
 	}
 
 	IMGUI_CHECKVERSION();
@@ -2249,6 +2526,22 @@ int run (bool smoke, long smoke_frames) {
 			}
 		}
 
+		if (app.relayout) {
+			// The screen rotated: re-derive the layout, the touch buttons
+			// and the fonts before this frame draws anything.
+			app.relayout = false;
+			int w = 0;
+			int h = 0;
+			SDL_GetRendererOutputSize(app.renderer, &w, &h);
+			apply_mobile_layout(w, h);
+			layout_touch(app, w, h);
+			ImGui::GetIO().Fonts->Clear();
+			app.fonts = load_fonts();
+			ImGui_ImplSDLRenderer2_DestroyDeviceObjects();
+			ImGui::GetStyle() = ImGuiStyle();
+			apply_theme();
+			app.place_panels = true;
+		}
 		ImGui_ImplSDLRenderer2_NewFrame();
 		ImGui_ImplSDL2_NewFrame();
 		ImGui::NewFrame();
@@ -2260,13 +2553,20 @@ int run (bool smoke, long smoke_frames) {
 			draw_board(app);
 			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
 			draw_label("NEXT", kBoardX + kBoardW + ui(18), kBoardY - ui(24));
-			draw_stat_panels(app);
+			if (!kPortrait) {
+				// A phone held upright has no margin for the stat panels;
+				// the board and the fight are the screen.
+				draw_stat_panels(app);
+			}
 			draw_banner(app);
 			if (app.versus.has_value()) {
 				draw_versus_panel(app);
 			}
 			if (app.screen == Screen::Game && app.countdown > 0) {
 				draw_countdown(app);
+			}
+			if (app.screen == Screen::Game && !app.paused && !app.editing) {
+				draw_touch(app);
 			}
 		}
 		if (app.screen == Screen::Viewer && app.viewing.has_value()) {
@@ -2382,7 +2682,7 @@ int run (bool smoke, long smoke_frames) {
 } // namespace gui
 } // namespace forcetris
 
-int main (int, char**) {
+int main (int, char* []) {
 	long smoke_frames = 0;
 	if (const char* smoke = std::getenv("FORCETRIS_SMOKE")) {
 		smoke_frames = std::strtol(smoke, nullptr, 10);

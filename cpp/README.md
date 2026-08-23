@@ -180,6 +180,20 @@ in the same JSON the Python game writes; either game can browse and watch
 the other's recordings, re-enacted stop by stop with the piece walking its
 recorded trail, or the finesse-corrected route with *Perfect finesse* on.
 
+The game also runs on Android, phones and tablets both: the same sources
+build as the shared library SDL's activity loads (`cpp/android/build.sh` -
+no Gradle, just the NDK's CMake toolchain, `javac`, `d8`, `aapt`,
+`zipalign` and `apksigner`; the script's header lists what it needs). On a
+device the game plays in either orientation - landscape is the desktop
+picture fitted to the screen, portrait rebuilds the essential column and
+trims the previews to three - with on-screen touch buttons that step aside
+whenever a hardware keyboard talks and come back at a touch, and the
+Android back button standing in for Escape. Assets unpack out of the APK
+into the app's own storage on first launch, so every path in the game
+works unchanged. On a desk, `FORCETRIS_MOBILE=WxH` stands a phone-shaped
+window up with the same layouts and buttons, which is how they are
+screenshot-verified without a phone.
+
 On Windows, install SDL2 through vcpkg (`vcpkg install sdl2`) or point
 `SDL2_DIR` at an unpacked SDL2 development package, then run the same CMake
 commands. Dear ImGui is vendored in `third_party/imgui`, so there is nothing

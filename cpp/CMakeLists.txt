@@ -41,6 +41,36 @@ target_include_directories(forcetris_core PUBLIC include)
 target_include_directories(forcetris_core SYSTEM PRIVATE third_party)
 target_compile_options(forcetris_core PRIVATE ${FORCETRIS_WARNINGS})
 
+# The Android build: the same game sources built as the shared library
+# SDLActivity loads. Everything desktop - the tests, the window binary -
+# is skipped; the phone gets the game and nothing else.
+if (ANDROID)
+	find_package(SDL2 REQUIRED)
+	add_library(imgui STATIC
+		third_party/imgui/imgui.cpp
+		third_party/imgui/imgui_draw.cpp
+		third_party/imgui/imgui_tables.cpp
+		third_party/imgui/imgui_widgets.cpp
+		third_party/imgui/backends/imgui_impl_sdl2.cpp
+		third_party/imgui/backends/imgui_impl_sdlrenderer2.cpp
+	)
+	target_include_directories(imgui PUBLIC
+		third_party/imgui third_party/imgui/backends)
+	target_link_libraries(imgui PUBLIC SDL2::SDL2)
+	add_library(main SHARED
+		gui/main.cpp
+		gui/session.cpp
+		gui/stats.cpp
+		gui/config.cpp
+		gui/audio.cpp
+		gui/versus.cpp
+	)
+	target_link_libraries(main PRIVATE forcetris_core imgui SDL2::SDL2)
+	target_include_directories(main SYSTEM PRIVATE third_party/stb)
+	target_compile_options(main PRIVATE ${FORCETRIS_WARNINGS})
+	return()
+endif()
+
 add_executable(equivalence tests/equivalence.cpp)
 target_link_libraries(equivalence PRIVATE forcetris_core)
 target_compile_options(equivalence PRIVATE ${FORCETRIS_WARNINGS})
