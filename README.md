@@ -595,6 +595,11 @@ gives, two ways:
   frames all lands on the next one, in order, each move committed before
   the next press reads the piece — the same placement the old
   one-event-per-frame drain reached, minus the queueing lag.
+- `fuse_check` — the fuse ruleset (the variant's own core, config-gated
+  off by default): the per-level schedule and its floor, the refuel bank
+  and its draw cap, the Flash window and Flow gauge, Overdrive's frozen
+  fuse and attack multiplier, the hold that no longer resets the clock —
+  and that with the flag off none of it exists.
 - `munch_check` — MinoMuncher's statistics re-derived over our own replay
   records, pinned on hand-built games: clear buckets, the attack-per-line
   split against what was dug, the surge floor of four, the validated well

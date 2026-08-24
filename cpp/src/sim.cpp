@@ -140,6 +140,57 @@ void Sim::eval_block () {
 	}
 }
 
+// The fuse ruleset's level: arcade has a real one, everything else earns
+// one per ten lines - defined here so no graded mode logic learns of it.
+int Sim::fuse_level () const {
+	return config_.gametype == 2 ? level_ : lines_cleared_ / 10;
+}
+
+// Deal a fresh fuse to the piece just spawned: the schedule for the level,
+// topped up from the refuel bank - but never past the base. At level zero
+// the schedule is the base, so the bank only starts paying out once the
+// game has begun to squeeze.
+void Sim::fuse_prime () {
+	const double schedule = std::clamp(
+		config_.fuse_base - fuse_level() * config_.fuse_decay,
+		config_.fuse_min, config_.fuse_base);
+	const double draw = std::max(0., std::min(
+		{fuse_bank_, config_.fuse_draw_cap, config_.fuse_base - schedule}));
+	fuse_bank_ -= draw;
+	fuse_total_ = schedule + draw;
+	fuse_warned_ = false;
+}
+
+// The Flow accounting at a lock: a forced drop bleeds the gauge, a lock
+// with fuse to spare charges it - scaled by how much was spared, plus the
+// Flash bonus for a lock inside the window. A full gauge ignites
+// Overdrive, unless one is already burning.
+void Sim::fuse_lock (bool forced) {
+	if (!config_.fuse || lost_ || !piece_elapsed_.has_value()) {
+		return;
+	}
+	if (forced) {
+		flow_ = std::max(0., flow_ - config_.flow_burn_loss);
+		return;
+	}
+	if (fuse_total_ <= 0.) {
+		return;
+	}
+	const double left = std::max(0., fuse_total_ - *piece_elapsed_);
+	double gain = config_.flow_lock_gain * (left / fuse_total_);
+	const double window = std::max(
+		config_.flash_floor, fuse_total_ * config_.flash_frac);
+	if (*piece_elapsed_ <= window) {
+		gain += config_.flow_flash_gain;
+		cue("flash");
+	}
+	flow_ = std::min(100., flow_ + gain);
+	if (flow_ >= 100. && overdrive_frames_ == 0) {
+		overdrive_frames_ = static_cast<long>(config_.overdrive_secs * 50.);
+		cue("overdrive");
+	}
+}
+
 void Sim::set_shape (int form) {
 	floor_kick_ = true;
 	hold_lock_ = false;
@@ -166,6 +217,9 @@ void Sim::set_shape (int form) {
 		}
 	} else {
 		piece_elapsed_ = 0.;
+		if (config_.fuse) {
+			fuse_prime();
+		}
 	}
 }
 
@@ -197,8 +251,12 @@ bool Sim::hold_shape () {
 			stored_ = piece_.form;
 			piece_ = Piece{coming, 0, kSpawnX, kSpawnY};
 			cand_x_ = piece_.x;
-			// A swap bypasses set_shape, so the timer and the count restart here.
-			piece_elapsed_ = 0.;
+			// A swap bypasses set_shape, so the timer and the count restart
+			// here - except under the fuse, where the burn rides through the
+			// swap: a hold that reset it would be a free refill on demand.
+			if (!config_.fuse) {
+				piece_elapsed_ = 0.;
+			}
 			inputs_ = 0;
 			input_log_.clear();
 			trail_.clear();
@@ -357,9 +415,15 @@ bool Sim::eval_finesse (bool forced) {
 	// Handed back: same piece, fresh spawn, and the time it already spent. A
 	// soft drop held through the retry gets no new keypress to re-mark where
 	// it started from, and a mark left at the floor would score a climb.
+	// The fuse rides through too - set_shape would deal a fresh one and
+	// double-draw the bank for a piece that never left play.
 	const auto spent = piece_elapsed_;
+	const double fuse_total = fuse_total_;
+	const double fuse_bank = fuse_bank_;
 	set_shape(piece_.form);
 	piece_elapsed_ = spent;
+	fuse_total_ = fuse_total;
+	fuse_bank_ = fuse_bank;
 	soft_pos_ = piece_.y;
 	return true;
 }
@@ -395,6 +459,8 @@ void Sim::lock (bool forced, int posdif) {
 	// Closes off the last press of a piece that settled under gravity. A hard
 	// drop has already done it, and settle_move only fills a stop still open.
 	settle_move();
+	// The Flow accounting, while the piece's clock still stands.
+	fuse_lock(forced);
 	Locked entry{};
 	entry.frame = frame_;
 	entry.form = piece_.form;
@@ -676,6 +742,9 @@ void Sim::resolve_score () {
 		if (config_.gametype == 1) {
 			stake *= 1.0 + (300.0 - static_cast<double>(timer_ms_ / 1000)) / 100.0;
 		}
+		if (config_.fuse && overdrive_frames_ > 0) {
+			stake *= config_.overdrive_mult;
+		}
 		score_ += static_cast<long long>(py_round_whole(stake / 50.0) * 50.0);
 		++combo_;
 		current_combo_ = std::pow(1.6, combo_);
@@ -687,7 +756,21 @@ void Sim::resolve_score () {
 	const int sent = attack::attack_for(
 		total, static_cast<attack::SpinKind>(last.spin), b2b_ > 1,
 		std::max(0, combo_ - 1), perfect);
-	attack_sent_ += sent;
+	// Under the fuse: the clear refuels the bank - lines plus the base
+	// attack, so quality pays - and Overdrive multiplies what goes out.
+	// Refuel reads the unboosted attack, or Overdrive would feed itself.
+	int boosted = sent;
+	if (config_.fuse) {
+		if (total > 0) {
+			fuse_bank_ = std::min(config_.fuse_bank_cap,
+				fuse_bank_ + config_.fuse_refuel_line * total
+					+ config_.fuse_refuel_attack * sent);
+		}
+		if (overdrive_frames_ > 0) {
+			boosted = py_round(sent * config_.overdrive_mult);
+		}
+	}
+	attack_sent_ += boosted;
 	if (config_.gametype == 5) {
 		// The versus wire. A clear first banks or fires the surge: a back to
 		// back chain four deep banks a row per link, and the clear that
@@ -702,7 +785,7 @@ void Sim::resolve_score () {
 				fired = surge_charge_;
 				surge_charge_ = 0;
 			}
-			const int wire = sent + fired;
+			const int wire = boosted + fired;
 			const int cancelled = std::min(pending_garbage_, wire);
 			pending_garbage_ -= cancelled;
 			outgoing_ += wire - cancelled;
@@ -726,7 +809,7 @@ void Sim::resolve_score () {
 	last.b2b = b2b_;
 	last.combo = combo_;
 	last.perfect = perfect;
-	last.attack = sent;
+	last.attack = boosted;
 	last.score = score_;
 	last.downstack = downstack_;
 }
@@ -832,9 +915,22 @@ bool Sim::step_frame (const Event* events, size_t count) {
 	if (!clearing_) {
 		if (entry_) {
 			bool forced_lock = false;
-			if (config_.forced_delay > 0. && piece_elapsed_.has_value()) {
-				*piece_elapsed_ += delta;
-				if (*piece_elapsed_ >= config_.forced_delay) {
+			if ((config_.forced_delay > 0. || config_.fuse)
+				&& piece_elapsed_.has_value()) {
+				// Under the fuse the limit is the piece's own fuse, frozen
+				// while Overdrive burns; otherwise the trainer's flat delay,
+				// arithmetic untouched.
+				if (overdrive_frames_ == 0) {
+					*piece_elapsed_ += delta;
+				}
+				const double limit
+					= config_.fuse ? fuse_total_ : config_.forced_delay;
+				if (config_.fuse && !fuse_warned_ && limit > 0.
+					&& *piece_elapsed_ >= limit * 0.8) {
+					fuse_warned_ = true;
+					cue("fusewarn");
+				}
+				if (limit > 0. && *piece_elapsed_ >= limit) {
 					forced_lock = hard_drop(true);
 				}
 			}
@@ -854,6 +950,12 @@ bool Sim::step_frame (const Event* events, size_t count) {
 		ramp_arcade();
 	} else if (config_.gametype == 3 || config_.gametype == 4) {
 		eval_cheese();
+	}
+	// Overdrive burns down in real frames, clearing or not; when it gutters
+	// out the gauge starts over from empty.
+	if (overdrive_frames_ > 0 && --overdrive_frames_ == 0) {
+		flow_ = 0.;
+		cue("overdrive_end");
 	}
 	eval_timer();
 	if ((lost_ || won_) && !gameover_cued_) {

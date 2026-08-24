@@ -81,6 +81,29 @@ struct SimConfig {
 	// emptying column x, built by the session from these settings.
 	int cheese_holes = 1;
 	int cheese_messiness = 100;
+
+	// The fuse ruleset - the variant's own core, this side only. With `fuse`
+	// false the sim is the graded engine unchanged, and no trace ever sets
+	// it. Every piece burns a fuse and is slammed down when it runs out;
+	// clears bank refuel for the pieces to come, quick locks charge the Flow
+	// gauge, and a full gauge ignites Overdrive - the fuse frozen, score and
+	// attack multiplied. Every number is a field so a balance pass changes
+	// defaults, never test pins.
+	bool fuse = false;
+	double fuse_base = 3.0;       // Seconds a piece burns at level zero.
+	double fuse_min = 0.8;        // The schedule never shrinks below this.
+	double fuse_decay = 0.15;     // Seconds shaved off per level.
+	double fuse_bank_cap = 6.0;   // The refuel reservoir's ceiling.
+	double fuse_draw_cap = 1.0;   // Most a spawn may draw from the bank.
+	double fuse_refuel_line = 0.4;   // Seconds banked per cleared line...
+	double fuse_refuel_attack = 0.5; // ...and per point of attack it sent.
+	double flash_frac = 0.30;     // The Flash window, as a share of the fuse...
+	double flash_floor = 0.25;    // ...but never thinner than this.
+	double flow_lock_gain = 8.;   // Flow for a lock, scaled by fuse left.
+	double flow_flash_gain = 12.; // Flow on top for a lock inside the Flash.
+	double flow_burn_loss = 18.;  // Flow lost when the fuse forces the drop.
+	double overdrive_secs = 8.;   // How long Overdrive freezes the fuse.
+	double overdrive_mult = 1.5;  // Score and attack multiplier inside it.
 };
 
 enum class Key : int { Left, Right, Soft, Hard, Hold, Ccw, Cw, Flip };
@@ -233,6 +256,14 @@ public:
 	// Empty between pieces or when the game is over.
 	std::optional<double> piece_elapsed () const { return piece_elapsed_; }
 
+	// The fuse ruleset's live state, for the HUD: the active piece's whole
+	// fuse (what is left is that minus piece_elapsed), the refuel bank, the
+	// Flow gauge (0 to 100), and whether Overdrive is burning.
+	double fuse_total () const { return fuse_total_; }
+	double fuse_bank () const { return fuse_bank_; }
+	double flow () const { return flow_; }
+	bool overdrive () const { return overdrive_frames_ > 0; }
+
 private:
 	void eval_input (const std::optional<Event>& event);
 	void eval_shift ();
@@ -257,6 +288,9 @@ private:
 	void eval_cheese ();
 	void apply_pending_garbage ();
 	void eval_timer ();
+	int fuse_level () const;
+	void fuse_prime ();
+	void fuse_lock (bool forced);
 	void cue (std::string name) { cues_.push_back(std::move(name)); }
 
 	SimConfig config_;
@@ -286,6 +320,13 @@ private:
 	int clear_phase_ = 0;       // 0 the row scan, 1 the settle loop.
 	int clear_base_ = 0;
 	std::vector<int> line_list_;
+
+	// The fuse ruleset's state, all dead weight while config_.fuse is off.
+	double fuse_total_ = 0.;    // The active piece's whole fuse, seconds.
+	double fuse_bank_ = 0.;     // Refuel banked for the pieces to come.
+	double flow_ = 0.;          // The gauge, 0 to 100.
+	long overdrive_frames_ = 0; // Frames of Overdrive left, 0 outside it.
+	bool fuse_warned_ = false;  // The warning cue fired for this piece.
 
 	int shift_dir_ = 0;         // -1 left, 1 right, 0 none.
 	int shift_frame_ = 0;
