@@ -591,6 +591,12 @@ gives, two ways:
 - `clear_check` — the clear-delay knob: the reference seven-frames-a-row
   timing with it on, lock-frame resolution with it off, and an outcome —
   score, counters, board, attack — identical either way.
+- `munch_check` — MinoMuncher's statistics re-derived over our own replay
+  records, pinned on hand-built games: clear buckets, the attack-per-line
+  split against what was dug, the surge floor of four, the validated well
+  rule.
+- `profile_check` — the per-game history file: append, ordered load, and
+  the key tolerance that lets newer builds add stats.
 
 ```bash
 ctest --test-dir cpp/build --output-on-failure

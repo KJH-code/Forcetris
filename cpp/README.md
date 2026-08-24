@@ -20,6 +20,8 @@ What is here:
 | `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
 | `rating` | An estimated Tetra League standing - Glicko, TR by the official conversion formula, rank - interpolated from TETR.IO's own reported per-rank averages, and labelled the estimate it is |
+| `munch` | MinoMuncher's statistics re-derived over this game's own records (formulas from the MIT-licensed minomuncher-core): the nine clear buckets, spin efficiencies, the three-way attack-per-line split, burst and plonk PPS by Gaussian mixture, the four-deep well rule, the surge accounting and the cheesiness sigmoid - scored over raw attack, a trainer having no multiplayer wire |
+| `profile` | The history: one tolerant key=value line per finished game, appended forever, read back for the profile screen's aggregates and growth charts |
 | `bot` | The versus opponent: a full-reachability search over the real kick tables - so its tucks and spins are exactly the game's - an attack-and-shape evaluation, a rank ladder paced to TETR.IO's own per-rank speeds, and the driver that types the plan into a sim one key at a time |
 | `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, the replay browser and viewer, the game modes - versus included, with the bot's board beside yours - the high score screens, the how-to-play screen and the analysis of a finished run |
 
@@ -165,7 +167,17 @@ PPS and VS against TETR.IO's own reported per-rank averages (APM, PPS, VS
 and TR, taken off the live leaderboard breakdown) and runs the official TR
 conversion over the result; there is no opponent in a trainer,
 so it is an entertainment-grade placement, and the screen says so in as
-many words. Play opens a mode picker - Free, Timed, Arcade, the cheese race at three
+many words. A Munch tab chews the run the way MinoMuncher would - clear
+buckets, spin efficiencies, upstack against downstack against cheese
+attack-per-line, burst and plonk PPS, well loyalty, surge conversion, and
+the two style verdicts (upstacker to downstacker, lean to greasy) by that
+tool's own twenty-point zones. Every finished game - versus rounds
+included, with their verdicts - also writes one line of history, and the
+main menu's Profile screen reads it all back: lifetime totals, bests and
+the versus record on one tab, growth charts of PPS, APM, VS, estimated TR
+and finesse - each with a ten-game moving average - on the next, and the
+munch averages on the third, all filterable by mode.
+Play opens a mode picker - Free, Timed, Arcade, the cheese race at three
 lengths and cheese survival at three paces, with the holes-per-row and
 messiness of the cheese beside them, and Versus with its rank row and
 first-to count - with a line on what each one does. How to Play lists every

@@ -35,6 +35,8 @@ add_library(forcetris_core
 	src/hiscore.cpp
 	src/rating.cpp
 	src/bot.cpp
+	src/profile.cpp
+	src/munch.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
 # nlohmann/json.hpp, vendored, for the replay files.
@@ -114,6 +116,14 @@ target_compile_options(opponentcheck PRIVATE ${FORCETRIS_WARNINGS})
 add_executable(clearcheck tests/clearcheck.cpp)
 target_link_libraries(clearcheck PRIVATE forcetris_core)
 target_compile_options(clearcheck PRIVATE ${FORCETRIS_WARNINGS})
+
+add_executable(munchcheck tests/munchcheck.cpp)
+target_link_libraries(munchcheck PRIVATE forcetris_core)
+target_compile_options(munchcheck PRIVATE ${FORCETRIS_WARNINGS})
+
+add_executable(profilecheck tests/profilecheck.cpp)
+target_link_libraries(profilecheck PRIVATE forcetris_core)
+target_compile_options(profilecheck PRIVATE ${FORCETRIS_WARNINGS})
 
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
@@ -203,6 +213,12 @@ add_test(NAME opponent_check COMMAND opponentcheck)
 # The clear delay knob: the reference timing with it on, lock-frame
 # resolution with it off, and an outcome identical either way.
 add_test(NAME clear_check COMMAND clearcheck)
+# The munch: minomuncher's statistics re-derived over our own records,
+# pinned on hand-built games.
+add_test(NAME munch_check COMMAND munchcheck)
+# The profile history: append, load, order, and the tolerance that lets
+# newer builds add keys.
+add_test(NAME profile_check COMMAND profilecheck)
 if (SDL2_FOUND)
 	# The whole window run headlessly under scripted-random input: proves the
 	# loop, the drawing and the shutdown hold together with no display.

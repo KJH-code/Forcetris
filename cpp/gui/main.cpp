@@ -36,6 +36,8 @@
 #include "audio.hpp"
 #include "config.hpp"
 #include "forcetris/hiscore.hpp"
+#include "forcetris/munch.hpp"
+#include "forcetris/profile.hpp"
 #include "forcetris/rating.hpp"
 #include "forcetris/replay.hpp"
 #include "session.hpp"
@@ -304,7 +306,8 @@ const SDL_Color kFormColors[8] = {
 };
 
 enum class Screen {
-	Menu, Modes, Game, Over, Replays, Viewer, Scores, Help, Analysis };
+	Menu, Modes, Game, Over, Replays, Viewer, Scores, Help, Analysis,
+	Profile };
 
 // A replay being watched: which placement, which stop along its journey.
 struct Viewing {
@@ -362,6 +365,7 @@ struct App {
 		SDL_Rect rect;
 	};
 	std::vector<TouchButton> touch;
+	std::vector<profile::GameRecord> history;   // The profile screen's data.
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
 	bool relayout = false;       // The screen rotated; rebuild before drawing.
@@ -472,11 +476,52 @@ std::optional<replay::Replay> finish_round (App& app) {
 	return done;
 }
 
+// One line of history for a finished game: the summary's figures, the
+// rating estimate, and the munch numbers, appended to the profile file.
+// `won` is the versus verdict - 1, 0, or -1 for draws and other modes.
+void record_game (App& app, const replay::Replay& game, int won) {
+	profile::GameRecord record;
+	record.played = game.meta.played;
+	record.gametype = game.meta.gametype;
+	const replay::Summary sum = game.summary();
+	record.seconds = sum.seconds;
+	record.pieces = sum.placements;
+	record.lines = sum.lines;
+	record.score = sum.score;
+	record.attack = sum.attack;
+	record.downstack = game.meta.downstack;
+	record.pps = sum.pps;
+	record.apm = sum.apm;
+	record.vs = sum.vs;
+	record.finesse = sum.judged > 0 ? sum.rate * 100. : 100.;
+	const rating::Estimate estimate
+		= rating::estimate(sum.apm, sum.pps, sum.vs);
+	if (estimate.rank[0] != '\0') {
+		record.tr = estimate.tr;
+	}
+	record.won = won;
+	for (const auto& group : munch::crunch(game).groups) {
+		for (const auto& stat : group.stats) {
+			record.stats[stat.id] = stat.value;
+		}
+	}
+	profile::append(profile::path(app.root), record);
+}
+
+// The versus verdict of the round just decided, for the history line.
+int round_verdict (const App& app) {
+	if (!app.versus.has_value()) {
+		return -1;
+	}
+	return app.versus->round_draw ? -1 : app.versus->round_player_won ? 1 : 0;
+}
+
 void next_versus_round (App& app) {
 	// The round just decided is a game in its own right: save it - both
 	// boards - before the fresh sessions sweep it away.
 	if (auto done = finish_round(app)) {
 		replay::save(*done, replay::folder(app.root));
+		record_game(app, *done, round_verdict(app));
 	}
 	SimConfig config = app.config.sim();
 	config.gametype = 5;
@@ -498,6 +543,7 @@ void end_game (App& app) {
 	app.last_replay = finish_round(app);
 	if (app.last_replay.has_value()) {
 		replay::save(*app.last_replay, replay::folder(app.root));
+		record_game(app, *app.last_replay, round_verdict(app));
 	}
 	// Would this run make the table? The probe carries the raw clock value,
 	// exactly as eval_loss probes it - the conversion to stored centiseconds
@@ -645,7 +691,8 @@ void handle_event (App& app, const SDL_Event& event) {
 		} else if (app.screen == Screen::Help) {
 			app.screen = app.help_back;
 		} else if (app.screen == Screen::Replays
-			|| app.screen == Screen::Scores) {
+			|| app.screen == Screen::Scores
+			|| app.screen == Screen::Profile) {
 			app.screen = Screen::Menu;
 		}
 		return;
@@ -1448,6 +1495,52 @@ void draw_analysis_rating (App& app, const replay::Replay& game) {
 
 // The analysis of a saved replay, opened from the browser or the loss
 // screen: the graded overview first, the deeper cuts on their own tabs.
+// The munch tab: minomuncher's statistics for this one game, grouped the
+// way that tool groups them, with its two style verdicts spelled out.
+void draw_analysis_munch (const replay::Replay& game) {
+	const munch::Stats stats = munch::crunch(game);
+	if (stats.groups.empty()) {
+		ImGui::TextDisabled("Nothing to chew on.");
+		return;
+	}
+	// The style verdicts, by the muncher's own twenty-point zones.
+	const auto zone = [] (double value, const char* const names[5]) {
+		return names[std::clamp(static_cast<int>(value / 20.), 0, 4)];
+	};
+	static const char* kStackStyles[5]
+		= {"upstacker", "aggressive", "medium", "defensive", "downstacker"};
+	static const char* kCheeseStyles[5]
+		= {"lean", "clean", "medium", "cheesy", "greasy"};
+	const double ratio = stats.get("ds_ratio");
+	const double cheese = stats.get("cheesiness");
+	ImGui::Text("Stacking style: %s (%.0f)", zone(ratio, kStackStyles),
+		ratio);
+	ImGui::Text("Attack style: %s (%.0f)", zone(cheese, kCheeseStyles),
+		cheese);
+	ImGui::TextDisabled(
+		"Cheesiness is scored over raw attack - a trainer has no wire.");
+	for (const munch::Group& group : stats.groups) {
+		ImGui::Separator();
+		ImGui::TextDisabled("%s", group.name);
+		if (ImGui::BeginTable(group.name, 2,
+			ImGuiTableFlags_SizingStretchProp)) {
+			for (const munch::Stat& stat : group.stats) {
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextUnformatted(stat.label);
+				ImGui::TableSetColumnIndex(1);
+				if (stat.value == std::floor(stat.value)
+					&& std::fabs(stat.value) < 1e6) {
+					ImGui::Text("%.0f", stat.value);
+				} else {
+					ImGui::Text("%.2f", stat.value);
+				}
+			}
+			ImGui::EndTable();
+		}
+	}
+}
+
 void draw_analysis (App& app) {
 	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(6)),
 		ImGuiCond_Always, ImVec2(0.5f, 0.f));
@@ -1478,6 +1571,10 @@ void draw_analysis (App& app) {
 			}
 			if (ImGui::BeginTabItem("Rating")) {
 				draw_analysis_rating(app, *app.studying);
+				ImGui::EndTabItem();
+			}
+			if (ImGui::BeginTabItem("Munch")) {
+				draw_analysis_munch(*app.studying);
 				ImGui::EndTabItem();
 			}
 			ImGui::EndTabBar();
@@ -1831,6 +1928,260 @@ void draw_scores (App& app) {
 	ImGui::End();
 }
 
+// A line chart on the window's own draw list: the raw series faint, a
+// ten-game moving average bright over it, the range labelled at the ends.
+void draw_chart (const char* label, const std::vector<double>& values,
+                 float height) {
+	ImGui::PushFont(ImGui::GetFont());
+	ImGui::TextUnformatted(label);
+	ImGui::PopFont();
+	if (values.size() < 2) {
+		ImGui::TextDisabled("Not enough games yet.");
+		ImGui::Dummy(ImVec2(0.f, ui(8)));
+		return;
+	}
+	const float width = ImGui::GetContentRegionAvail().x - ui(4);
+	const ImVec2 origin = ImGui::GetCursorScreenPos();
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	double lo = values[0];
+	double hi = values[0];
+	for (const double value : values) {
+		lo = std::min(lo, value);
+		hi = std::max(hi, value);
+	}
+	if (hi - lo < 1e-9) {
+		hi = lo + 1.;
+	}
+	const double pad = (hi - lo) * 0.08;
+	lo -= pad;
+	hi += pad;
+	draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height),
+		IM_COL32(20, 26, 34, 255), ui(6));
+	for (int line = 1; line < 4; ++line) {
+		const float y = origin.y + height * line / 4.f;
+		draw->AddLine(ImVec2(origin.x, y), ImVec2(origin.x + width, y),
+			IM_COL32(40, 50, 64, 120));
+	}
+	const auto at = [&] (size_t i, double value) {
+		return ImVec2(
+			origin.x + width * (values.size() > 1
+				? static_cast<float>(i) / (values.size() - 1) : 0.f),
+			origin.y + height
+				- height * static_cast<float>((value - lo) / (hi - lo)));
+	};
+	for (size_t i = 1; i < values.size(); ++i) {
+		draw->AddLine(at(i - 1, values[i - 1]), at(i, values[i]),
+			IM_COL32(65, 198, 224, 90), std::max(1.f, ui(1)));
+	}
+	// The moving average, the line the eye should follow.
+	double rolling = 0.;
+	std::vector<double> window;
+	ImVec2 last{};
+	bool started = false;
+	for (size_t i = 0; i < values.size(); ++i) {
+		window.push_back(values[i]);
+		rolling += values[i];
+		if (window.size() > 10) {
+			rolling -= window.front();
+			window.erase(window.begin());
+		}
+		const ImVec2 point = at(i, rolling / window.size());
+		if (started) {
+			draw->AddLine(last, point, IM_COL32(65, 198, 224, 255),
+				std::max(1.f, ui(2)));
+		}
+		last = point;
+		started = true;
+	}
+	char text[48];
+	std::snprintf(text, sizeof text, "%.1f", hi - pad);
+	draw->AddText(ImVec2(origin.x + ui(6), origin.y + ui(2)),
+		IM_COL32(150, 165, 185, 200), text);
+	std::snprintf(text, sizeof text, "%.1f", lo + pad);
+	draw->AddText(ImVec2(origin.x + ui(6), origin.y + height - ui(18)),
+		IM_COL32(150, 165, 185, 200), text);
+	std::snprintf(text, sizeof text, "%.1f",
+		rolling / std::max<size_t>(1, window.size()));
+	draw->AddText(ImVec2(origin.x + width - ui(56), origin.y + ui(2)),
+		IM_COL32(65, 198, 224, 255), text);
+	ImGui::Dummy(ImVec2(width, height + ui(10)));
+}
+
+void draw_profile (App& app) {
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(24)),
+		ImGuiCond_Always, ImVec2(0.5f, 0.f));
+	const float wide
+		= std::min(ui(680), ImGui::GetIO().DisplaySize.x - ui(16));
+	// Tall content - the growth charts - scrolls instead of running off
+	// the screen's bottom.
+	ImGui::SetNextWindowSizeConstraints(ImVec2(wide, 0),
+		ImVec2(wide, ImGui::GetIO().DisplaySize.y - ui(48)));
+	ImGui::Begin("Profile", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings);
+
+	// The mode filter every tab reads.
+	static const char* kFilters[]
+		= {"All", "Free", "Timed", "Arcade", "Cheese", "Survival", "Versus"};
+	static const char* kModes[]
+		= {"", "free", "timed", "arcade", "cheese", "survival", "versus"};
+	static int filter = 0;
+	ImGui::SetNextItemWidth(ui(160));
+	ImGui::Combo("Mode", &filter, kFilters, 7);
+	std::vector<const profile::GameRecord*> games;
+	for (const profile::GameRecord& record : app.history) {
+		if (filter == 0 || record.gametype == kModes[filter]) {
+			games.push_back(&record);
+		}
+	}
+	ImGui::SameLine();
+	ImGui::TextDisabled("%d game%s", static_cast<int>(games.size()),
+		games.size() == 1 ? "" : "s");
+	ImGui::Separator();
+
+	if (games.empty()) {
+		ImGui::TextUnformatted(
+			"No games on record yet. Finish one and come back.");
+	} else if (ImGui::BeginTabBar("profile", ImGuiTabBarFlags_None)) {
+		// FORCETRIS_PROFILE_TAB picks the tab once - how the gallery
+		// screenshots the charts without a mouse.
+		static int force = [] {
+			const char* forced = std::getenv("FORCETRIS_PROFILE_TAB");
+			return forced != nullptr ? std::atoi(forced) : -1;
+		}();
+		const auto tab_flags = [&] (int index) {
+			return force == index
+				? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+		};
+		const auto series = [&] (auto pick) {
+			std::vector<double> values;
+			for (const profile::GameRecord* game : games) {
+				const double value = pick(*game);
+				if (value >= 0.) {
+					values.push_back(value);
+				}
+			}
+			return values;
+		};
+		if (ImGui::BeginTabItem("Overview", nullptr, tab_flags(0))) {
+			double seconds = 0.;
+			long long pieces = 0;
+			long long lines = 0;
+			long long attack = 0;
+			int wins = 0;
+			int losses = 0;
+			profile::GameRecord best;
+			for (const profile::GameRecord* game : games) {
+				seconds += game->seconds;
+				pieces += game->pieces;
+				lines += game->lines;
+				attack += game->attack;
+				wins += game->won == 1 ? 1 : 0;
+				losses += game->won == 0 ? 1 : 0;
+				best.pps = std::max(best.pps, game->pps);
+				best.apm = std::max(best.apm, game->apm);
+				best.vs = std::max(best.vs, game->vs);
+				best.score = std::max(best.score, game->score);
+				best.tr = std::max(best.tr, game->tr);
+			}
+			ImGui::PushFont(app.fonts.head);
+			ImGui::Text("%d games,  %.1f hours,  %lld pieces",
+				static_cast<int>(games.size()), seconds / 3600.,
+				pieces);
+			ImGui::PopFont();
+			ImGui::Text("%lld lines cleared,  %lld attack sent",
+				lines, attack);
+			if (wins + losses > 0) {
+				ImGui::Text("Versus record %d - %d  (%.0f%%)", wins, losses,
+					100. * wins / (wins + losses));
+			}
+			ImGui::Separator();
+			ImGui::TextDisabled("Bests");
+			ImGui::Text("PPS %.2f    APM %.1f    VS %.1f", best.pps,
+				best.apm, best.vs);
+			ImGui::Text("Score %lld", best.score);
+			if (best.tr >= 0.) {
+				ImGui::Text("Estimated TR %.0f  (%s)", best.tr,
+					rating::rank_for(best.tr));
+			}
+			// The last ten against everything before them: the short answer
+			// to "am I getting better".
+			if (games.size() >= 20) {
+				double old_pps = 0.;
+				double new_pps = 0.;
+				double old_apm = 0.;
+				double new_apm = 0.;
+				const size_t cut = games.size() - 10;
+				for (size_t i = 0; i < games.size(); ++i) {
+					(i < cut ? old_pps : new_pps) += games[i]->pps;
+					(i < cut ? old_apm : new_apm) += games[i]->apm;
+				}
+				old_pps /= cut;
+				old_apm /= cut;
+				new_pps /= 10.;
+				new_apm /= 10.;
+				ImGui::Separator();
+				ImGui::TextDisabled("Last ten games, against the rest");
+				ImGui::Text("PPS %+.2f    APM %+.1f",
+					new_pps - old_pps, new_apm - old_apm);
+			}
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem("Growth", nullptr, tab_flags(1))) {
+			draw_chart("PPS", series([] (const profile::GameRecord& g) {
+				return g.pps; }), ui(96));
+			draw_chart("APM", series([] (const profile::GameRecord& g) {
+				return g.apm; }), ui(96));
+			draw_chart("VS", series([] (const profile::GameRecord& g) {
+				return g.vs; }), ui(96));
+			draw_chart("Estimated TR", series(
+				[] (const profile::GameRecord& g) { return g.tr; }), ui(96));
+			draw_chart("Finesse %", series(
+				[] (const profile::GameRecord& g) { return g.finesse; }),
+				ui(96));
+			ImGui::EndTabItem();
+		}
+		if (ImGui::BeginTabItem("Style", nullptr, tab_flags(2))) {
+			// The munch numbers, averaged over the filtered games - the
+			// per-game versions live on the analysis screen's Munch tab.
+			std::map<std::string, std::pair<double, int>> sums;
+			for (const profile::GameRecord* game : games) {
+				for (const auto& [key, value] : game->stats) {
+					sums[key].first += value;
+					sums[key].second += 1;
+				}
+			}
+			if (sums.empty()) {
+				ImGui::TextUnformatted(
+					"No munch numbers yet - they are written from the next "
+					"finished game on.");
+			} else if (ImGui::BeginTable("style", 2)) {
+				for (const char* id : munch::order()) {
+					const auto found = sums.find(id);
+					if (found == sums.end()) {
+						continue;
+					}
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextUnformatted(munch::label(id));
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%.2f",
+						found->second.first / found->second.second);
+				}
+				ImGui::EndTable();
+			}
+			ImGui::EndTabItem();
+		}
+		force = -1;
+		ImGui::EndTabBar();
+	}
+	ImGui::Separator();
+	if (ImGui::Button("Back", ImVec2(ui(140), 0))) {
+		app.screen = Screen::Menu;
+	}
+	ImGui::End();
+}
+
 // One option in a picker row: drawn selected in the accent, and returns
 // true when clicked.
 bool option_button (const char* label, bool selected, float width) {
@@ -1876,6 +2227,10 @@ void draw_menus (App& app) {
 		if (ImGui::Button("Replays", ImVec2(ui(260), 0))) {
 			app.shelf = replay::listing(replay::folder(app.root));
 			app.screen = Screen::Replays;
+		}
+		if (ImGui::Button("Profile", ImVec2(ui(260), 0))) {
+			app.history = profile::load(profile::path(app.root));
+			app.screen = Screen::Profile;
 		}
 		if (ImGui::Button("Settings", ImVec2(ui(260), 0))) {
 			app.show_settings = true;
@@ -2183,11 +2538,12 @@ std::string screen_shot_key (const App& app) {
 		case Screen::Help: return "help";
 		case Screen::Analysis:
 			return app.studying.has_value() ? "analysis" : "analysis_empty";
+		case Screen::Profile: return "profile";
 	}
 	return "screen";
 }
 
-constexpr int kTour = 12;
+constexpr int kTour = 13;
 
 void tour_screen (App& app, int stop) {
 	switch (stop) {
@@ -2247,6 +2603,10 @@ void tour_screen (App& app, int stop) {
 			break;
 		case 10:
 			app.screen = Screen::Modes;
+			break;
+		case 11:
+			app.history = profile::load(profile::path(app.root));
+			app.screen = Screen::Profile;
 			break;
 		default:
 			app.screen = Screen::Menu;
@@ -2579,6 +2939,9 @@ int run (bool smoke, long smoke_frames) {
 		}
 		if (app.screen == Screen::Scores) {
 			draw_scores(app);
+		}
+		if (app.screen == Screen::Profile) {
+			draw_profile(app);
 		}
 		if (app.screen == Screen::Analysis) {
 			draw_analysis(app);
