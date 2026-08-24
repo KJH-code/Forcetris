@@ -35,6 +35,7 @@
 
 #include "audio.hpp"
 #include "config.hpp"
+#include "forcetris/career.hpp"
 #include "forcetris/hiscore.hpp"
 #include "forcetris/munch.hpp"
 #include "forcetris/profile.hpp"
@@ -307,7 +308,7 @@ const SDL_Color kFormColors[8] = {
 
 enum class Screen {
 	Menu, Modes, Game, Over, Replays, Viewer, Scores, Help, Analysis,
-	Profile };
+	Profile, Career };
 
 // A replay being watched: which placement, which stop along its journey.
 struct Viewing {
@@ -366,6 +367,14 @@ struct App {
 	};
 	std::vector<TouchButton> touch;
 	std::vector<profile::GameRecord> history;   // The profile screen's data.
+	// The career: ladder stars and the daily latch, plus the live match's
+	// place in it - which stage is being fought (-1 for a free duel),
+	// whether the player ignited Overdrive this match, and whether the run
+	// in play is today's one daily attempt.
+	career::State career;
+	int career_stage = -1;
+	bool career_od = false;
+	bool daily_run = false;
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
 	bool relayout = false;       // The screen rotated; rebuild before drawing.
@@ -452,8 +461,11 @@ replay::Meta meta_for (const Config& config, int mode) {
 	return meta;
 }
 
-void start_game (App& app, int mode) {
+void start_game (App& app, int mode,
+		std::optional<unsigned> fixed_seed = std::nullopt) {
 	app.versus.reset();
+	app.career_stage = -1;
+	app.daily_run = false;
 	app.mode = mode;
 	// The dials just used are worth keeping even if the app never gets a
 	// clean exit - phones rarely grant one.
@@ -469,7 +481,9 @@ void start_game (App& app, int mode) {
 	config.cheese_period = app.config.cheese_period;
 	config.cheese_holes = app.config.cheese_holes;
 	config.cheese_messiness = app.config.cheese_messiness;
-	app.session.emplace(config, app.seeds(), meta_for(app.config, mode));
+	app.session.emplace(config,
+		fixed_seed.has_value() ? *fixed_seed : app.seeds(),
+		meta_for(app.config, mode));
 	app.screen = Screen::Game;
 	app.paused = false;
 	app.editing = false;
@@ -482,16 +496,29 @@ void start_game (App& app, int mode) {
 
 // A match against the bot: the player's session as ever, the opponent and
 // the scoreboard beside it.
-void start_versus (App& app) {
+void start_versus (App& app, int career_stage = -1) {
 	app.mode = 5;
+	app.career_stage = career_stage;
+	app.career_od = false;
+	app.daily_run = false;
 	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = 5;
 	config.cheese_holes = 1;
 	config.cheese_messiness = 30;
+	int rank = app.config.bot_rank;
+	int first_to = app.config.first_to;
+	if (career_stage >= 0) {
+		// A ladder stage names its own terms: the stage's rank, longer
+		// matches up top, and a fuse that tightens one notch per rung.
+		rank = career_stage;
+		first_to = career_stage >= 4 ? 2 : 1;
+		config.fuse_base = std::max(config.fuse_min,
+			config.fuse_base - 0.1 * career_stage);
+	}
 	const replay::Meta meta = meta_for(app.config, 5);
 	app.session.emplace(config, app.seeds(), meta);
-	app.versus.emplace(app.config.bot_rank, app.config.first_to);
+	app.versus.emplace(rank, first_to);
 	app.versus->begin_round(config, app.seeds(), meta);
 	app.screen = Screen::Game;
 	app.paused = false;
@@ -585,6 +612,26 @@ void end_game (App& app) {
 	if (app.last_replay.has_value()) {
 		replay::save(*app.last_replay, replay::folder(app.root));
 		record_game(app, *app.last_replay, round_verdict(app));
+	}
+	// The career's verdicts, before the table probe. A ladder stage pays
+	// stars - one for the win, two for a sweep, three for a sweep with
+	// Overdrive ignited - and only ever upward; the daily writes its score
+	// onto the latch burned when it started.
+	if (app.career_stage >= 0 && app.versus.has_value()) {
+		const bool won = app.versus->player_wins > app.versus->bot_wins;
+		const bool sweep = won && app.versus->bot_wins == 0;
+		const int stars = won ? (sweep ? (app.career_od ? 3 : 2) : 1) : 0;
+		const std::string rank = bot::ranks()[app.career_stage].name;
+		if (stars > app.career.stars[rank]) {
+			app.career.stars[rank] = stars;
+			career::save(career::path(app.root), app.career);
+		}
+	}
+	if (app.daily_run) {
+		app.career.daily_score = std::max<long long>(
+			app.career.daily_score, app.session->sim().final_score());
+		career::save(career::path(app.root), app.career);
+		app.daily_run = false;
 	}
 	// Would this run make the table? The probe carries the raw clock value,
 	// exactly as eval_loss probes it - the conversion to stored centiseconds
@@ -773,7 +820,8 @@ void handle_event (App& app, const SDL_Event& event) {
 			app.screen = Screen::Menu;
 		} else if (app.screen == Screen::Replays
 			|| app.screen == Screen::Scores
-			|| app.screen == Screen::Profile) {
+			|| app.screen == Screen::Profile
+			|| app.screen == Screen::Career) {
 			app.screen = Screen::Menu;
 		}
 		return;
@@ -788,7 +836,7 @@ void handle_event (App& app, const SDL_Event& event) {
 		&& ((app.screen == Screen::Game && !app.editing && !app.layout_preview)
 			|| app.screen == Screen::Over)) {
 		if (app.mode == 5) {
-			start_versus(app);
+			start_versus(app, app.career_stage);
 		} else {
 			start_game(app, app.mode);
 		}
@@ -2337,6 +2385,105 @@ void draw_profile (App& app) {
 	ImGui::End();
 }
 
+// The date the daily runs under, local time, the way the profile stamps.
+std::string today () {
+	char stamp[16] = "";
+	const std::time_t now = std::time(nullptr);
+	if (std::tm* local = std::localtime(&now)) {
+		std::strftime(stamp, sizeof stamp, "%Y-%m-%d", local);
+	}
+	return stamp;
+}
+
+// Start today's one run: the latch is burned before the first piece falls,
+// so walking out costs the attempt - that is what makes it a daily.
+void start_daily (App& app) {
+	app.career.daily_date = today();
+	app.career.daily_score = -1;
+	career::save(career::path(app.root), app.career);
+	unsigned seed = 2166136261u;
+	for (const char letter : app.career.daily_date) {
+		seed = (seed ^ static_cast<unsigned char>(letter)) * 16777619u;
+	}
+	start_game(app, 0, seed);
+	app.daily_run = true;
+}
+
+void draw_career (App& app) {
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(24)),
+		ImGuiCond_Always, ImVec2(0.5f, 0.f));
+	const float wide
+		= std::min(ui(420), ImGui::GetIO().DisplaySize.x - ui(16));
+	ImGui::SetNextWindowSizeConstraints(ImVec2(wide, 0),
+		ImVec2(wide, ImGui::GetIO().DisplaySize.y - ui(48)));
+	ImGui::Begin("Career", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoSavedSettings);
+	ImGui::PushFont(app.fonts.head);
+	ImGui::TextUnformatted("The Ladder");
+	ImGui::PopFont();
+	ImGui::TextDisabled("Fight the ranks in order. A win opens the next;");
+	ImGui::TextDisabled("a sweep pays two stars, a sweep with Overdrive three.");
+	ImGui::Dummy(ImVec2(0.f, ui(4)));
+	const auto& ladder = bot::ranks();
+	std::vector<std::string> names;
+	for (const auto& rank : ladder) {
+		names.push_back(rank.name);
+	}
+	if (ImGui::BeginTable("ladder", 3)) {
+		for (size_t stage = 0; stage < ladder.size(); ++stage) {
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::Text("Stage %d  -  %s", static_cast<int>(stage) + 1,
+				ladder[stage].name);
+			ImGui::TableSetColumnIndex(1);
+			const auto found = app.career.stars.find(names[stage]);
+			const int stars
+				= found != app.career.stars.end() ? found->second : 0;
+			char marks[8] = "- - -";
+			for (int i = 0; i < stars && i < 3; ++i) {
+				marks[i * 2] = '*';
+			}
+			ImGui::TextColored(stars > 0
+				? ImVec4(1.f, 0.84f, 0.38f, 1.f)
+				: ImVec4(0.45f, 0.5f, 0.58f, 1.f), "%s", marks);
+			ImGui::TableSetColumnIndex(2);
+			if (career::open(app.career, names, stage)) {
+				ImGui::PushID(static_cast<int>(stage));
+				if (ImGui::Button(stars > 0 ? "Again" : "Fight",
+					ImVec2(ui(70), 0))) {
+					start_versus(app, static_cast<int>(stage));
+				}
+				ImGui::PopID();
+			} else {
+				ImGui::TextDisabled("Locked");
+			}
+		}
+		ImGui::EndTable();
+	}
+	ImGui::Separator();
+	ImGui::PushFont(app.fonts.head);
+	ImGui::TextUnformatted("The Daily");
+	ImGui::PopFont();
+	ImGui::TextDisabled("One Ignition run a day, same fuse for everyone");
+	ImGui::TextDisabled("who shares the date. Leaving still spends it.");
+	ImGui::Dummy(ImVec2(0.f, ui(2)));
+	if (app.career.daily_date == today()) {
+		if (app.career.daily_score >= 0) {
+			ImGui::Text("Today's run: %lld", app.career.daily_score);
+		} else {
+			ImGui::TextUnformatted("Today's run is spent.");
+		}
+	} else if (ImGui::Button("Run today's fuse", ImVec2(ui(200), 0))) {
+		start_daily(app);
+	}
+	ImGui::Separator();
+	if (ImGui::Button("Back", ImVec2(ui(140), 0))) {
+		app.screen = Screen::Menu;
+	}
+	ImGui::End();
+}
+
 // One option in a picker row: drawn selected in the accent, and returns
 // true when clicked.
 bool option_button (const char* label, bool selected, float width) {
@@ -2370,6 +2517,11 @@ void draw_menus (App& app) {
 		if (ImGui::Button("Play", ImVec2(ui(260), ui(44)))) {
 			app.screen = Screen::Modes;
 			app.mode_popup = 0;
+		}
+		ImGui::Dummy(ImVec2(0.f, ui(2)));
+		if (ImGui::Button("Career", ImVec2(ui(260), ui(44)))) {
+			app.career = career::load(career::path(app.root));
+			app.screen = Screen::Career;
 		}
 		ImGui::Dummy(ImVec2(0.f, ui(6)));
 		if (ImGui::Button("How to play", ImVec2(ui(260), 0))) {
@@ -2556,7 +2708,7 @@ void draw_menus (App& app) {
 		}
 		if (ImGui::Button("Restart", ImVec2(ui(240), 0))) {
 			if (app.mode == 5) {
-				start_versus(app);
+				start_versus(app, app.career_stage);
 			} else {
 				start_game(app, app.mode);
 			}
@@ -2669,7 +2821,7 @@ void draw_menus (App& app) {
 		}
 		if (ImGui::Button("Play again", ImVec2(ui(240), 0))) {
 			if (app.mode == 5) {
-				start_versus(app);
+				start_versus(app, app.career_stage);
 			} else {
 				start_game(app, app.mode);
 			}
@@ -2732,11 +2884,12 @@ std::string screen_shot_key (const App& app) {
 		case Screen::Analysis:
 			return app.studying.has_value() ? "analysis" : "analysis_empty";
 		case Screen::Profile: return "profile";
+		case Screen::Career: return "career";
 	}
 	return "screen";
 }
 
-constexpr int kTour = 15;
+constexpr int kTour = 16;
 
 void tour_screen (App& app, int stop) {
 	switch (stop) {
@@ -2812,6 +2965,10 @@ void tour_screen (App& app, int stop) {
 			app.mode_popup = 0;
 			app.history = profile::load(profile::path(app.root));
 			app.screen = Screen::Profile;
+			break;
+		case 14:
+			app.career = career::load(career::path(app.root));
+			app.screen = Screen::Career;
 			break;
 		default:
 			app.screen = Screen::Menu;
@@ -3057,6 +3214,10 @@ int run (bool smoke, long smoke_frames) {
 				}
 				const bool live = app.session->step();
 				if (app.versus.has_value()) {
+					if (app.career_stage >= 0
+						&& app.session->sim().overdrive()) {
+						app.career_od = true;
+					}
 					app.versus->step(*app.session);
 					// The round and match flow: linger on the verdict, then
 					// the next round or the loss screen.
@@ -3155,6 +3316,9 @@ int run (bool smoke, long smoke_frames) {
 		}
 		if (app.screen == Screen::Profile) {
 			draw_profile(app);
+		}
+		if (app.screen == Screen::Career) {
+			draw_career(app);
 		}
 		if (app.screen == Screen::Analysis) {
 			draw_analysis(app);

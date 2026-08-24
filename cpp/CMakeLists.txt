@@ -36,6 +36,7 @@ add_library(forcetris_core
 	src/rating.cpp
 	src/bot.cpp
 	src/profile.cpp
+	src/career.cpp
 	src/munch.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
@@ -116,6 +117,10 @@ target_compile_options(opponentcheck PRIVATE ${FORCETRIS_WARNINGS})
 add_executable(clearcheck tests/clearcheck.cpp)
 target_link_libraries(clearcheck PRIVATE forcetris_core)
 target_compile_options(clearcheck PRIVATE ${FORCETRIS_WARNINGS})
+
+add_executable(careercheck tests/careercheck.cpp)
+target_link_libraries(careercheck PRIVATE forcetris_core)
+target_compile_options(careercheck PRIVATE ${FORCETRIS_WARNINGS})
 
 add_executable(fusecheck tests/fusecheck.cpp)
 target_link_libraries(fusecheck PRIVATE forcetris_core)
@@ -223,6 +228,7 @@ add_test(NAME opponent_check COMMAND opponentcheck)
 add_test(NAME clear_check COMMAND clearcheck)
 add_test(NAME input_check COMMAND inputcheck)
 add_test(NAME fuse_check COMMAND fusecheck)
+add_test(NAME career_check COMMAND careercheck)
 # The munch: minomuncher's statistics re-derived over our own records,
 # pinned on hand-built games.
 add_test(NAME munch_check COMMAND munchcheck)
@@ -234,10 +240,10 @@ if (SDL2_FOUND)
 	# loop, the drawing and the shutdown hold together with no display.
 	add_test(NAME gui_smoke COMMAND forcetris)
 	set_tests_properties(gui_smoke PROPERTIES ENVIRONMENT
-		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR}")
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat")
 	# The same run in versus mode, ending in the viewer: proves the round is
 	# recorded with the bot's side embedded and the two-board viewer draws.
 	add_test(NAME gui_smoke_versus COMMAND forcetris)
 	set_tests_properties(gui_smoke_versus PROPERTIES ENVIRONMENT
-		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_SMOKE_MODE=5;FORCETRIS_SMOKE_VIEW=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR}")
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_SMOKE_MODE=5;FORCETRIS_SMOKE_VIEW=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat")
 endif()

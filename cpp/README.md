@@ -89,7 +89,18 @@ than the burn abandons its pace rather than its piece, the way a rushed
 player would - replans cleanly when a slam beats it to the lock, and
 reaches Overdrive on its own merit, more of it the higher the rank. The
 ladder still means what it says under the fuse: attack and pace climb it
-monotonically, D through X. A
+monotonically, D through X.
+
+Career, off the main menu, is the long game: The Ladder sends you up the
+bot's ranks in order - a win opens the next rung, a sweep pays two stars,
+a sweep with Overdrive ignited pays three, and every rung tightens the
+fuse a notch while the top half fights first-to-two. The Daily is one
+Ignition run a day on a seed derived from the date - the same fuse for
+everyone who shares it - and the attempt is burned the moment it starts,
+so walking out spends it too. Progress lives in data/career.dat, a
+tolerant key=value file like the profile's (the `career_check` ctest
+pins it), and the smoke harness runs against its own career file so a
+test run can never spend your daily. A
 fuse-rules replay writes every tunable into its meta, so a file always
 says which game its score belongs to (`fuse_check` pins the ruleset and
 the meta round trip both). Input is not spread out the way the

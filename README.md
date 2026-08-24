@@ -600,6 +600,9 @@ gives, two ways:
   and its draw cap, the Flash window and Flow gauge, Overdrive's frozen
   fuse and attack multiplier, the hold that no longer resets the clock —
   and that with the flag off none of it exists.
+- `career_check` — the career file: ladder stars and the daily latch
+  round-trip, the gate opens one rung at a time, unknown lines survive a
+  rewrite, and damage spoils only its own line.
 - `munch_check` — MinoMuncher's statistics re-derived over our own replay
   records, pinned on hand-built games: clear buckets, the attack-per-line
   split against what was dug, the surge floor of four, the validated well
