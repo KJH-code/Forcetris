@@ -591,6 +591,10 @@ gives, two ways:
 - `clear_check` — the clear-delay knob: the reference seven-frames-a-row
   timing with it on, lock-frame resolution with it off, and an outcome —
   score, counters, board, attack — identical either way.
+- `input_check` — the burst frame: a run of presses arriving between two
+  frames all lands on the next one, in order, each move committed before
+  the next press reads the piece — the same placement the old
+  one-event-per-frame drain reached, minus the queueing lag.
 - `munch_check` — MinoMuncher's statistics re-derived over our own replay
   records, pinned on hand-built games: clear buckets, the attack-per-line
   split against what was dug, the surge floor of four, the validated well

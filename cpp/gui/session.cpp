@@ -100,12 +100,12 @@ bool Session::step () {
 	if (over_) {
 		return false;
 	}
-	std::optional<Event> event;
-	if (!pending_.empty()) {
-		event = pending_.front();
-		pending_.pop_front();
-	}
-	over_ = !sim_.step(event);
+	// Everything that arrived since the last frame lands this frame, in
+	// order - a burst of presses must not queue up one per frame, which
+	// reads as input lag to the player who made them.
+	const std::vector<Event> events(pending_.begin(), pending_.end());
+	pending_.clear();
+	over_ = !sim_.step(events);
 	cue_box_.insert(cue_box_.end(), sim_.cues().begin(), sim_.cues().end());
 	refill();
 	absorb();

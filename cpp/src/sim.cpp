@@ -304,11 +304,17 @@ void Sim::eval_shift () {
 			cand_x_ += shift_dir_;
 		}
 	}
+	commit_move();
+}
+
+// Prevent the piece from sliding into blocks: the pending candidate either
+// commits whole or reverts whole. Split out of eval_shift so a frame that
+// carries a burst of events can settle each move before the next event
+// reads the piece.
+void Sim::commit_move () {
 	if (!entry_) {
 		return;
 	}
-	// Prevent the piece from sliding into blocks: the frame's candidate either
-	// commits whole or reverts whole.
 	Piece probe = piece_;
 	probe.x = cand_x_;
 	if (board_.collides(probe)) {
@@ -782,6 +788,15 @@ void Sim::eval_cheese () {
 }
 
 bool Sim::step (const std::optional<Event>& event) {
+	return step_frame(event.has_value() ? &*event : nullptr,
+		event.has_value() ? 1 : 0);
+}
+
+bool Sim::step (const std::vector<Event>& events) {
+	return step_frame(events.data(), events.size());
+}
+
+bool Sim::step_frame (const Event* events, size_t count) {
 	if (lost_ || won_) {
 		return false;
 	}
@@ -802,8 +817,17 @@ bool Sim::step (const std::optional<Event>& event) {
 		1, py_round(fall_delay_ / static_cast<double>(config_.sdf)));
 
 	// The frame runs to completion even if something in it loses the game -
-	// Python's run() does, and the trace counts frames on both sides.
-	eval_input(event);
+	// Python's run() does, and the trace counts frames on both sides. A
+	// burst of events lands in order, each move committed before the next
+	// event reads the piece - the same states a one-per-frame drain would
+	// have walked through, minus the wait. A loss mid-burst drops the rest:
+	// those presses belong to the game-over screen, not the corpse.
+	for (size_t i = 0; i < count && !lost_ && !won_; ++i) {
+		eval_input(events[i]);
+		if (i + 1 < count) {
+			commit_move();
+		}
+	}
 	eval_shift();
 	if (!clearing_) {
 		if (entry_) {

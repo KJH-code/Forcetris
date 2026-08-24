@@ -158,9 +158,16 @@ public:
 	// here, a trace feeds the recorded sequence.
 	void feed_garbage (int hole) { holes_.push_back(hole); }
 
-	// One frame, with at most one input event - the engine polls one per frame.
-	// Returns false once the game has been lost.
+	// One frame, with at most one input event - the timing the Python engine
+	// polls at, and the shape every graded trace feeds. Returns false once
+	// the game has been lost.
 	bool step (const std::optional<Event>& event);
+
+	// One frame that applies a whole burst of events in order, each move
+	// committed before the next event reads the piece - so a run of presses
+	// lands the frame it arrived instead of queueing one per frame. With one
+	// event or none this is exactly the step above.
+	bool step (const std::vector<Event>& events);
 
 	long frame () const { return frame_; }
 	bool entry () const { return entry_; }
@@ -229,6 +236,8 @@ public:
 private:
 	void eval_input (const std::optional<Event>& event);
 	void eval_shift ();
+	void commit_move ();
+	bool step_frame (const Event* events, size_t count);
 	void gravity ();
 	bool hard_drop (bool forced);
 	void lock (bool forced, int posdif);

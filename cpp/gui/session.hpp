@@ -31,9 +31,9 @@ public:
 	// the settings it is actually played under.
 	Session (const SimConfig& config, unsigned seed, const replay::Meta& meta);
 
-	// A key changing state, queued for the sim. The engine polls one event
-	// per frame, so a burst of presses is spread over the following frames -
-	// which is exactly what the Python game does with its event queue.
+	// A key changing state, queued for the sim. Everything queued lands on
+	// the very next frame, in order - a burst of presses is not spread out,
+	// because a spread reads as input lag to the hand that made it.
 	void key (Key key, bool down);
 
 	// One 20ms frame. Returns false once the game is over.

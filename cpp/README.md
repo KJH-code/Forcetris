@@ -77,7 +77,12 @@ way TETR.IO plays it. Nothing about the outcome changes but the clock
 counters and boards), though a no-delay run naturally fits more pieces
 into the same minutes - worth remembering when reading the score table.
 The bot plays under whichever you pick, its pace re-tuned so its rank
-dial still means what it says. Two more modes are this side's own, with no Python counterpart:
+dial still means what it says. Input is not spread out the way the
+Python engine's one-event-per-frame poll spreads it: every press and
+release that arrived since the last 20ms frame lands on the next one, in
+order, so a quick tap-rotate-drop is on the board the frame after the
+fingers made it (the `input_check` ctest holds a burst frame to the same
+placement the spread-out frames reach). Two more modes are this side's own, with no Python counterpart:
 a cheese race - ten, eighteen or a hundred rows of holey garbage, dug as
 fast as you can, the clock stopping the moment the last of it is gone -
 and cheese survival, where the floor rises on a clock you pick (every

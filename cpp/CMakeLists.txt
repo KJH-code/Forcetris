@@ -117,6 +117,10 @@ add_executable(clearcheck tests/clearcheck.cpp)
 target_link_libraries(clearcheck PRIVATE forcetris_core)
 target_compile_options(clearcheck PRIVATE ${FORCETRIS_WARNINGS})
 
+add_executable(inputcheck tests/inputcheck.cpp gui/session.cpp)
+target_link_libraries(inputcheck PRIVATE forcetris_core)
+target_compile_options(inputcheck PRIVATE ${FORCETRIS_WARNINGS})
+
 add_executable(munchcheck tests/munchcheck.cpp)
 target_link_libraries(munchcheck PRIVATE forcetris_core)
 target_compile_options(munchcheck PRIVATE ${FORCETRIS_WARNINGS})
@@ -213,6 +217,7 @@ add_test(NAME opponent_check COMMAND opponentcheck)
 # The clear delay knob: the reference timing with it on, lock-frame
 # resolution with it off, and an outcome identical either way.
 add_test(NAME clear_check COMMAND clearcheck)
+add_test(NAME input_check COMMAND inputcheck)
 # The munch: minomuncher's statistics re-derived over our own records,
 # pinned on hand-built games.
 add_test(NAME munch_check COMMAND munchcheck)
