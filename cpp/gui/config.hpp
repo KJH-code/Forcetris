@@ -52,6 +52,9 @@ struct Config {
 	int spin_rule = 2;      // spins::Rule.
 	int cleartype = 0;      // 0 naive, 1 sticky cascade, 2 linked cascade.
 	bool clear_delay = true; // Animated clears, or resolved on the lock frame.
+	// The fuse ruleset - the variant's identity, on by default. Off plays
+	// the plain trainer rules with the flat forced-drop delay above.
+	bool fuse = true;
 
 	// The mode picker's dials, remembered between runs: how the cheese is
 	// cut and how the bot fight is set up.

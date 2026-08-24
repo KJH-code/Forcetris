@@ -176,6 +176,31 @@ SOUNDS.update({
         tone(262, 0.16, 0.4, 'square', release=0.3),
         tone(196, 0.40, 0.4, 'square', release=0.25, vibrato=0.02),
     ),
+    # The fuse ruleset's own cues. The warning is an urgent double tick,
+    # quiet enough to fire on most pieces without wearing the ear down.
+    'fusewarn': lambda: chain(
+        tone(1175, 0.030, 0.18, 'square', release=0.6),
+        silence(0.035),
+        tone(1175, 0.030, 0.18, 'square', release=0.6),
+    ),
+    # A lock inside the Flash window: one bright sparkle, over in a blink.
+    'flash': lambda: mix(
+        tone(1568, 0.07, 0.22, 'sine', release=0.4),
+        tone(2349, 0.05, 0.10, 'sine', release=0.5),
+    ),
+    # Overdrive igniting: a rising sweep that lands on a ringing fifth.
+    'overdrive': lambda: chain(
+        tone(392, 0.16, 0.34, 'saw', freq_end=784, release=0.2),
+        mix(
+            tone(784, 0.26, 0.30, 'sine', release=0.25),
+            tone(1175, 0.26, 0.18, 'sine', release=0.25),
+        ),
+    ),
+    # ...and guttering out: the same fifth folding back down.
+    'overdrive_end': lambda: chain(
+        tone(784, 0.10, 0.26, 'saw', freq_end=392, release=0.3),
+        tone(392, 0.18, 0.22, 'sine', release=0.35),
+    ),
 })
 
 if __name__ == '__main__':

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "forcetris/board.hpp"
+#include "forcetris/replay.hpp"
 #include "forcetris/sim.hpp"
 
 using namespace forcetris;
@@ -246,6 +247,48 @@ int main () {
 		check("overdrive ends and the gauge starts over",
 			!sim.overdrive() && sim.flow() == 0.
 				&& heard.count("overdrive_end") == 1);
+	}
+
+	// The record: a fuse-rules replay carries every tunable through a save
+	// and load, and a file without the keys reads back as trainer rules.
+	{
+		replay::Replay game;
+		game.meta.played = "2026-08-24T12:00:00";
+		game.meta.fuse = true;
+		game.meta.fuse_base = 3.0;
+		game.meta.fuse_min = 0.8;
+		game.meta.fuse_decay = 0.15;
+		game.meta.fuse_bank_cap = 6.0;
+		game.meta.fuse_draw_cap = 1.0;
+		game.meta.fuse_refuel_line = 0.4;
+		game.meta.fuse_refuel_attack = 0.5;
+		game.meta.flash_frac = 0.30;
+		game.meta.flash_floor = 0.25;
+		game.meta.flow_lock_gain = 8.;
+		game.meta.flow_flash_gain = 12.;
+		game.meta.flow_burn_loss = 18.;
+		game.meta.overdrive_secs = 8.;
+		game.meta.overdrive_mult = 1.5;
+		replay::Placement one;
+		one.form = I;
+		one.presses = {"HARD"};
+		game.placements.push_back(one);
+		check("the fuse replay saves", replay::save(game, "fusecheck-replays"));
+		const auto back = replay::load(game.path);
+		check("and loads with its ruleset whole", back.has_value()
+			&& back->meta.fuse
+			&& back->meta.fuse_base == 3.0
+			&& back->meta.fuse_decay == 0.15
+			&& back->meta.flash_floor == 0.25
+			&& back->meta.overdrive_mult == 1.5);
+		replay::Replay plain;
+		plain.meta.played = "2026-08-24T12:00:01";
+		plain.placements.push_back(one);
+		check("a trainer replay saves without fuse keys",
+			replay::save(plain, "fusecheck-replays"));
+		const auto legacy = replay::load(plain.path);
+		check("and reads back as trainer rules",
+			legacy.has_value() && !legacy->meta.fuse);
 	}
 
 	// Flags off: the ruleset does not exist.

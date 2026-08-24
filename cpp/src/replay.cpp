@@ -182,6 +182,24 @@ Meta read_meta (const json& data) {
 	meta.lines = int_or(data, "lines", 0);
 	meta.downstack = int_or(data, "downstack", 0);
 	meta.seconds = num_or(data, "seconds", 0.);
+	// The fuse ruleset, absent in every trainer-rules file.
+	meta.fuse = bool_or(data, "fuse", false);
+	if (meta.fuse) {
+		meta.fuse_base = num_or(data, "fuse_base", 0.);
+		meta.fuse_min = num_or(data, "fuse_min", 0.);
+		meta.fuse_decay = num_or(data, "fuse_decay", 0.);
+		meta.fuse_bank_cap = num_or(data, "fuse_bank_cap", 0.);
+		meta.fuse_draw_cap = num_or(data, "fuse_draw_cap", 0.);
+		meta.fuse_refuel_line = num_or(data, "fuse_refuel_line", 0.);
+		meta.fuse_refuel_attack = num_or(data, "fuse_refuel_attack", 0.);
+		meta.flash_frac = num_or(data, "flash_frac", 0.);
+		meta.flash_floor = num_or(data, "flash_floor", 0.);
+		meta.flow_lock_gain = num_or(data, "flow_lock_gain", 0.);
+		meta.flow_flash_gain = num_or(data, "flow_flash_gain", 0.);
+		meta.flow_burn_loss = num_or(data, "flow_burn_loss", 0.);
+		meta.overdrive_secs = num_or(data, "overdrive_secs", 0.);
+		meta.overdrive_mult = num_or(data, "overdrive_mult", 0.);
+	}
 	return meta;
 }
 
@@ -202,6 +220,25 @@ json write_meta (const Meta& meta) {
 	out["lines"] = meta.lines;
 	out["downstack"] = meta.downstack;
 	out["seconds"] = meta.seconds;
+	// The fuse keys only exist in fuse-rules files: a trainer-rules file
+	// written today is byte-for-byte the file written yesterday.
+	if (meta.fuse) {
+		out["fuse"] = true;
+		out["fuse_base"] = meta.fuse_base;
+		out["fuse_min"] = meta.fuse_min;
+		out["fuse_decay"] = meta.fuse_decay;
+		out["fuse_bank_cap"] = meta.fuse_bank_cap;
+		out["fuse_draw_cap"] = meta.fuse_draw_cap;
+		out["fuse_refuel_line"] = meta.fuse_refuel_line;
+		out["fuse_refuel_attack"] = meta.fuse_refuel_attack;
+		out["flash_frac"] = meta.flash_frac;
+		out["flash_floor"] = meta.flash_floor;
+		out["flow_lock_gain"] = meta.flow_lock_gain;
+		out["flow_flash_gain"] = meta.flow_flash_gain;
+		out["flow_burn_loss"] = meta.flow_burn_loss;
+		out["overdrive_secs"] = meta.overdrive_secs;
+		out["overdrive_mult"] = meta.overdrive_mult;
+	}
 	return out;
 }
 

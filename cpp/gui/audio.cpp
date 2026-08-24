@@ -18,6 +18,7 @@ std::vector<std::string> cue_names () {
 	std::vector<std::string> names = {
 		"move", "rotate", "hold", "lock", "drop", "forced", "clear", "tetris",
 		"tspin", "perfect", "b2b", "finesse", "gameover",
+		"fusewarn", "flash", "overdrive", "overdrive_end",
 	};
 	for (int step = 1; step <= 10; ++step) {
 		names.push_back("combo" + std::to_string(step));

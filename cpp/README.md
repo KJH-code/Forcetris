@@ -77,7 +77,17 @@ way TETR.IO plays it. Nothing about the outcome changes but the clock
 counters and boards), though a no-delay run naturally fits more pieces
 into the same minutes - worth remembering when reading the score table.
 The bot plays under whichever you pick, its pace re-tuned so its rank
-dial still means what it says. Input is not spread out the way the
+dial still means what it says. And above all of it sits the fuse - the
+variant's own ruleset, on by default and switchable off in Rules: every
+piece burns a per-level fuse and is slammed down when it runs out, clears
+bank refuel for the pieces to come, quick locks charge the Flow rail on
+the board's left flank - locks inside the Flash window charge it hardest -
+and a full rail ignites Overdrive: the fuse frozen, score and attack
+multiplied, the board rimmed in gold until it gutters out. Versus stays
+on trainer rules for now; the fuse reaches the bot in its own arc. A
+fuse-rules replay writes every tunable into its meta, so a file always
+says which game its score belongs to (`fuse_check` pins the ruleset and
+the meta round trip both). Input is not spread out the way the
 Python engine's one-event-per-frame poll spreads it: every press and
 release that arrived since the last 20ms frame lands on the next one, in
 order, so a quick tap-rotate-drop is on the board the frame after the

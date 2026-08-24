@@ -48,6 +48,17 @@ struct Meta {
 	int lines = 0;
 	int downstack = 0;
 	double seconds = 0.;
+	// The fuse ruleset the game was played under: absent from every
+	// trainer-rules file (so nothing written today changes), and every
+	// tunable written down when on - a marker alone could not honestly say
+	// which game a score belongs to, let alone re-derive its pressure.
+	bool fuse = false;
+	double fuse_base = 0., fuse_min = 0., fuse_decay = 0.;
+	double fuse_bank_cap = 0., fuse_draw_cap = 0.;
+	double fuse_refuel_line = 0., fuse_refuel_attack = 0.;
+	double flash_frac = 0., flash_floor = 0.;
+	double flow_lock_gain = 0., flow_flash_gain = 0., flow_burn_loss = 0.;
+	double overdrive_secs = 0., overdrive_mult = 0.;
 };
 
 struct Placement {

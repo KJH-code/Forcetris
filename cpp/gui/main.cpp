@@ -415,6 +415,27 @@ replay::Meta meta_for (const Config& config, int mode) {
 	meta.dcd = config.dcd;
 	meta.sdf = config.sdf;
 	meta.are = config.are;
+	// The fuse ruleset, tunables and all - a file must say which game its
+	// score belongs to. Versus stays on trainer rules until the bot learns
+	// to fight under the fuse.
+	const SimConfig rules = config.sim();
+	meta.fuse = mode == 5 ? false : rules.fuse;
+	if (meta.fuse) {
+		meta.fuse_base = rules.fuse_base;
+		meta.fuse_min = rules.fuse_min;
+		meta.fuse_decay = rules.fuse_decay;
+		meta.fuse_bank_cap = rules.fuse_bank_cap;
+		meta.fuse_draw_cap = rules.fuse_draw_cap;
+		meta.fuse_refuel_line = rules.fuse_refuel_line;
+		meta.fuse_refuel_attack = rules.fuse_refuel_attack;
+		meta.flash_frac = rules.flash_frac;
+		meta.flash_floor = rules.flash_floor;
+		meta.flow_lock_gain = rules.flow_lock_gain;
+		meta.flow_flash_gain = rules.flow_flash_gain;
+		meta.flow_burn_loss = rules.flow_burn_loss;
+		meta.overdrive_secs = rules.overdrive_secs;
+		meta.overdrive_mult = rules.overdrive_mult;
+	}
 	return meta;
 }
 
@@ -448,6 +469,10 @@ void start_versus (App& app) {
 	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = 5;
+	// Versus fights on trainer rules until the bot's driver learns to
+	// replan around a fuse-forced drop - a fuse it cannot answer would
+	// only be a handicap dial in disguise.
+	config.fuse = false;
 	config.cheese_holes = 1;
 	config.cheese_messiness = 30;
 	const replay::Meta meta = meta_for(app.config, 5);
@@ -841,17 +866,52 @@ void draw_board (App& app) {
 			kBoardX + kBoardW + px(18) + px(16), kBoardY + slot * px(92) + px(12), px(18));
 	}
 
-	// The forced drop meter: how much of the piece's stay is spent.
-	if (app.config.forced_delay > 0.) {
+	// The fuse wick (or, on trainer rules, the flat forced-drop meter):
+	// how much of the piece's stay is left. Frozen solid cyan under
+	// Overdrive - the one moment the wick stops burning.
+	const bool fused = sim.config().fuse;
+	const double limit = fused ? sim.fuse_total() : app.config.forced_delay;
+	if (limit > 0.) {
 		fill(renderer, kBoardX, kBoardY + kBoardH + px(10), kBoardW, px(8), {26, 33, 44, 255});
 		const auto elapsed = sim.piece_elapsed();
 		if (elapsed.has_value()) {
-			const double part =
-				std::min(1.0, *elapsed / app.config.forced_delay);
-			const Uint8 red = static_cast<Uint8>(90 + 165 * part);
-			const Uint8 green = static_cast<Uint8>(200 - 140 * part);
+			const double part = std::min(1.0, *elapsed / limit);
+			SDL_Color wick{static_cast<Uint8>(90 + 165 * part),
+				static_cast<Uint8>(200 - 140 * part), 80, 255};
+			if (fused && sim.overdrive()) {
+				wick = {90, 220, 235, 255};
+			}
 			fill(renderer, kBoardX, kBoardY + kBoardH + px(10),
-				static_cast<int>(kBoardW * (1.0 - part)), px(8), {red, green, 80, 255});
+				static_cast<int>(kBoardW * (1.0 - part)), px(8), wick);
+		}
+	}
+
+	// The Flow gauge, climbing the board's left flank; Overdrive lights the
+	// whole rail and rims the board while it burns.
+	if (fused) {
+		const int rail_x = kBoardX - px(20);
+		const int rail_y = kBoardY + px(120);
+		const int rail_h = kBoardH - px(130);
+		fill(renderer, rail_x, rail_y, px(10), rail_h, {26, 33, 44, 255});
+		const bool burning = sim.overdrive();
+		const int charge = burning ? rail_h
+			: static_cast<int>(rail_h * (sim.flow() / 100.));
+		if (charge > 0) {
+			const SDL_Color glow = burning
+				? SDL_Color{255, 214, 96, 255} : SDL_Color{65, 198, 224, 255};
+			fill(renderer, rail_x, rail_y + rail_h - charge, px(10), charge,
+				glow);
+		}
+		if (burning) {
+			const SDL_Color rim{255, 214, 96, 255};
+			fill(renderer, kBoardX - px(4), kBoardY - px(4),
+				kBoardW + px(8), px(4), rim);
+			fill(renderer, kBoardX - px(4), kBoardY + kBoardH,
+				kBoardW + px(8), px(4), rim);
+			fill(renderer, kBoardX - px(4), kBoardY,
+				px(4), kBoardH, rim);
+			fill(renderer, kBoardX + kBoardW, kBoardY,
+				px(4), kBoardH, rim);
 		}
 	}
 }
@@ -1186,6 +1246,12 @@ void draw_settings (App& app) {
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Rules")) {
+			ImGui::Spacing();
+			ImGui::Checkbox("Fuse rules", &app.config.fuse);
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", app.config.fuse
+				? "every piece burns; clears refuel; Flow ignites Overdrive"
+				: "plain rules with the flat forced-drop delay");
 			ImGui::Spacing();
 			const char* spin_rules[] = {
 				"Off", "T-spins", "All spins", "All spins + minis"};
@@ -2980,6 +3046,14 @@ int run (bool smoke, long smoke_frames) {
 			draw_board(app);
 			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
 			draw_label("NEXT", kBoardX + kBoardW + ui(18), kBoardY - ui(24));
+			if (app.session->sim().config().fuse) {
+				draw_label("FLOW", kBoardX - px(56), kBoardY + px(98));
+				if (app.session->sim().overdrive()) {
+					draw_label("OVERDRIVE", kBoardX - px(56),
+						kBoardY + kBoardH - px(4),
+						IM_COL32(255, 214, 96, 255));
+				}
+			}
 			if (!kPortrait) {
 				// A phone held upright has no margin for the stat panels;
 				// the board and the fight are the screen.
