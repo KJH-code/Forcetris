@@ -352,6 +352,9 @@ struct App {
 	bool place_panels = false;   // Push saved positions into ImGui this frame.
 	std::string rebinding;       // Action waiting for its next key, if any.
 	int mode = 0;                // The gametype the current game was started as.
+	// The mode picker's detail window: 0 none, 1 cheese, 2 versus. The
+	// picker shows one entry per family; the settings live in here.
+	int mode_popup = 0;
 	int cheese_total = 18;       // The race's quota, set by the mode picker.
 	int cheese_period = 250;     // Survival's frames per rising row.
 	int cheese_holes = 1;        // Holes per cheese row.
@@ -682,12 +685,17 @@ void handle_event (App& app, const SDL_Event& event) {
 	}
 	if (down && (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE
 		|| event.key.keysym.scancode == SDL_SCANCODE_AC_BACK)) {
-		if (app.screen == Screen::Game) {
-			if (app.editing) {
-				app.editing = false;
-			} else {
-				app.paused = !app.paused;
-			}
+		// One step back, whatever is in front: the editor first, then an
+		// open settings window, then the screen itself.
+		if (app.editing) {
+			// The editor's Done from the keyboard: closed and saved. The
+			// main loop returns a preview board to the settings screen.
+			app.editing = false;
+			save_config(app.config, app.config_file);
+		} else if (app.show_settings) {
+			app.show_settings = false;
+		} else if (app.screen == Screen::Game) {
+			app.paused = !app.paused;
 		} else if (app.screen == Screen::Viewer && app.viewing.has_value()) {
 			app.screen = app.viewing->back;
 			app.viewing.reset();
@@ -695,9 +703,21 @@ void handle_event (App& app, const SDL_Event& event) {
 			app.screen = app.study_back;
 			app.studying.reset();
 		} else if (app.screen == Screen::Modes) {
-			app.screen = Screen::Menu;
+			// A detail window closes back to the picker; the picker closes
+			// back to the menu.
+			if (app.mode_popup != 0) {
+				app.mode_popup = 0;
+			} else {
+				app.screen = Screen::Menu;
+			}
 		} else if (app.screen == Screen::Help) {
 			app.screen = app.help_back;
+		} else if (app.screen == Screen::Over
+			&& !ImGui::GetIO().WantCaptureKeyboard) {
+			// Not while a high score name is being typed - Escape there is
+			// ImGui's, to leave the text field.
+			app.versus.reset();
+			app.screen = Screen::Menu;
 		} else if (app.screen == Screen::Replays
 			|| app.screen == Screen::Scores
 			|| app.screen == Screen::Profile) {
@@ -2222,6 +2242,7 @@ void draw_menus (App& app) {
 		ImGui::Dummy(ImVec2(0.f, ui(10)));
 		if (ImGui::Button("Play", ImVec2(ui(260), ui(44)))) {
 			app.screen = Screen::Modes;
+			app.mode_popup = 0;
 		}
 		ImGui::Dummy(ImVec2(0.f, ui(6)));
 		if (ImGui::Button("How to play", ImVec2(ui(260), 0))) {
@@ -2252,122 +2273,148 @@ void draw_menus (App& app) {
 		ImGui::SetNextWindowPos(ImVec2(middle.x, ui(8)),
 			ImGuiCond_Always, ImVec2(0.5f, 0.f));
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(7)));
-		ImGui::Begin("mode select", nullptr, box);
-		ImGui::PushFont(app.fonts.head);
-		ImGui::TextUnformatted("Choose a mode");
-		ImGui::PopFont();
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
-		if (ImGui::Button("Free", ImVec2(ui(280), ui(44)))) {
-			start_game(app, 0);
-		}
-		ImGui::TextDisabled("No clock, no ramp: play until you top out.");
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
-		if (ImGui::Button("Timed", ImVec2(ui(280), ui(44)))) {
-			start_game(app, 1);
-		}
-		ImGui::TextDisabled("Five minutes; the multiplier climbs as it drains.");
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
-		if (ImGui::Button("Arcade", ImVec2(ui(280), ui(44)))) {
-			start_game(app, 2);
-		}
-		ImGui::TextDisabled("The level ramps and garbage rises from below.");
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted("Cheese race");
-		ImGui::SameLine();
-		if (ImGui::Button("10", ImVec2(ui(52), 0))) {
-			app.cheese_total = 10;
-			start_game(app, 3);
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("18", ImVec2(ui(52), 0))) {
-			app.cheese_total = 18;
-			start_game(app, 3);
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("100", ImVec2(ui(52), 0))) {
-			app.cheese_total = 100;
-			start_game(app, 3);
-		}
-		ImGui::TextDisabled("Dig that many rows; the clock stops at the last.");
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted("Cheese survival");
-		ImGui::SameLine();
-		if (ImGui::Button("8s", ImVec2(ui(52), 0))) {
-			app.cheese_period = 400;
-			start_game(app, 4);
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("5s", ImVec2(ui(52), 0))) {
-			app.cheese_period = 250;
-			start_game(app, 4);
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("3s", ImVec2(ui(52), 0))) {
-			app.cheese_period = 150;
-			start_game(app, 4);
-		}
-		ImGui::TextDisabled("The floor rises on that clock. Outlast it.");
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted("Holes per row");
-		for (int holes = 1; holes <= 3; ++holes) {
-			ImGui::SameLine();
-			char label[4];
-			std::snprintf(label, sizeof label, "%d", holes);
-			if (option_button(label, app.cheese_holes == holes, ui(44))) {
-				app.cheese_holes = holes;
+		if (app.mode_popup == 1) {
+			// The cheese family's own window: both modes and how the cheese
+			// is cut, out of the picker's way.
+			ImGui::Begin("cheese setup", nullptr, box);
+			ImGui::PushFont(app.fonts.head);
+			ImGui::TextUnformatted("Cheese");
+			ImGui::PopFont();
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted("Race");
+			static const struct { const char* label; int rows; } kRace[] = {
+				{"10", 10}, {"18", 18}, {"100", 100},
+			};
+			for (const auto& race : kRace) {
+				ImGui::SameLine();
+				if (ImGui::Button(race.label, ImVec2(ui(52), 0))) {
+					app.cheese_total = race.rows;
+					start_game(app, 3);
+				}
 			}
-		}
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted("Messiness");
-		static const struct { const char* label; int percent; } kMess[] = {
-			{"Clean", 0}, {"Low", 33}, {"High", 66}, {"Full", 100},
-		};
-		for (const auto& mess : kMess) {
-			ImGui::SameLine();
-			if (option_button(mess.label, app.cheese_messiness == mess.percent,
-				ui(62))) {
-				app.cheese_messiness = mess.percent;
+			ImGui::TextDisabled("Dig that many rows; the clock stops at the last.");
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted("Survival");
+			static const struct { const char* label; int period; } kRise[] = {
+				{"8s", 400}, {"5s", 250}, {"3s", 150},
+			};
+			for (const auto& rise : kRise) {
+				ImGui::SameLine();
+				if (ImGui::Button(rise.label, ImVec2(ui(52), 0))) {
+					app.cheese_period = rise.period;
+					start_game(app, 4);
+				}
 			}
-		}
-		ImGui::TextDisabled("How the cheese is cut: holes per row, and how");
-		ImGui::TextDisabled("often they move between rows.");
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted("Versus");
-		const auto& ladder = bot::ranks();
-		for (size_t i = 0; i < ladder.size(); ++i) {
-			ImGui::SameLine();
-			if (option_button(ladder[i].name,
-				app.bot_rank == static_cast<int>(i), ui(34))) {
-				app.bot_rank = static_cast<int>(i);
+			ImGui::TextDisabled("The floor rises on that clock. Outlast it.");
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			ImGui::Separator();
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted("Holes per row");
+			for (int holes = 1; holes <= 3; ++holes) {
+				ImGui::SameLine();
+				char label[4];
+				std::snprintf(label, sizeof label, "%d", holes);
+				if (option_button(label, app.cheese_holes == holes, ui(44))) {
+					app.cheese_holes = holes;
+				}
 			}
-		}
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted("First to");
-		for (int ft = 1; ft <= 3; ++ft) {
-			ImGui::SameLine();
-			char label[8];
-			std::snprintf(label, sizeof label, "FT%d", ft);
-			if (option_button(label, app.first_to == ft, ui(52))) {
-				app.first_to = ft;
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted("Messiness");
+			static const struct { const char* label; int percent; } kMess[] = {
+				{"Clean", 0}, {"Low", 33}, {"High", 66}, {"Full", 100},
+			};
+			for (const auto& mess : kMess) {
+				ImGui::SameLine();
+				if (option_button(mess.label,
+					app.cheese_messiness == mess.percent, ui(62))) {
+					app.cheese_messiness = mess.percent;
+				}
 			}
+			ImGui::TextDisabled("How the cheese is cut: holes per row, and how");
+			ImGui::TextDisabled("often they move between rows.");
+			ImGui::Dummy(ImVec2(0.f, ui(6)));
+			if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
+				app.mode_popup = 0;
+			}
+			ImGui::End();
+		} else if (app.mode_popup == 2) {
+			// The bot fight's window: rank, match length, go.
+			ImGui::Begin("versus setup", nullptr, box);
+			ImGui::PushFont(app.fonts.head);
+			ImGui::TextUnformatted("Versus");
+			ImGui::PopFont();
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted("Rank");
+			const auto& ladder = bot::ranks();
+			for (size_t i = 0; i < ladder.size(); ++i) {
+				ImGui::SameLine();
+				if (option_button(ladder[i].name,
+					app.bot_rank == static_cast<int>(i), ui(34))) {
+					app.bot_rank = static_cast<int>(i);
+				}
+			}
+			ImGui::TextDisabled("A bot paced at that rank's league-average PPS,");
+			ImGui::TextDisabled("garbage, cancelling and surge included.");
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted("First to");
+			for (int ft = 1; ft <= 3; ++ft) {
+				ImGui::SameLine();
+				char label[8];
+				std::snprintf(label, sizeof label, "FT%d", ft);
+				if (option_button(label, app.first_to == ft, ui(52))) {
+					app.first_to = ft;
+				}
+			}
+			ImGui::Dummy(ImVec2(0.f, ui(6)));
+			if (ImGui::Button("Fight", ImVec2(ui(280), ui(44)))) {
+				start_versus(app);
+			}
+			ImGui::Dummy(ImVec2(0.f, ui(2)));
+			if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
+				app.mode_popup = 0;
+			}
+			ImGui::End();
+		} else {
+			ImGui::Begin("mode select", nullptr, box);
+			ImGui::PushFont(app.fonts.head);
+			ImGui::TextUnformatted("Choose a mode");
+			ImGui::PopFont();
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			if (ImGui::Button("Free", ImVec2(ui(280), ui(44)))) {
+				start_game(app, 0);
+			}
+			ImGui::TextDisabled("No clock, no ramp: play until you top out.");
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			if (ImGui::Button("Timed", ImVec2(ui(280), ui(44)))) {
+				start_game(app, 1);
+			}
+			ImGui::TextDisabled("Five minutes; the multiplier climbs as it drains.");
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			if (ImGui::Button("Arcade", ImVec2(ui(280), ui(44)))) {
+				start_game(app, 2);
+			}
+			ImGui::TextDisabled("The level ramps and garbage rises from below.");
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			if (ImGui::Button("Cheese", ImVec2(ui(280), ui(44)))) {
+				app.mode_popup = 1;
+			}
+			ImGui::TextDisabled("Race a stack of holey garbage, or outlast");
+			ImGui::TextDisabled("the rising floor. Cut to taste.");
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			if (ImGui::Button("Versus", ImVec2(ui(280), ui(44)))) {
+				app.mode_popup = 2;
+			}
+			ImGui::TextDisabled("Fight the bot, rank D through X.");
+			ImGui::Dummy(ImVec2(0.f, ui(6)));
+			if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
+				app.screen = Screen::Menu;
+			}
+			ImGui::End();
 		}
-		ImGui::SameLine();
-		ImGui::Dummy(ImVec2(ui(8), 0.f));
-		ImGui::SameLine();
-		if (ImGui::Button("Fight", ImVec2(ui(90), 0))) {
-			start_versus(app);
-		}
-		ImGui::TextDisabled("A bot paced at that rank's league-average PPS,");
-		ImGui::TextDisabled("garbage, cancelling and surge included.");
-		ImGui::Dummy(ImVec2(0.f, ui(6)));
-		if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
-			app.screen = Screen::Menu;
-		}
-		ImGui::End();
 		ImGui::PopStyleVar();
 	} else if (app.screen == Screen::Game && app.paused) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -2535,7 +2582,9 @@ std::string screen_shot_key (const App& app) {
 	}
 	switch (app.screen) {
 		case Screen::Menu: return "menu";
-		case Screen::Modes: return "modes";
+		case Screen::Modes:
+			return app.mode_popup == 1 ? "modes_cheese"
+				: app.mode_popup == 2 ? "modes_versus" : "modes";
 		case Screen::Game:
 			return app.paused ? "pause"
 				: app.versus.has_value() ? "versus" : "game";
@@ -2551,7 +2600,7 @@ std::string screen_shot_key (const App& app) {
 	return "screen";
 }
 
-constexpr int kTour = 13;
+constexpr int kTour = 15;
 
 void tour_screen (App& app, int stop) {
 	switch (stop) {
@@ -2611,8 +2660,19 @@ void tour_screen (App& app, int stop) {
 			break;
 		case 10:
 			app.screen = Screen::Modes;
+			app.mode_popup = 0;
 			break;
 		case 11:
+			// The picker's two detail windows, cheese and versus.
+			app.screen = Screen::Modes;
+			app.mode_popup = 1;
+			break;
+		case 12:
+			app.screen = Screen::Modes;
+			app.mode_popup = 2;
+			break;
+		case 13:
+			app.mode_popup = 0;
 			app.history = profile::load(profile::path(app.root));
 			app.screen = Screen::Profile;
 			break;

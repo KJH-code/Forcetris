@@ -182,10 +182,13 @@ main menu's Profile screen reads it all back: lifetime totals, bests and
 the versus record on one tab, growth charts of PPS, APM, VS, estimated TR
 and finesse - each with a ten-game moving average - on the next, and the
 munch averages on the third, all filterable by mode.
-Play opens a mode picker - Free, Timed, Arcade, the cheese race at three
-lengths and cheese survival at three paces, with the holes-per-row and
-messiness of the cheese beside them, and Versus with its rank row and
-first-to count - with a line on what each one does. How to Play lists every
+Play opens a mode picker - Free, Timed and Arcade start at a click, while
+Cheese and Versus each open their own window: the cheese one holds the
+race at three lengths, survival at three paces, and the holes-per-row and
+messiness dials; the versus one the bot's rank row, the first-to count and
+the Fight button. Each entry carries a line on what it does, and Escape
+steps back out of anything - a detail window, the picker, the settings,
+the layout editor, a finished game's screen. How to Play lists every
 action against the keys bound to it right now, and explains the forced
 drop, in the Python screen's words.
 
