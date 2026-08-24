@@ -429,10 +429,9 @@ replay::Meta meta_for (const Config& config, int mode) {
 	meta.sdf = config.sdf;
 	meta.are = config.are;
 	// The fuse ruleset, tunables and all - a file must say which game its
-	// score belongs to. Versus stays on trainer rules until the bot learns
-	// to fight under the fuse.
+	// score belongs to. Duel fights under it too, both sides alike.
 	const SimConfig rules = config.sim();
-	meta.fuse = mode == 5 ? false : rules.fuse;
+	meta.fuse = rules.fuse;
 	meta.gametype = gametype_name(mode, meta.fuse);
 	if (meta.fuse) {
 		meta.fuse_base = rules.fuse_base;
@@ -488,10 +487,6 @@ void start_versus (App& app) {
 	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = 5;
-	// Versus fights on trainer rules until the bot's driver learns to
-	// replan around a fuse-forced drop - a fuse it cannot answer would
-	// only be a handicap dial in disguise.
-	config.fuse = false;
 	config.cheese_holes = 1;
 	config.cheese_messiness = 30;
 	const replay::Meta meta = meta_for(app.config, 5);

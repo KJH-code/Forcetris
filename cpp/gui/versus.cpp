@@ -6,9 +6,10 @@ namespace gui {
 void VersusMatch::begin_round (const SimConfig& player_config, unsigned seed,
                                const replay::Meta& player_meta) {
 	// The bot plays under the same rules, minus the trainer's chrome: no
-	// forced drop slamming its slow ranks, no finesse retry handing its
-	// pieces back, instant soft drop so a planned sonic drop is one press,
-	// and DAS parked out of reach of its tap pairs.
+	// flat forced drop slamming its slow ranks (the fuse, when on, burns
+	// for both sides alike - the driver types inside it), no finesse retry
+	// handing its pieces back, instant soft drop so a planned sonic drop
+	// is one press, and DAS parked out of reach of its tap pairs.
 	SimConfig config = player_config;
 	config.forced_delay = 0.;
 	config.finesse_rule = 0;
@@ -18,7 +19,7 @@ void VersusMatch::begin_round (const SimConfig& player_config, unsigned seed,
 	// Its recording carries the same stamp and rules, with the handling it
 	// actually played under - so an embedded bot side analyses truthfully.
 	replay::Meta meta = player_meta;
-	meta.gametype = "versus";
+	meta.gametype = player_meta.gametype;
 	meta.forced_delay = config.forced_delay;
 	meta.finesse = config.finesse_rule;
 	meta.cleartype = config.cleartype;

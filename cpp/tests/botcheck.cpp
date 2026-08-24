@@ -526,6 +526,66 @@ int main () {
 			&& ladder.back().width >= 12);
 	}
 
+	// The fuse, both sides of the driver's bargain. First a deliberately
+	// cruel burn, shorter than many routes' typing: mid-plan slams fire
+	// constantly, and the replan guard must keep every press on its own
+	// piece - fed stale, the stack towers and the run dies fast.
+	{
+		SimConfig config = bot_config();
+		config.fuse = true;
+		config.fuse_base = 0.24;
+		config.fuse_min = 0.24;
+		Sim sim(config, {});
+		const RunResult cruel = run_bot(ladder[0], 20260824, 120, 0, &sim);
+		int forced = 0;
+		for (const Locked& lock : sim.locked()) {
+			forced += lock.forced ? 1 : 0;
+		}
+		check("mid-burn slams do not kill the bot", !cruel.lost,
+			"lost after " + std::to_string(cruel.pieces));
+		check("and the cruel fuse really was firing", forced > 20,
+			std::to_string(forced));
+	}
+
+	// A fair fuse: the pace clamp makes even the ladder's slowest type
+	// inside the burn, so forced drops stay the exception.
+	{
+		SimConfig config = bot_config();
+		config.fuse = true;
+		config.fuse_base = 1.2;
+		config.fuse_min = 1.2;
+		Sim sim(config, {});
+		const RunResult fair = run_bot(ladder[0], 20260825, 100, 0, &sim);
+		int forced = 0;
+		for (const Locked& lock : sim.locked()) {
+			forced += lock.forced ? 1 : 0;
+		}
+		check("a fair fuse leaves the slow rank standing", !fair.lost);
+		check("typing early keeps forced drops rare",
+			forced * 100 < fair.pieces * 15,
+			std::to_string(forced) + " of " + std::to_string(fair.pieces));
+	}
+
+	// Overdrive on merit: S-rank speed against the stock fuse lands locks
+	// inside the Flash window and fills the gauge within a few dozen.
+	{
+		SimConfig config = bot_config();
+		config.fuse = true;
+		Sim sim(config, {});
+		Bag bag(20260826);
+		bot::Driver driver(20260826, ladder[4]);
+		bool ignited = false;
+		for (long frame = 0; frame < 5000 && !ignited; ++frame) {
+			bag.refill(sim);
+			const auto event = driver.next(sim);
+			if (!sim.step(event)) {
+				break;
+			}
+			ignited = ignited || sim.overdrive();
+		}
+		check("the bot reaches overdrive on its own merit", ignited);
+	}
+
 	if (failures > 0) {
 		std::printf("\n%d check(s) failed.\n", failures);
 		return 1;

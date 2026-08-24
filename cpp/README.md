@@ -83,8 +83,13 @@ piece burns a per-level fuse and is slammed down when it runs out, clears
 bank refuel for the pieces to come, quick locks charge the Flow rail on
 the board's left flank - locks inside the Flash window charge it hardest -
 and a full rail ignites Overdrive: the fuse frozen, score and attack
-multiplied, the board rimmed in gold until it gutters out. Versus stays
-on trainer rules for now; the fuse reaches the bot in its own arc. A
+multiplied, the board rimmed in gold until it gutters out. Duel burns it
+on both sides: the bot's driver types inside the fuse - a rank slower
+than the burn abandons its pace rather than its piece, the way a rushed
+player would - replans cleanly when a slam beats it to the lock, and
+reaches Overdrive on its own merit, more of it the higher the rank. The
+ladder still means what it says under the fuse: attack and pace climb it
+monotonically, D through X. A
 fuse-rules replay writes every tunable into its meta, so a file always
 says which game its score belongs to (`fuse_check` pins the ruleset and
 the meta round trip both). Input is not spread out the way the

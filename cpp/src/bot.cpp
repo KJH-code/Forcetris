@@ -918,6 +918,17 @@ void Driver::adopt (const Sim& sim) {
 	const long frames = std::lround(pay * 50. / rank_.pps);
 	const long typing = static_cast<long>(script_.size());
 	due_frame_ = sim.frame() + std::max(1L, frames - typing);
+	// Under the fuse the thinking must fit inside the burn: a rank slower
+	// than the fuse types early instead of being slammed mid-plan, the way
+	// a rushed player abandons their pace rather than their piece. Two
+	// frames of slack cover the lock itself.
+	if (sim.config().fuse && sim.fuse_total() > 0.
+		&& !sim.overdrive()) {
+		const double spent = sim.piece_elapsed().value_or(0.);
+		const long left = std::lround((sim.fuse_total() - spent) * 50.);
+		due_frame_ = std::min(due_frame_,
+			sim.frame() + std::max(1L, left - typing - 2));
+	}
 }
 
 std::optional<Event> Driver::next (const Sim& sim) {
