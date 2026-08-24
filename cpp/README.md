@@ -186,7 +186,9 @@ Play opens a mode picker - Free, Timed and Arcade start at a click, while
 Cheese and Versus each open their own window: the cheese one holds the
 race at three lengths, survival at three paces, and the holes-per-row and
 messiness dials; the versus one the bot's rank row, the first-to count and
-the Fight button. Each entry carries a line on what it does, and Escape
+the Fight button. Every dial is remembered in the config file, written the
+moment a game starts, so the next launch picks up where the last fight
+left off. Each entry carries a line on what it does, and Escape
 steps back out of anything - a detail window, the picker, the settings,
 the layout editor, a finished game's screen. How to Play lists every
 action against the keys bound to it right now, and explains the forced

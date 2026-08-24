@@ -8,6 +8,7 @@
 
 #include <SDL.h>
 
+#include "forcetris/bot.hpp"
 #include "stats.hpp"
 
 namespace forcetris {
@@ -123,6 +124,12 @@ Config load_config (const std::string& path) {
 		else if (key == "spins") in >> config.spin_rule;
 		else if (key == "clears") in >> config.cleartype;
 		else if (key == "cleardelay") { int flag = 1; in >> flag; config.clear_delay = flag != 0; }
+		else if (key == "cheesetotal") in >> config.cheese_total;
+		else if (key == "cheeseperiod") in >> config.cheese_period;
+		else if (key == "cheeseholes") in >> config.cheese_holes;
+		else if (key == "cheesemess") in >> config.cheese_messiness;
+		else if (key == "botrank") in >> config.bot_rank;
+		else if (key == "firstto") in >> config.first_to;
 		else if (key == "sfx_volume") in >> config.sfx_volume;
 		else if (key == "music_volume") in >> config.music_volume;
 		else if (key == "preset") in >> config.preset;
@@ -177,6 +184,14 @@ Config load_config (const std::string& path) {
 	config.sdf = std::clamp(config.sdf, 5, 40);
 	config.are = std::clamp(config.are, 0, 500);
 	config.forced_delay = std::clamp(config.forced_delay, 0., 5.);
+	// The picker's dials the same way: only values its own buttons offer.
+	config.cheese_total = std::clamp(config.cheese_total, 1, 400);
+	config.cheese_period = std::clamp(config.cheese_period, 30, 3000);
+	config.cheese_holes = std::clamp(config.cheese_holes, 1, 3);
+	config.cheese_messiness = std::clamp(config.cheese_messiness, 0, 100);
+	config.bot_rank = std::clamp<int>(config.bot_rank, 0,
+		static_cast<int>(bot::ranks().size()) - 1);
+	config.first_to = std::clamp(config.first_to, 1, 3);
 	return config;
 }
 
@@ -197,6 +212,12 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "spins " << config.spin_rule << "\n";
 	out << "clears " << config.cleartype << "\n";
 	out << "cleardelay " << (config.clear_delay ? 1 : 0) << "\n";
+	out << "cheesetotal " << config.cheese_total << "\n";
+	out << "cheeseperiod " << config.cheese_period << "\n";
+	out << "cheeseholes " << config.cheese_holes << "\n";
+	out << "cheesemess " << config.cheese_messiness << "\n";
+	out << "botrank " << config.bot_rank << "\n";
+	out << "firstto " << config.first_to << "\n";
 	out << "sfx_volume " << config.sfx_volume << "\n";
 	out << "music_volume " << config.music_volume << "\n";
 	out << "preset " << config.preset << "\n";

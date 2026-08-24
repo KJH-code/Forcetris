@@ -53,6 +53,15 @@ struct Config {
 	int cleartype = 0;      // 0 naive, 1 sticky cascade, 2 linked cascade.
 	bool clear_delay = true; // Animated clears, or resolved on the lock frame.
 
+	// The mode picker's dials, remembered between runs: how the cheese is
+	// cut and how the bot fight is set up.
+	int cheese_total = 18;       // The race's quota.
+	int cheese_period = 250;     // Survival's frames per rising row.
+	int cheese_holes = 1;        // Holes per cheese row.
+	int cheese_messiness = 100;  // Percent chance a row re-rolls its holes.
+	int bot_rank = 4;            // Index into bot::ranks(); 4 is S.
+	int first_to = 1;            // Rounds a versus match is played to.
+
 	// Volumes, as fractions, matching the Python game's defaults.
 	float sfx_volume = 1.f;
 	float music_volume = 1.f;

@@ -353,12 +353,9 @@ struct App {
 	std::string rebinding;       // Action waiting for its next key, if any.
 	int mode = 0;                // The gametype the current game was started as.
 	// The mode picker's detail window: 0 none, 1 cheese, 2 versus. The
-	// picker shows one entry per family; the settings live in here.
+	// picker shows one entry per family; the dials themselves live in the
+	// config, saved with the rest of it.
 	int mode_popup = 0;
-	int cheese_total = 18;       // The race's quota, set by the mode picker.
-	int cheese_period = 250;     // Survival's frames per rising row.
-	int cheese_holes = 1;        // Holes per cheese row.
-	int cheese_messiness = 100;  // Percent chance a row re-rolls its holes.
 	// The phone build's on-screen controls: buttons feeding the same key
 	// path the keyboard does. A hardware key hides them; a touch brings
 	// them back.
@@ -372,10 +369,8 @@ struct App {
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
 	bool relayout = false;       // The screen rotated; rebuild before drawing.
-	// The match against the bot, when one is on; who it is and how long.
+	// The match against the bot, when one is on.
 	std::optional<VersusMatch> versus;
-	int bot_rank = 4;            // Index into bot::ranks(); 4 is S.
-	int first_to = 1;
 	int score_page = 2;          // The high score table being looked at.
 	int hiscore_place = -1;      // Where the finished game would place, if it does.
 	char name_entry[9] = "";
@@ -426,12 +421,15 @@ replay::Meta meta_for (const Config& config, int mode) {
 void start_game (App& app, int mode) {
 	app.versus.reset();
 	app.mode = mode;
+	// The dials just used are worth keeping even if the app never gets a
+	// clean exit - phones rarely grant one.
+	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = mode;
-	config.cheese_total = app.cheese_total;
-	config.cheese_period = app.cheese_period;
-	config.cheese_holes = app.cheese_holes;
-	config.cheese_messiness = app.cheese_messiness;
+	config.cheese_total = app.config.cheese_total;
+	config.cheese_period = app.config.cheese_period;
+	config.cheese_holes = app.config.cheese_holes;
+	config.cheese_messiness = app.config.cheese_messiness;
 	app.session.emplace(config, app.seeds(), meta_for(app.config, mode));
 	app.screen = Screen::Game;
 	app.paused = false;
@@ -447,13 +445,14 @@ void start_game (App& app, int mode) {
 // the scoreboard beside it.
 void start_versus (App& app) {
 	app.mode = 5;
+	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = 5;
 	config.cheese_holes = 1;
 	config.cheese_messiness = 30;
 	const replay::Meta meta = meta_for(app.config, 5);
 	app.session.emplace(config, app.seeds(), meta);
-	app.versus.emplace(app.bot_rank, app.first_to);
+	app.versus.emplace(app.config.bot_rank, app.config.first_to);
 	app.versus->begin_round(config, app.seeds(), meta);
 	app.screen = Screen::Game;
 	app.paused = false;
@@ -2289,7 +2288,7 @@ void draw_menus (App& app) {
 			for (const auto& race : kRace) {
 				ImGui::SameLine();
 				if (ImGui::Button(race.label, ImVec2(ui(52), 0))) {
-					app.cheese_total = race.rows;
+					app.config.cheese_total = race.rows;
 					start_game(app, 3);
 				}
 			}
@@ -2303,7 +2302,7 @@ void draw_menus (App& app) {
 			for (const auto& rise : kRise) {
 				ImGui::SameLine();
 				if (ImGui::Button(rise.label, ImVec2(ui(52), 0))) {
-					app.cheese_period = rise.period;
+					app.config.cheese_period = rise.period;
 					start_game(app, 4);
 				}
 			}
@@ -2316,8 +2315,8 @@ void draw_menus (App& app) {
 				ImGui::SameLine();
 				char label[4];
 				std::snprintf(label, sizeof label, "%d", holes);
-				if (option_button(label, app.cheese_holes == holes, ui(44))) {
-					app.cheese_holes = holes;
+				if (option_button(label, app.config.cheese_holes == holes, ui(44))) {
+					app.config.cheese_holes = holes;
 				}
 			}
 			ImGui::AlignTextToFramePadding();
@@ -2328,8 +2327,8 @@ void draw_menus (App& app) {
 			for (const auto& mess : kMess) {
 				ImGui::SameLine();
 				if (option_button(mess.label,
-					app.cheese_messiness == mess.percent, ui(62))) {
-					app.cheese_messiness = mess.percent;
+					app.config.cheese_messiness == mess.percent, ui(62))) {
+					app.config.cheese_messiness = mess.percent;
 				}
 			}
 			ImGui::TextDisabled("How the cheese is cut: holes per row, and how");
@@ -2352,8 +2351,8 @@ void draw_menus (App& app) {
 			for (size_t i = 0; i < ladder.size(); ++i) {
 				ImGui::SameLine();
 				if (option_button(ladder[i].name,
-					app.bot_rank == static_cast<int>(i), ui(34))) {
-					app.bot_rank = static_cast<int>(i);
+					app.config.bot_rank == static_cast<int>(i), ui(34))) {
+					app.config.bot_rank = static_cast<int>(i);
 				}
 			}
 			ImGui::TextDisabled("A bot paced at that rank's league-average PPS,");
@@ -2365,8 +2364,8 @@ void draw_menus (App& app) {
 				ImGui::SameLine();
 				char label[8];
 				std::snprintf(label, sizeof label, "FT%d", ft);
-				if (option_button(label, app.first_to == ft, ui(52))) {
-					app.first_to = ft;
+				if (option_button(label, app.config.first_to == ft, ui(52))) {
+					app.config.first_to = ft;
 				}
 			}
 			ImGui::Dummy(ImVec2(0.f, ui(6)));
@@ -2846,7 +2845,7 @@ int run (bool smoke, long smoke_frames) {
 			mode = std::clamp(std::atoi(forced), 0, 5);
 		}
 		if (mode == 4) {
-			app.cheese_period = 150;
+			app.config.cheese_period = 150;
 		}
 		if (mode == 5) {
 			start_versus(app);
