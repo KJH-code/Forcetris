@@ -1,10 +1,11 @@
-# The C++ core, and its GUI
+# The C++ game, and its graded core
 
-An incremental port. The pure-logic half of the game is rewritten in C++ and
-graded against the Python original, and `forcetris` — built when SDL2 is
-available — is a playable game on top of it: the graded sim fed from the
-keyboard, with Dear ImGui screens, mouse-driven menus, and a stat panel
-layout you drag into shape.
+The product half of the repository: `forcetris` — built when SDL2 is
+available — is the variant itself, the fuse and Flow and Overdrive on top
+of a pure-logic core that began as an incremental port of the Python
+original and is still graded against it move for move. Dear ImGui screens,
+mouse-driven menus, a stat panel layout you drag into shape, and the
+variant's own modes, career and score tables on top.
 
 What is here:
 

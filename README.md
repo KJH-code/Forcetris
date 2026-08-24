@@ -1,15 +1,27 @@
 # Forcetris
 
-A Tetris trainer that takes the placement decision away from you. Every piece gets a
-fixed budget of real time from the moment it spawns; when the budget runs out the piece
-is hard dropped wherever its ghost happens to be, whether you were ready or not.
+*Every piece burns.*
 
-The point is to put a hard ceiling on deliberation. Set the budget slightly below the
-speed you can comfortably play at, and midgame downstacking stops being a thinking
-problem and starts being a reaction problem.
+A Tetris variant built around one rule: every piece carries a fuse, and when it burns
+out the piece is hard dropped wherever it stands. Clears refuel the pieces to come —
+spins, quads and perfect clears refuel hardest — quick locks charge a Flow gauge, and
+a full gauge ignites Overdrive: the fuse frozen, everything you send multiplied. The
+fuse tightens as the levels climb, so the game is a negotiation between the stack you
+want and the time you are given.
 
-TETR.IO has no equivalent knob — Zenith's shrinking lock delay is the closest thing, and
-it isn't adjustable.
+Six modes burn it: Ignition (endless), Blaze (three minutes), Inferno (rising floor),
+Meltdown and Bunker (the cheese, raced or outlasted), and Duel — a bot with a real
+rank ladder, D through X, fighting under the same fuse you do. Career chains the
+ladder into a conquest with stars, and The Daily deals everyone who shares a date the
+same seed, once.
+
+It began as a trainer — a hard ceiling on deliberation, the forced hard drop as a
+practice tool — and the trainer is still inside: switch the fuse off under Settings,
+Rules and the flat adjustable timer (with plain Tetris under it) is exactly what it
+always was. TETR.IO has no equivalent knob; Zenith's shrinking lock delay is the
+closest thing, and it isn't adjustable. The C++ game in `cpp/` is the product; the
+Python game below is the original engine, kept as the graded reference the whole
+port is tested against.
 
 ## Install
 

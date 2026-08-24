@@ -126,6 +126,7 @@ Config load_config (const std::string& path) {
 		else if (key == "clears") in >> config.cleartype;
 		else if (key == "cleardelay") { int flag = 1; in >> flag; config.clear_delay = flag != 0; }
 		else if (key == "fuse") { int flag = 1; in >> flag; config.fuse = flag != 0; }
+		else if (key == "shake") { int flag = 1; in >> flag; config.shake = flag != 0; }
 		else if (key == "cheesetotal") in >> config.cheese_total;
 		else if (key == "cheeseperiod") in >> config.cheese_period;
 		else if (key == "cheeseholes") in >> config.cheese_holes;
@@ -215,6 +216,7 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "clears " << config.cleartype << "\n";
 	out << "cleardelay " << (config.clear_delay ? 1 : 0) << "\n";
 	out << "fuse " << (config.fuse ? 1 : 0) << "\n";
+	out << "shake " << (config.shake ? 1 : 0) << "\n";
 	out << "cheesetotal " << config.cheese_total << "\n";
 	out << "cheeseperiod " << config.cheese_period << "\n";
 	out << "cheeseholes " << config.cheese_holes << "\n";

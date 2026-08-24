@@ -55,6 +55,8 @@ struct Config {
 	// The fuse ruleset - the variant's identity, on by default. Off plays
 	// the plain trainer rules with the flat forced-drop delay above.
 	bool fuse = true;
+	// The board's shudder on quads, spins and Overdrive. Purely cosmetic.
+	bool shake = true;
 
 	// The mode picker's dials, remembered between runs: how the cheese is
 	// cut and how the bot fight is set up.

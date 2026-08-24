@@ -375,6 +375,17 @@ struct App {
 	int career_stage = -1;
 	bool career_od = false;
 	bool daily_run = false;
+	// The juice: a fixed pool of clear sparks (a hard cap, not a queue -
+	// an overflowing celebration recycles its oldest embers), and the
+	// frame the board stops shuddering.
+	struct Spark {
+		float x = 0.f, y = 0.f, vx = 0.f, vy = 0.f;
+		int life = 0;
+		SDL_Color color{255, 255, 255, 255};
+	};
+	std::array<Spark, 256> sparks{};
+	size_t spark_at = 0;
+	long shake_until = -1;
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
 	bool relayout = false;       // The screen rotated; rebuild before drawing.
@@ -999,6 +1010,68 @@ void draw_label (const char* text, float x, float y, ImU32 color = IM_COL32(150,
 	ImGui::GetBackgroundDrawList()->AddText(ImVec2(x, y), color, text);
 }
 
+// A burst of sparks from the cells of the piece that just locked.
+void spawn_sparks (App& app, SDL_Color color, int per_cell, float kick) {
+	if (!app.session.has_value() || app.session->sim().locked().empty()) {
+		return;
+	}
+	const Locked& lock = app.session->sim().locked().back();
+	const Piece piece{lock.form, lock.state, lock.x, lock.y};
+	for (const Offset cell : cells_of(piece)) {
+		for (int i = 0; i < per_cell; ++i) {
+			App::Spark& spark = app.sparks[app.spark_at];
+			app.spark_at = (app.spark_at + 1) % app.sparks.size();
+			spark.x = kBoardX + (cell.x + 0.5f) * kCell;
+			spark.y = kBoardY + (cell.y + 0.5f) * kCell;
+			const float angle = (app.seeds() % 628) / 100.f;
+			const float speed
+				= kick * (0.5f + (app.seeds() % 100) / 100.f);
+			spark.vx = std::cos(angle) * speed;
+			spark.vy = std::sin(angle) * speed - kick * 0.6f;
+			spark.life = 18 + static_cast<int>(app.seeds() % 16);
+			spark.color = color;
+		}
+	}
+}
+
+// The cues' visible half: what the ear hears, the eye sees.
+void juice_cue (App& app, const std::string& cue) {
+	if (cue == "clear") {
+		spawn_sparks(app, {120, 210, 235, 255}, 3, 2.2f);
+	} else if (cue == "tetris") {
+		spawn_sparks(app, {255, 214, 96, 255}, 6, 3.2f);
+		app.shake_until = app.session->sim().frame() + 8;
+	} else if (cue == "tspin") {
+		spawn_sparks(app, {200, 130, 255, 255}, 5, 2.8f);
+		app.shake_until = app.session->sim().frame() + 6;
+	} else if (cue == "perfect") {
+		spawn_sparks(app, {255, 255, 255, 255}, 10, 4.0f);
+		app.shake_until = app.session->sim().frame() + 10;
+	} else if (cue == "overdrive") {
+		spawn_sparks(app, {255, 214, 96, 255}, 8, 3.6f);
+		app.shake_until = app.session->sim().frame() + 10;
+	}
+}
+
+// Step and draw the pool: tiny embers under gravity, faded out by life.
+void draw_sparks (App& app) {
+	for (App::Spark& spark : app.sparks) {
+		if (spark.life <= 0) {
+			continue;
+		}
+		--spark.life;
+		spark.x += spark.vx;
+		spark.y += spark.vy;
+		spark.vy += 0.18f;
+		SDL_Color faded = spark.color;
+		faded.a = static_cast<Uint8>(
+			std::min(255, spark.life * 16));
+		SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+		fill(app.renderer, static_cast<int>(spark.x),
+			static_cast<int>(spark.y), px(4), px(4), faded);
+	}
+}
+
 void draw_banner (App& app) {
 	const Banner& banner = app.session->banner();
 	if (banner.frame < 0) {
@@ -1344,6 +1417,7 @@ void draw_settings (App& app) {
 				"Off", "Count faults", "Retry on fault"};
 			ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);
 			ImGui::Checkbox("Wall kicks", &app.config.kicks);
+			ImGui::Checkbox("Screen shake", &app.config.shake);
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Sound")) {
@@ -2512,7 +2586,7 @@ void draw_menus (App& app) {
 		ImGui::PushFont(app.fonts.title);
 		ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f), "FORCETRIS");
 		ImGui::PopFont();
-		ImGui::TextDisabled("the forced hard drop trainer");
+		ImGui::TextDisabled("every piece burns");
 		ImGui::Dummy(ImVec2(0.f, ui(10)));
 		if (ImGui::Button("Play", ImVec2(ui(260), ui(44)))) {
 			app.screen = Screen::Modes;
@@ -3249,6 +3323,7 @@ int run (bool smoke, long smoke_frames) {
 		if (app.session.has_value()) {
 			for (const std::string& cue : app.session->take_cues()) {
 				app.audio.play(cue);
+				juice_cue(app, cue);
 			}
 		}
 
@@ -3276,7 +3351,25 @@ int run (bool smoke, long smoke_frames) {
 		SDL_RenderClear(app.renderer);
 		if (app.session.has_value()
 			&& (app.screen == Screen::Game || app.screen == Screen::Over)) {
+			// The shudder: the whole board pane jolts a few pixels while a
+			// quad, spin or Overdrive still rings - cosmetic, and off by a
+			// Rules switch.
+			const bool quaking = app.config.shake
+				&& app.session->sim().frame() < app.shake_until;
+			SDL_Rect quake{0, 0, 0, 0};
+			if (quaking) {
+				int w = 0;
+				int h = 0;
+				SDL_GetRendererOutputSize(app.renderer, &w, &h);
+				quake = {static_cast<int>(app.seeds() % 7) - 3,
+					static_cast<int>(app.seeds() % 7) - 3, w, h};
+				SDL_RenderSetViewport(app.renderer, &quake);
+			}
 			draw_board(app);
+			draw_sparks(app);
+			if (quaking) {
+				SDL_RenderSetViewport(app.renderer, nullptr);
+			}
 			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
 			draw_label("NEXT", kBoardX + kBoardW + ui(18), kBoardY - ui(24));
 			if (app.session->sim().config().fuse) {
