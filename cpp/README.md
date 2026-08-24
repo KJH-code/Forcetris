@@ -192,11 +192,19 @@ main menu's Profile screen reads it all back: lifetime totals, bests and
 the versus record on one tab, growth charts of PPS, APM, VS, estimated TR
 and finesse - each with a ten-game moving average - on the next, and the
 munch averages on the third, all filterable by mode.
-Play opens a mode picker - Free, Timed and Arcade start at a click, while
-Cheese and Versus each open their own window: the cheese one holds the
-race at three lengths, survival at three paces, and the holes-per-row and
-messiness dials; the versus one the bot's rank row, the first-to count and
-the Fight button. Every dial is remembered in the config file, written the
+Play opens a mode picker in the variant's own names - Ignition (endless,
+the fuse shortening per level), Blaze (three burning minutes) and Inferno
+(the rising floor) start at a click, while Meltdown / Bunker and Duel each
+open their own window: the cheese one holds Meltdown's race at three
+lengths, Bunker's survival at three paces, and the holes-per-row and
+messiness dials; the duel one the bot's rank row, the first-to count and
+the Fight button. A fuse-rules game scores into the variant's own six
+tables (fusescore.dat, one per mode, Duel included for the day it fights
+fused); the trainer's three-table SFH file keeps its bytes and its
+meaning, and the scores screen shows all nine side by side. Game history
+and replays carry the matching keys - ignition, blaze, inferno, meltdown,
+bunker, duel against the frozen legacy names - so no record ever changes
+game under your feet. Every dial is remembered in the config file, written the
 moment a game starts, so the next launch picks up where the last fight
 left off. Each entry carries a line on what it does, and Escape
 steps back out of anything - a detail window, the picker, the settings,

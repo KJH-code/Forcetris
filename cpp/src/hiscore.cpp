@@ -28,9 +28,10 @@ std::uint64_t get_be (const std::string& data, size_t at, int bytes) {
 	return value;
 }
 
-std::string packed (const Tables& tables) {
+template <size_t N>
+std::string packed (const std::array<Table, N>& tables) {
 	std::string out;
-	out.reserve(kFileBytes);
+	out.reserve(N * kPerTable * kRecordBytes);
 	for (const Table& table : tables) {
 		for (const Entry& entry : table) {
 			out.append(entry.name.data(), entry.name.size());
@@ -42,8 +43,9 @@ std::string packed (const Tables& tables) {
 	return out;
 }
 
-bool unpack (const std::string& data, Tables& tables) {
-	if (data.size() != kFileBytes) {
+template <size_t N>
+bool unpack (const std::string& data, std::array<Table, N>& tables) {
+	if (data.size() != N * kPerTable * kRecordBytes) {
 		return false;
 	}
 	size_t at = 0;
@@ -88,6 +90,25 @@ fs::path back_path (const std::string& folder) {
 	return fs::path(folder) / "back" / "hiscore.bak";
 }
 
+fs::path fuse_data_path (const std::string& folder) {
+	return fs::path(folder) / "fusescore.dat";
+}
+
+fs::path fuse_back_path (const std::string& folder) {
+	return fs::path(folder) / "back" / "fusescore.bak";
+}
+
+// Pajitnov holds every empty seat, whichever file it is.
+template <size_t N>
+void seat_the_father (std::array<Table, N>& tables) {
+	const char* father = "Pajitnov";
+	for (Table& table : tables) {
+		for (Entry& entry : table) {
+			std::copy(father, father + 8, entry.name.begin());
+		}
+	}
+}
+
 } // namespace
 
 int table_for (const std::string& gametype) {
@@ -114,12 +135,7 @@ bool outranks (const Entry& a, const Entry& b) {
 
 Tables fresh () {
 	Tables tables{};
-	const char* father = "Pajitnov";
-	for (Table& table : tables) {
-		for (Entry& entry : table) {
-			std::copy(father, father + 8, entry.name.begin());
-		}
-	}
+	seat_the_father(tables);
 	return tables;
 }
 
@@ -170,6 +186,75 @@ int place (const Tables& tables, const std::string& gametype, const Entry& probe
 		}
 	}
 	return at;
+}
+
+int fuse_table_for (const std::string& gametype) {
+	static const char* kNames[kFuseTables]
+		= {"ignition", "blaze", "inferno", "meltdown", "bunker", "duel"};
+	for (int at = 0; at < kFuseTables; ++at) {
+		if (gametype == kNames[at]) {
+			return at;
+		}
+	}
+	return -1;
+}
+
+FuseTables fresh_fuse () {
+	FuseTables tables{};
+	seat_the_father(tables);
+	return tables;
+}
+
+FuseTables load_fuse (const std::string& folder) {
+	FuseTables tables = fresh_fuse();
+	std::string data;
+	if (read_file(fuse_data_path(folder), data) && unpack(data, tables)) {
+		return tables;
+	}
+	if (read_file(fuse_back_path(folder), data) && unpack(data, tables)) {
+		return tables;
+	}
+	return tables;
+}
+
+bool submit_fuse (const std::string& folder, const std::string& gametype,
+		Entry entry) {
+	const int at = fuse_table_for(gametype);
+	if (at < 0) {
+		return false;
+	}
+	FuseTables tables = load_fuse(folder);
+	Table& table = tables[at];
+	std::vector<Entry> eleven(table.begin(), table.end());
+	eleven.push_back(entry);
+	std::stable_sort(eleven.begin(), eleven.end(), outranks);
+	std::copy(eleven.begin(), eleven.begin() + kPerTable, table.begin());
+	const std::string data = packed(tables);
+	if (!write_file(fuse_data_path(folder), data)) {
+		return false;
+	}
+	write_file(fuse_back_path(folder), data);
+	return true;
+}
+
+int place_fuse (const FuseTables& tables, const std::string& gametype,
+		const Entry& probe) {
+	const int at = fuse_table_for(gametype);
+	if (at < 0) {
+		return kPerTable;
+	}
+	const Table& table = tables[at];
+	std::vector<Entry> sorted(table.begin(), table.end());
+	std::stable_sort(sorted.begin(), sorted.end(), outranks);
+	int placed = 0;
+	for (const Entry& sitting : sorted) {
+		if (outranks(sitting, probe)) {
+			++placed;
+		} else {
+			break;
+		}
+	}
+	return placed;
 }
 
 std::string folder (const std::string& root) {

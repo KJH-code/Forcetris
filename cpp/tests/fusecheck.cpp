@@ -4,11 +4,13 @@
 // the burn and multiplies what goes out, a hold does not reset the clock -
 // and with the flag off, none of it exists.
 #include <cstdio>
+#include <filesystem>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "forcetris/board.hpp"
+#include "forcetris/hiscore.hpp"
 #include "forcetris/replay.hpp"
 #include "forcetris/sim.hpp"
 
@@ -289,6 +291,32 @@ int main () {
 		const auto legacy = replay::load(plain.path);
 		check("and reads back as trainer rules",
 			legacy.has_value() && !legacy->meta.fuse);
+	}
+
+	// The variant's own score file: a duel entry round-trips through
+	// fusescore.dat, the trainer's hiscore.dat is never created, and a
+	// name from neither ruleset is refused.
+	{
+		const std::string folder = "fusecheck-scores";
+		std::filesystem::remove_all(folder);
+		hiscore::Entry entry;
+		const char* name = "Fusebox ";
+		std::copy(name, name + 8, entry.name.begin());
+		entry.score = 4200;
+		entry.lines = 17;
+		entry.timer = 9000;
+		check("a variant score submits", hiscore::submit_fuse(folder, "duel", entry));
+		const hiscore::FuseTables tables = hiscore::load_fuse(folder);
+		check("and tops its own table",
+			hiscore::shown_name(tables[5][0]) == "Fusebox"
+				&& tables[5][0].score == 4200);
+		check("the trainer file was never touched",
+			!std::filesystem::exists(
+				std::filesystem::path(folder) / "hiscore.dat"));
+		check("an unknown name is refused",
+			!hiscore::submit_fuse(folder, "free", entry)
+				&& hiscore::place_fuse(tables, "free", entry)
+					== hiscore::kPerTable);
 	}
 
 	// Flags off: the ruleset does not exist.

@@ -57,6 +57,26 @@ bool submit (const std::string& folder, const std::string& gametype, Entry entry
 // entries as the game's announcement does. kPerTable means it missed.
 int place (const Tables& tables, const std::string& gametype, const Entry& probe);
 
+// The variant's own tables: the same record codec in its own file
+// (fusescore.dat, mirrored like the SFH one), six tables in file order -
+// ignition, blaze, inferno, meltdown, bunker, duel. A fuse-rules score
+// never touches the trainer's byte-compatible file, and the trainer's
+// never touches this one.
+constexpr int kFuseTables = 6;
+using FuseTables = std::array<Table, kFuseTables>;
+
+// The table index for a variant gametype name, or -1 for anything else -
+// unlike table_for there is no fall-through, because "anything else" here
+// means a file that must not be written.
+int fuse_table_for (const std::string& gametype);
+
+FuseTables fresh_fuse ();
+FuseTables load_fuse (const std::string& folder);
+bool submit_fuse (const std::string& folder, const std::string& gametype,
+	Entry entry);
+int place_fuse (const FuseTables& tables, const std::string& gametype,
+	const Entry& probe);
+
 // The folder holding hiscore.dat: FORCETRIS_HISCORE if set, else root/data.
 std::string folder (const std::string& root);
 

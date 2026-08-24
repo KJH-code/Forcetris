@@ -371,7 +371,7 @@ struct App {
 	bool relayout = false;       // The screen rotated; rebuild before drawing.
 	// The match against the bot, when one is on.
 	std::optional<VersusMatch> versus;
-	int score_page = 2;          // The high score table being looked at.
+	int score_page = 0;          // The high score table being looked at.
 	int hiscore_place = -1;      // Where the finished game would place, if it does.
 	char name_entry[9] = "";
 	bool score_saved = false;
@@ -379,7 +379,21 @@ struct App {
 	bool quit = false;
 };
 
-const char* gametype_name (int mode) {
+// The one owner of the mode-to-name mapping. The fused axis matters: a
+// fuse-rules game and a trainer-rules game are different games, so their
+// records, tables and history keep different keys - and the legacy strings
+// are frozen forever, or old files would silently change meaning.
+const char* gametype_name (int mode, bool fused) {
+	if (fused) {
+		switch (mode) {
+			case 1: return "blaze";
+			case 2: return "inferno";
+			case 3: return "meltdown";
+			case 4: return "bunker";
+			case 5: return "duel";
+			default: return "ignition";
+		}
+	}
 	switch (mode) {
 		case 1: return "timed";
 		case 2: return "arcade";
@@ -405,7 +419,6 @@ replay::Meta meta_for (const Config& config, int mode) {
 		std::strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%S", local);
 	}
 	meta.played = stamp;
-	meta.gametype = gametype_name(mode);
 	meta.forced_delay = config.forced_delay;
 	meta.finesse = config.finesse_rule;
 	meta.spinrule = config.spin_rule;
@@ -420,6 +433,7 @@ replay::Meta meta_for (const Config& config, int mode) {
 	// to fight under the fuse.
 	const SimConfig rules = config.sim();
 	meta.fuse = mode == 5 ? false : rules.fuse;
+	meta.gametype = gametype_name(mode, meta.fuse);
 	if (meta.fuse) {
 		meta.fuse_base = rules.fuse_base;
 		meta.fuse_min = rules.fuse_min;
@@ -447,6 +461,11 @@ void start_game (App& app, int mode) {
 	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = mode;
+	if (config.fuse && mode == 1) {
+		// Blaze burns three minutes, not the trainer's five. Its own table
+		// keeps its scores, so the shorter clock competes only with itself.
+		config.timer_ms = 3 * 60 * 1000;
+	}
 	config.cheese_total = app.config.cheese_total;
 	config.cheese_period = app.config.cheese_period;
 	config.cheese_holes = app.config.cheese_holes;
@@ -577,9 +596,23 @@ void end_game (App& app) {
 	// only happens if a name is entered and the score actually submitted.
 	// The loss-time counters: eval_loss probes before a still-resolving
 	// clear lands its points, so the snapshot does too.
-	if (app.mode >= 3) {
-		// The cheese modes are this side's own; the score file is the Python
-		// game's, three tables and no more, and stays byte-compatible.
+	const bool fused = app.session->sim().config().fuse;
+	if (fused) {
+		// A fuse-rules game competes in the variant's own tables, every
+		// mode with a table of its own.
+		const Sim& sim = app.session->sim();
+		hiscore::Entry probe;
+		probe.score = static_cast<std::uint64_t>(
+			std::max<long long>(0, sim.final_score()));
+		probe.lines = static_cast<std::uint32_t>(std::max(0, sim.final_lines()));
+		probe.timer = static_cast<std::uint32_t>(std::max(0L, sim.timer_ms()));
+		const int at = hiscore::place_fuse(
+			hiscore::load_fuse(hiscore::folder(app.root)),
+			gametype_name(app.mode, true), probe);
+		app.hiscore_place = at < hiscore::kPerTable ? at : -1;
+	} else if (app.mode >= 3) {
+		// The cheese modes are this side's own; the trainer score file is
+		// the Python game's, three tables and no more, byte-compatible.
 		app.hiscore_place = -1;
 	} else {
 		const Sim& sim = app.session->sim();
@@ -589,7 +622,8 @@ void end_game (App& app) {
 		probe.lines = static_cast<std::uint32_t>(std::max(0, sim.final_lines()));
 		probe.timer = static_cast<std::uint32_t>(std::max(0L, sim.timer_ms()));
 		const int at = hiscore::place(
-			hiscore::load(hiscore::folder(app.root)), gametype_name(app.mode), probe);
+			hiscore::load(hiscore::folder(app.root)),
+			gametype_name(app.mode, false), probe);
 		app.hiscore_place = at < hiscore::kPerTable ? at : -1;
 	}
 	app.name_entry[0] = '\0';
@@ -1731,17 +1765,38 @@ void draw_help (App& app) {
 		ImGui::EndTable();
 	}
 	ImGui::Separator();
-	ImGui::TextUnformatted("Forced Drop");
-	if (app.config.forced_delay > 0.) {
-		ImGui::Text("Every piece is hard dropped for you %.2fs after it spawns.",
-			app.config.forced_delay);
-		ImGui::Text("Holding gives the incoming piece a fresh %.2fs, once per piece.",
-			app.config.forced_delay);
-		ImGui::TextUnformatted("Soft dropping and wall kicks do not stop the clock.");
-		ImGui::TextUnformatted("Change the time under Settings.");
+	if (app.config.fuse) {
+		ImGui::TextUnformatted("The Fuse");
+		ImGui::TextUnformatted(
+			"Every piece burns. When its fuse runs out it is slammed down\n"
+			"where it stands - and the fuse gets shorter as the levels climb.");
+		ImGui::TextUnformatted(
+			"Clears refuel the pieces to come; spins, quads and perfect\n"
+			"clears refuel hardest. Holding does not stop the burn.");
+		ImGui::TextUnformatted("");
+		ImGui::TextUnformatted("Flow and Overdrive");
+		ImGui::TextUnformatted(
+			"Lock with fuse to spare and the Flow rail climbs - lock in the\n"
+			"first moments, the Flash window, and it climbs hardest. Burn a\n"
+			"fuse to the end and it drains.");
+		ImGui::TextUnformatted(
+			"A full rail ignites Overdrive: the fuse freezes and everything\n"
+			"you send is multiplied, until it gutters out.");
+		ImGui::TextDisabled(
+			"The plain trainer rules live under Settings, Rules, Fuse.");
 	} else {
-		ImGui::TextUnformatted("Currently off, so this is plain Tetris.");
-		ImGui::TextUnformatted("Turn it on under Settings to train placement speed.");
+		ImGui::TextUnformatted("Forced Drop");
+		if (app.config.forced_delay > 0.) {
+			ImGui::Text("Every piece is hard dropped for you %.2fs after it spawns.",
+				app.config.forced_delay);
+			ImGui::Text("Holding gives the incoming piece a fresh %.2fs, once per piece.",
+				app.config.forced_delay);
+			ImGui::TextUnformatted("Soft dropping and wall kicks do not stop the clock.");
+			ImGui::TextUnformatted("Change the time under Settings.");
+		} else {
+			ImGui::TextUnformatted("Currently off, so this is plain Tetris.");
+			ImGui::TextUnformatted("Turn it on under Settings to train placement speed.");
+		}
 	}
 	ImGui::Separator();
 	if (ImGui::Button("Back", ImVec2(ui(240), 0))) {
@@ -1984,9 +2039,12 @@ void draw_scores (App& app) {
 	ImGui::Begin("High scores", nullptr, ImGuiWindowFlags_AlwaysAutoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
-	static const char* kPages[] = {"Arcade", "Timed", "Free"};
-	for (int page = 0; page < 3; ++page) {
-		if (page > 0) {
+	// The variant's six tables first, the trainer's three behind them -
+	// different files, different games, one screen.
+	static const char* kPages[] = {"Ignition", "Blaze", "Inferno", "Meltdown",
+		"Bunker", "Duel", "Arcade", "Timed", "Free"};
+	for (int page = 0; page < 9; ++page) {
+		if (page > 0 && page != 6) {
 			ImGui::SameLine();
 		}
 		if (ImGui::RadioButton(kPages[page], app.score_page == page)) {
@@ -1994,14 +2052,18 @@ void draw_scores (App& app) {
 		}
 	}
 	ImGui::Separator();
-	const hiscore::Tables tables = hiscore::load(hiscore::folder(app.root));
+	const hiscore::Tables plain = hiscore::load(hiscore::folder(app.root));
+	const hiscore::FuseTables fuse
+		= hiscore::load_fuse(hiscore::folder(app.root));
+	const hiscore::Table& table = app.score_page < 6
+		? fuse[app.score_page] : plain[app.score_page - 6];
 	if (ImGui::BeginTable("scores", 4)) {
 		ImGui::TableSetupColumn("Name");
 		ImGui::TableSetupColumn("Score");
 		ImGui::TableSetupColumn("Lines");
 		ImGui::TableSetupColumn("Time taken");
 		ImGui::TableHeadersRow();
-		for (const hiscore::Entry& entry : tables[app.score_page]) {
+		for (const hiscore::Entry& entry : table) {
 			ImGui::TableNextRow();
 			ImGui::TableSetColumnIndex(0);
 			ImGui::TextUnformatted(hiscore::shown_name(entry).c_str());
@@ -2114,16 +2176,21 @@ void draw_profile (App& app) {
 		| ImGuiWindowFlags_NoSavedSettings);
 
 	// The mode filter every tab reads.
-	static const char* kFilters[]
-		= {"All", "Free", "Timed", "Arcade", "Cheese", "Survival", "Versus"};
-	static const char* kModes[]
-		= {"", "free", "timed", "arcade", "cheese", "survival", "versus"};
+	// Each filter matches its mode family under either ruleset's key - the
+	// variant name and the trainer name are the same family of game.
+	static const char* kFilters[] = {"All", "Ignition", "Blaze", "Inferno",
+		"Meltdown", "Bunker", "Duel"};
+	static const char* kOld[] = {"", "free", "timed", "arcade", "cheese_race",
+		"cheese_survival", "versus"};
+	static const char* kNew[] = {"", "ignition", "blaze", "inferno",
+		"meltdown", "bunker", "duel"};
 	static int filter = 0;
 	ImGui::SetNextItemWidth(ui(160));
 	ImGui::Combo("Mode", &filter, kFilters, 7);
 	std::vector<const profile::GameRecord*> games;
 	for (const profile::GameRecord& record : app.history) {
-		if (filter == 0 || record.gametype == kModes[filter]) {
+		if (filter == 0 || record.gametype == kOld[filter]
+			|| record.gametype == kNew[filter]) {
 			games.push_back(&record);
 		}
 	}
@@ -2315,7 +2382,7 @@ void draw_menus (App& app) {
 			app.screen = Screen::Help;
 		}
 		if (ImGui::Button("High scores", ImVec2(ui(260), 0))) {
-			app.score_page = 2;
+			app.score_page = 0;
 			app.screen = Screen::Scores;
 		}
 		if (ImGui::Button("Replays", ImVec2(ui(260), 0))) {
@@ -2343,11 +2410,11 @@ void draw_menus (App& app) {
 			// is cut, out of the picker's way.
 			ImGui::Begin("cheese setup", nullptr, box);
 			ImGui::PushFont(app.fonts.head);
-			ImGui::TextUnformatted("Cheese");
+			ImGui::TextUnformatted("Meltdown / Bunker");
 			ImGui::PopFont();
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
 			ImGui::AlignTextToFramePadding();
-			ImGui::TextUnformatted("Race");
+			ImGui::TextUnformatted("Meltdown");
 			static const struct { const char* label; int rows; } kRace[] = {
 				{"10", 10}, {"18", 18}, {"100", 100},
 			};
@@ -2361,7 +2428,7 @@ void draw_menus (App& app) {
 			ImGui::TextDisabled("Dig that many rows; the clock stops at the last.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
 			ImGui::AlignTextToFramePadding();
-			ImGui::TextUnformatted("Survival");
+			ImGui::TextUnformatted("Bunker");
 			static const struct { const char* label; int period; } kRise[] = {
 				{"8s", 400}, {"5s", 250}, {"3s", 150},
 			};
@@ -2408,7 +2475,7 @@ void draw_menus (App& app) {
 			// The bot fight's window: rank, match length, go.
 			ImGui::Begin("versus setup", nullptr, box);
 			ImGui::PushFont(app.fonts.head);
-			ImGui::TextUnformatted("Versus");
+			ImGui::TextUnformatted("Duel");
 			ImGui::PopFont();
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
 			ImGui::AlignTextToFramePadding();
@@ -2449,28 +2516,31 @@ void draw_menus (App& app) {
 			ImGui::TextUnformatted("Choose a mode");
 			ImGui::PopFont();
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Free", ImVec2(ui(280), ui(44)))) {
+			if (ImGui::Button("Ignition", ImVec2(ui(280), ui(44)))) {
 				start_game(app, 0);
 			}
-			ImGui::TextDisabled("No clock, no ramp: play until you top out.");
+			ImGui::TextDisabled("Endless. The fuse shortens as the levels");
+			ImGui::TextDisabled("climb; burn bright for as long as you can.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Timed", ImVec2(ui(280), ui(44)))) {
+			if (ImGui::Button("Blaze", ImVec2(ui(280), ui(44)))) {
 				start_game(app, 1);
 			}
-			ImGui::TextDisabled("Five minutes; the multiplier climbs as it drains.");
+			ImGui::TextDisabled("Three minutes on the clock; the multiplier");
+			ImGui::TextDisabled("climbs as it drains. Make them count.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Arcade", ImVec2(ui(280), ui(44)))) {
+			if (ImGui::Button("Inferno", ImVec2(ui(280), ui(44)))) {
 				start_game(app, 2);
 			}
-			ImGui::TextDisabled("The level ramps and garbage rises from below.");
+			ImGui::TextDisabled("The floor rises, the levels ramp, and the");
+			ImGui::TextDisabled("fuse keeps shrinking.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Cheese", ImVec2(ui(280), ui(44)))) {
+			if (ImGui::Button("Meltdown / Bunker", ImVec2(ui(280), ui(44)))) {
 				app.mode_popup = 1;
 			}
-			ImGui::TextDisabled("Race a stack of holey garbage, or outlast");
-			ImGui::TextDisabled("the rising floor. Cut to taste.");
+			ImGui::TextDisabled("Race a stack of holey garbage down, or");
+			ImGui::TextDisabled("outlast the rising floor. Cut to taste.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Versus", ImVec2(ui(280), ui(44)))) {
+			if (ImGui::Button("Duel", ImVec2(ui(280), ui(44)))) {
 				app.mode_popup = 2;
 			}
 			ImGui::TextDisabled("Fight the bot, rank D through X.");
@@ -2575,10 +2645,16 @@ void draw_menus (App& app) {
 				entry.lines = static_cast<std::uint32_t>(
 					std::max(0, sim.final_lines()));
 				entry.timer = static_cast<std::uint32_t>(app.mode == 1
-					? std::max(0L, (300000L - sim.timer_ms()) / 10)
+					? std::max(0L, (static_cast<long>(sim.config().timer_ms)
+						- sim.timer_ms()) / 10)
 					: std::max(0L, sim.timer_ms() / 10));
-				hiscore::submit(hiscore::folder(app.root),
-					gametype_name(app.mode), entry);
+				if (sim.config().fuse) {
+					hiscore::submit_fuse(hiscore::folder(app.root),
+						gametype_name(app.mode, true), entry);
+				} else {
+					hiscore::submit(hiscore::folder(app.root),
+						gametype_name(app.mode, false), entry);
+				}
 				app.score_saved = true;
 			}
 		} else if (app.score_saved) {
@@ -2678,7 +2754,8 @@ void tour_screen (App& app, int stop) {
 			app.screen = Screen::Scores;
 			break;
 		case 2:
-			app.score_page = 2;
+			// The trainer file's side of the screen, so both loaders draw.
+			app.score_page = 8;
 			app.screen = Screen::Scores;
 			break;
 		case 3:
