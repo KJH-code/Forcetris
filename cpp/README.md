@@ -200,7 +200,9 @@ device the game plays in either orientation - landscape is the desktop
 picture fitted to the screen, portrait rebuilds the essential column and
 trims the previews to three - with on-screen touch buttons that step aside
 whenever a hardware keyboard talks and come back at a touch, and the
-Android back button standing in for Escape. Assets unpack out of the APK
+Android back button standing in for Escape. A finger dragged over any menu
+scrolls it, so screens taller than the phone - the profile's growth charts,
+the analysis tabs - stay reachable by touch. Assets unpack out of the APK
 into the app's own storage on first launch, so every path in the game
 works unchanged. On a desk, `FORCETRIS_MOBILE=WxH` stands a phone-shaped
 window up with the same layouts and buttons, which is how they are

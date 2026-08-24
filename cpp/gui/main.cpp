@@ -652,6 +652,14 @@ void handle_event (App& app, const SDL_Event& event) {
 				}
 				app.touch_held.erase(found);
 			}
+		} else if (app.touch_held.find(event.tfinger.fingerId)
+			== app.touch_held.end()) {
+			// A finger dragging outside the game buttons scrolls whatever
+			// window it is over, the way phones scroll. ImGui's vertical
+			// wheel step is five font-heights, so dividing the drag by
+			// that keeps the content tracking the finger.
+			ImGui::GetIO().AddMouseWheelEvent(0.f,
+				event.tfinger.dy * h / (5.f * ui(19.f)));
 		}
 		return;
 	}
