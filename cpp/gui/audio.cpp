@@ -18,7 +18,7 @@ std::vector<std::string> cue_names () {
 	std::vector<std::string> names = {
 		"move", "rotate", "hold", "lock", "drop", "forced", "clear", "tetris",
 		"tspin", "perfect", "b2b", "finesse", "gameover",
-		"fusewarn", "flash", "overdrive", "overdrive_end", "burn",
+		"fusewarn", "flash", "overdrive", "overdrive_end", "burn", "pressure", "hit",
 	};
 	for (int step = 1; step <= 10; ++step) {
 		names.push_back("combo" + std::to_string(step));
@@ -145,12 +145,23 @@ void Audio::set_music_volume (float volume) {
 	}
 }
 
+void Audio::set_music_rate (float rate) {
+	if (device_ != 0) {
+		SDL_LockAudioDevice(device_);
+	}
+	music_rate_ = std::clamp(rate, 0.5f, 2.f);
+	if (device_ != 0) {
+		SDL_UnlockAudioDevice(device_);
+	}
+}
+
 void Audio::start_music () {
 	if (device_ == 0 || music_.empty()) {
 		return;
 	}
 	SDL_LockAudioDevice(device_);
 	music_at_ = 0;
+	music_pos_ = 0.;
 	music_on_ = true;
 	fade_ = 1.f;
 	fade_step_ = 0.f;
@@ -170,17 +181,26 @@ void Audio::fade_music (double seconds) {
 void Audio::mix (float* out, int samples) {
 	std::fill(out, out + samples, 0.f);
 	if (music_on_ && !music_.empty()) {
+		// The track reads from a fractional frame position so Overdrive can
+		// run it hot: nearest-neighbour per stereo pair, wrap at the end.
+		const size_t frames = music_.size() / kChannels;
 		for (int i = 0; i < samples; ++i) {
-			out[i] += music_[music_at_] * music_volume_ * fade_;
-			if (++music_at_ >= music_.size()) {
-				music_at_ = 0;
-			}
-			// The fade steps per sample pair, and silence stops the track.
-			if (fade_step_ > 0.f && i % kChannels == kChannels - 1) {
-				fade_ = std::max(0.f, fade_ - fade_step_);
-				if (fade_ <= 0.f) {
-					music_on_ = false;
-					break;
+			const size_t frame = static_cast<size_t>(music_pos_) % frames;
+			out[i] += music_[frame * kChannels
+				+ static_cast<size_t>(i % kChannels)]
+				* music_volume_ * fade_;
+			if (i % kChannels == kChannels - 1) {
+				music_pos_ += music_rate_;
+				if (music_pos_ >= static_cast<double>(frames)) {
+					music_pos_ -= static_cast<double>(frames);
+				}
+				// The fade steps per sample pair; silence stops the track.
+				if (fade_step_ > 0.f) {
+					fade_ = std::max(0.f, fade_ - fade_step_);
+					if (fade_ <= 0.f) {
+						music_on_ = false;
+						break;
+					}
 				}
 			}
 		}

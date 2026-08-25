@@ -48,6 +48,8 @@ public:
 	std::optional<replay::Replay> finish (bool keep_short = false);
 
 	const Sim& sim () const { return sim_; }
+	// The versus wiring flips per-frame state (heat pressure) on the sim.
+	Sim& sim_mutable () { return sim_; }
 	bool over () const { return over_; }
 
 	// Versus: the wire in and out of this side's sim.

@@ -22,6 +22,10 @@ struct VersusMatch {
 	int first_to = 1;
 	int player_wins = 0;
 	int bot_wins = 0;
+	// What crossed the wire this frame, for the streaks the GUI draws:
+	// read and zeroed by the frame that draws them.
+	int wire_to_bot = 0;
+	int wire_to_player = 0;
 	int round = 1;
 	Phase phase = Phase::Playing;
 	long phase_frames = 0;         // Frames spent showing the round's end.

@@ -43,6 +43,10 @@ bool VersusMatch::step (Session& player) {
 	}
 	const bool bot_alive = bot->step();
 	bot->take_cues();   // The bot's sounds stay on its side of the table.
+	// Heat pressure, both ways: an Overdrive burning on one board makes
+	// the other board's fuse burn faster. Igniting is an attack.
+	player.sim_mutable().set_pressure(bot->sim().overdrive());
+	bot->sim_mutable().set_pressure(player.sim().overdrive());
 	const bool player_alive = !player.over();
 	// The wire: both sides' outgoing first, then both deliveries, so this
 	// frame's attack cannot cancel against itself in flight.
@@ -50,9 +54,11 @@ bool VersusMatch::step (Session& player) {
 	const int from_bot = bot->take_outgoing();
 	if (from_player > 0) {
 		bot->receive_attack(from_player);
+		wire_to_bot += from_player;
 	}
 	if (from_bot > 0) {
 		player.receive_attack(from_bot);
+		wire_to_player += from_bot;
 	}
 	if (player_alive && bot_alive) {
 		return true;

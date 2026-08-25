@@ -194,6 +194,13 @@ void Sim::fuse_charge (double gain) {
 	}
 }
 
+void Sim::set_pressure (bool on) {
+	// Silent on purpose: a cue raised between steps would be wiped by the
+	// next step's clear before anyone drained it. The screen watches the
+	// flip and plays the rumble itself.
+	pressured_ = on;
+}
+
 void Sim::set_shape (int form) {
 	floor_kick_ = true;
 	hold_lock_ = false;
@@ -937,7 +944,11 @@ bool Sim::step_frame (const Event* events, size_t count) {
 				// while Overdrive burns; otherwise the trainer's flat delay,
 				// arithmetic untouched.
 				if (overdrive_frames_ == 0) {
-					*piece_elapsed_ += delta;
+					// Under the other board's heat the fuse burns faster;
+					// under your own Overdrive it does not burn at all.
+					*piece_elapsed_ += delta
+						* (config_.fuse && pressured_
+							? config_.fuse_pressure : 1.);
 				}
 				const double limit
 					= config_.fuse ? fuse_total_ : config_.forced_delay;

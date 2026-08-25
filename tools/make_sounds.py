@@ -203,6 +203,16 @@ SOUNDS.update({
         tone(140, 0.12, 0.30, 'noise', release=0.6),
         tone(196, 0.10, 0.18, 'saw', freq_end=98, release=0.5),
     ),
+    # The other board's Overdrive bearing down: a low swelling rumble.
+    'pressure': lambda: mix(
+        tone(72, 0.5, 0.32, 'noise', attack=0.25, release=0.2),
+        tone(98, 0.5, 0.26, 'saw', freq_end=147, attack=0.2, release=0.25, vibrato=0.06),
+    ),
+    # Garbage landing on your floor: a blunt thud with grit in it.
+    'hit': lambda: mix(
+        tone(80, 0.14, 0.42, 'square', freq_end=55, release=0.5),
+        tone(120, 0.10, 0.22, 'noise', release=0.7),
+    ),
     # ...and guttering out: the same fifth folding back down.
     'overdrive_end': lambda: chain(
         tone(784, 0.10, 0.26, 'saw', freq_end=392, release=0.3),

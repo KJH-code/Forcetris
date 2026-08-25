@@ -112,6 +112,9 @@ struct SimConfig {
 	double flow_burn_loss = 18.;  // Flow lost when the fuse forces the drop.
 	double overdrive_secs = 8.;   // How long Overdrive freezes the fuse.
 	double overdrive_mult = 1.5;  // Score and attack multiplier inside it.
+	// Heat pressure: while the OTHER board's Overdrive burns, this fuse
+	// burns this much faster - igniting is an attack, not a private buff.
+	double fuse_pressure = 1.45;
 };
 
 enum class Key : int { Left, Right, Soft, Hard, Hold, Ccw, Cw, Flip };
@@ -271,6 +274,10 @@ public:
 	double fuse_bank () const { return fuse_bank_; }
 	double flow () const { return flow_; }
 	bool overdrive () const { return overdrive_frames_ > 0; }
+	// The other board's Overdrive bearing down on this one: the versus
+	// wiring flips it each frame, and the fuse burns faster while it is up.
+	void set_pressure (bool on);
+	bool pressured () const { return pressured_; }
 
 private:
 	void eval_input (const std::optional<Event>& event);
@@ -336,6 +343,7 @@ private:
 	double flow_ = 0.;          // The gauge, 0 to 100.
 	long overdrive_frames_ = 0; // Frames of Overdrive left, 0 outside it.
 	bool fuse_warned_ = false;  // The warning cue fired for this piece.
+	bool pressured_ = false;    // The other board's Overdrive is burning.
 
 	int shift_dir_ = 0;         // -1 left, 1 right, 0 none.
 	int shift_frame_ = 0;

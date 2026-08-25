@@ -388,6 +388,40 @@ int main () {
 					== hiscore::kPerTable);
 	}
 
+	// Heat pressure: the other board's Overdrive makes this fuse burn
+	// faster - the same piece is slammed sooner under it, releasing the
+	// pressure restores the pace, and with the flag off nothing changes.
+	{
+		SimConfig config = fused();
+		config.fuse_base = 1.0;   // Fifty frames unpressured.
+		config.fuse_min = 1.0;
+		long plain_frames = 0;
+		long pressed_frames = 0;
+		for (const bool pressed : {false, true}) {
+			Sim sim(config, bags());
+			wait_spawn(sim);
+			sim.set_pressure(pressed);
+			const long from = sim.frame();
+			std::set<std::string> heard;
+			run_out(sim, heard);
+			(pressed ? pressed_frames : plain_frames)
+				= sim.locked().back().frame - from;
+		}
+		check("pressure burns the fuse faster",
+			pressed_frames < plain_frames && pressed_frames > 0,
+			std::to_string(pressed_frames) + " vs "
+				+ std::to_string(plain_frames));
+		Sim relieved(config, bags());
+		wait_spawn(relieved);
+		relieved.set_pressure(true);
+		relieved.set_pressure(false);
+		const long from = relieved.frame();
+		std::set<std::string> heard;
+		run_out(relieved, heard);
+		check("releasing it restores the pace",
+			relieved.locked().back().frame - from == plain_frames);
+	}
+
 	// Flags off: the ruleset does not exist.
 	{
 		SimConfig config;

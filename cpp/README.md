@@ -92,7 +92,17 @@ board rimmed in gold until it gutters out. Duel burns it
 on both sides: the bot's driver types inside the fuse - a rank slower
 than the burn abandons its pace rather than its piece, the way a rushed
 player would - replans cleanly when a slam beats it to the lock, and
-reaches Overdrive on its own merit, more of it the higher the rank. The
+reaches Overdrive on its own merit, more of it the higher the rank.
+And igniting is an attack in its own right: while either board's
+Overdrive burns, the other board's fuse burns almost half again as fast
+- heat pressure, both ways - so a duel swings between pressing and being
+pressed rather than trading quiet bonuses. The screen fights along:
+pieces smoulder and shed embers as their fuse runs down (white-hot when
+the pressure is on you), red heat closes in at the edges as danger
+mounts, attack arcs between the boards as ember streaks that burst
+where they land, garbage thuds home with a flash and a shudder, and an
+ignition flashes the screen, cries OVERDRIVE across the board and runs
+the music hot until it gutters out. The
 ladder still means what it says under the fuse: attack and pace climb it
 monotonically, D through X.
 

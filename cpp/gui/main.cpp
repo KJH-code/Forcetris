@@ -395,6 +395,22 @@ struct App {
 	// (one tick at most - the accumulator repays), so the press lands now
 	// instead of waiting out the 20ms boundary.
 	bool input_nudge = false;
+	// The intensity layer: attack streaks in flight between the boards,
+	// the ignition flash and banner countdowns, and the last pending-
+	// garbage count so a fresh landing can hit back.
+	struct Streak {
+		float sx = 0.f, sy = 0.f, tx = 0.f, ty = 0.f;
+		float at = 0.f;         // 0 to 1 along the arc; <0 = free slot.
+		int rows = 0;
+	};
+	std::array<Streak, 16> streaks{};
+	size_t streak_at = 0;
+	int od_flash = 0;           // Frames of the ignition flash left.
+	int od_banner = 0;          // Frames of the OVERDRIVE banner left.
+	bool was_overdrive = false;
+	bool was_pressured = false;
+	int hit_flash = 0;          // Frames of the garbage-landing flash.
+	int last_pending = 0;
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
 	bool relayout = false;       // The screen rotated; rebuild before drawing.
@@ -891,6 +907,9 @@ void handle_event (App& app, const SDL_Event& event) {
 
 // --- The board and its trimmings, in plain rectangles. ---------------------
 
+void spawn_sparks_at (App& app, float x, float y, SDL_Color color, int count,
+	float kick);
+
 void fill (SDL_Renderer* renderer, int x, int y, int w, int h, SDL_Color c) {
 	SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);
 	const SDL_Rect rect{x, y, w, h};
@@ -984,6 +1003,39 @@ void draw_board (App& app) {
 					kBoardY + cell.y * kCell, kFormColors[piece.form]);
 			}
 		}
+		// The burn made visible: past sixty percent of the fuse the piece
+		// itself smoulders - a pulsing overlay, white-hot when the other
+		// board's Overdrive is bearing down - and past eighty it sheds
+		// embers where it stands.
+		if (sim.config().fuse && sim.fuse_total() > 0.
+			&& sim.piece_elapsed().has_value()) {
+			const double frac = *sim.piece_elapsed() / sim.fuse_total();
+			if (frac > 0.6) {
+				const double heat = std::min(1., (frac - 0.6) / 0.4);
+				const float pulse
+					= 0.7f + 0.3f * std::sin(sim.frame() * 0.45f);
+				SDL_Color glow = sim.pressured()
+					? SDL_Color{255, 236, 210, 0}
+					: SDL_Color{255, 96, 40, 0};
+				glow.a = static_cast<Uint8>(120. * heat * pulse);
+				SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+				for (const Offset cell : cells_of(piece)) {
+					if (cell.y >= 0) {
+						fill(renderer, kBoardX + cell.x * kCell + 1,
+							kBoardY + cell.y * kCell + 1,
+							kCell - 2, kCell - 2, glow);
+					}
+				}
+				if (frac > 0.8 && sim.frame() % 4 == 0) {
+					const auto cells = cells_of(piece);
+					const Offset cell = cells[app.seeds() % kCells];
+					spawn_sparks_at(app,
+						kBoardX + (cell.x + 0.5f) * kCell,
+						kBoardY + (cell.y + 0.5f) * kCell,
+						{255, 150, 70, 255}, 1, 1.6f);
+				}
+			}
+		}
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 	}
 
@@ -1011,6 +1063,9 @@ void draw_board (App& app) {
 			const double part = std::min(1.0, *elapsed / limit);
 			SDL_Color wick{static_cast<Uint8>(90 + 165 * part),
 				static_cast<Uint8>(200 - 140 * part), 80, 255};
+			if (fused && sim.pressured()) {
+				wick = {255, 236, 210, 255};
+			}
 			if (fused && sim.overdrive()) {
 				wick = {90, 220, 235, 255};
 			}
@@ -1036,7 +1091,9 @@ void draw_board (App& app) {
 				glow);
 		}
 		if (burning) {
-			const SDL_Color rim{255, 214, 96, 255};
+			const Uint8 beat = static_cast<Uint8>(
+				200 + 55 * std::sin(sim.frame() * 0.35f));
+			const SDL_Color rim{255, beat, 96, 255};
 			fill(renderer, kBoardX - px(4), kBoardY - px(4),
 				kBoardW + px(8), px(4), rim);
 			fill(renderer, kBoardX - px(4), kBoardY + kBoardH,
@@ -1101,6 +1158,23 @@ void draw_backdrop (App& app) {
 	}
 }
 
+// Sparks loosed from one point; the pool recycles its oldest embers.
+void spawn_sparks_at (App& app, float x, float y, SDL_Color color, int count,
+		float kick) {
+	for (int i = 0; i < count; ++i) {
+		App::Spark& spark = app.sparks[app.spark_at];
+		app.spark_at = (app.spark_at + 1) % app.sparks.size();
+		spark.x = x;
+		spark.y = y;
+		const float angle = (app.seeds() % 628) / 100.f;
+		const float speed = kick * (0.5f + (app.seeds() % 100) / 100.f);
+		spark.vx = std::cos(angle) * speed;
+		spark.vy = std::sin(angle) * speed - kick * 0.6f;
+		spark.life = 18 + static_cast<int>(app.seeds() % 16);
+		spark.color = color;
+	}
+}
+
 // A burst of sparks from the cells of the piece that just locked.
 void spawn_sparks (App& app, SDL_Color color, int per_cell, float kick) {
 	if (!app.session.has_value() || app.session->sim().locked().empty()) {
@@ -1109,19 +1183,8 @@ void spawn_sparks (App& app, SDL_Color color, int per_cell, float kick) {
 	const Locked& lock = app.session->sim().locked().back();
 	const Piece piece{lock.form, lock.state, lock.x, lock.y};
 	for (const Offset cell : cells_of(piece)) {
-		for (int i = 0; i < per_cell; ++i) {
-			App::Spark& spark = app.sparks[app.spark_at];
-			app.spark_at = (app.spark_at + 1) % app.sparks.size();
-			spark.x = kBoardX + (cell.x + 0.5f) * kCell;
-			spark.y = kBoardY + (cell.y + 0.5f) * kCell;
-			const float angle = (app.seeds() % 628) / 100.f;
-			const float speed
-				= kick * (0.5f + (app.seeds() % 100) / 100.f);
-			spark.vx = std::cos(angle) * speed;
-			spark.vy = std::sin(angle) * speed - kick * 0.6f;
-			spark.life = 18 + static_cast<int>(app.seeds() % 16);
-			spark.color = color;
-		}
+		spawn_sparks_at(app, kBoardX + (cell.x + 0.5f) * kCell,
+			kBoardY + (cell.y + 0.5f) * kCell, color, per_cell, kick);
 	}
 }
 
@@ -2597,6 +2660,100 @@ void draw_profile (App& app) {
 	ImGui::End();
 }
 
+// The heat closing in: red glow at the screen's edges, driven by the
+// worst of the dangers - a fuse nearly spent, garbage massing, a stack
+// near the sky, the other board's Overdrive bearing down.
+void draw_heat (App& app) {
+	const Sim& sim = app.session->sim();
+	if (!sim.config().fuse) {
+		return;
+	}
+	double danger = 0.;
+	if (sim.fuse_total() > 0. && sim.piece_elapsed().has_value()) {
+		danger = std::max(danger,
+			(*sim.piece_elapsed() / sim.fuse_total() - 0.6) / 0.4);
+	}
+	danger = std::max(danger, sim.pending_garbage() / 8.);
+	int top = kHeight;
+	const Board& board = sim.board();
+	for (int y = 0; y < kHeight && top == kHeight; ++y) {
+		for (int x = 0; x < kWidth; ++x) {
+			if (board.at(x, y) >= 0) {
+				top = y;
+				break;
+			}
+		}
+	}
+	danger = std::max(danger, (12. - top) / 10.);
+	if (sim.pressured()) {
+		danger = std::max(danger, 0.55);
+	}
+	danger = std::clamp(danger, 0., 1.);
+	if (danger <= 0.) {
+		return;
+	}
+	const float pulse = 0.75f + 0.25f * std::sin(sim.frame() * 0.3f);
+	int w = 0;
+	int h = 0;
+	SDL_GetRendererOutputSize(app.renderer, &w, &h);
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+	const int reach = px(46);
+	for (int i = 0; i < 3; ++i) {
+		const int band = reach * (3 - i) / 3;
+		const Uint8 alpha = static_cast<Uint8>(
+			danger * pulse * (26 + 18 * i));
+		const SDL_Color heat{212, 44, 22, alpha};
+		fill(app.renderer, 0, 0, w, band, heat);
+		fill(app.renderer, 0, h - band, w, band, heat);
+		fill(app.renderer, 0, 0, band, h, heat);
+		fill(app.renderer, w - band, 0, band, h, heat);
+	}
+	// A fresh landing flashes the floor.
+	if (app.hit_flash > 0) {
+		--app.hit_flash;
+		fill(app.renderer, kBoardX, kBoardY + kBoardH - px(40), kBoardW,
+			px(40), {224, 60, 30,
+				static_cast<Uint8>(app.hit_flash * 18)});
+	}
+}
+
+// Attack in flight: ember streaks arcing between the boards, a burst
+// where they land.
+void draw_streaks (App& app) {
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+	for (App::Streak& streak : app.streaks) {
+		if (streak.at < 0.f) {
+			continue;
+		}
+		streak.at += 0.05f;
+		if (streak.at >= 1.f) {
+			spawn_sparks_at(app, streak.tx, streak.ty,
+				{255, 150, 70, 255}, 3 + std::min(streak.rows, 6), 2.6f);
+			streak.at = -1.f;
+			continue;
+		}
+		const float arc = -std::sin(streak.at * 3.14159f) * px(70);
+		for (int ghost = 0; ghost < 4; ++ghost) {
+			const float t = std::max(0.f, streak.at - ghost * 0.03f);
+			const float x = streak.sx + (streak.tx - streak.sx) * t;
+			const float y = streak.sy + (streak.ty - streak.sy) * t
+				- std::sin(t * 3.14159f) * px(70);
+			fill(app.renderer, static_cast<int>(x), static_cast<int>(y),
+				px(5) - ghost, px(5) - ghost,
+				{255, static_cast<Uint8>(170 - 26 * ghost), 60,
+					static_cast<Uint8>(230 - 52 * ghost)});
+		}
+		(void) arc;
+	}
+}
+
+void launch_streak (App& app, float sx, float sy, float tx, float ty,
+		int rows) {
+	App::Streak& streak = app.streaks[app.streak_at];
+	app.streak_at = (app.streak_at + 1) % app.streaks.size();
+	streak = {sx, sy, tx, ty, 0.f, rows};
+}
+
 // The date the daily runs under, local time, the way the profile stamps.
 std::string today () {
 	char stamp[16] = "";
@@ -3551,8 +3708,92 @@ int run (bool smoke, long smoke_frames) {
 			}
 			draw_board(app);
 			draw_sparks(app);
+			draw_streaks(app);
+			draw_heat(app);
 			if (quaking) {
 				SDL_RenderSetViewport(app.renderer, nullptr);
+			}
+			{
+				const Sim& sim = app.session->sim();
+				// Overdrive as an event: a flash and a banner on ignition.
+				if (sim.overdrive() && !app.was_overdrive) {
+					app.od_flash = 12;
+					app.od_banner = 50;
+				}
+				app.was_overdrive = sim.overdrive();
+				// The other board's heat arriving is worth hearing.
+				if (sim.pressured() && !app.was_pressured) {
+					app.audio.play("pressure");
+				}
+				app.was_pressured = sim.pressured();
+				app.audio.set_music_rate(
+					sim.overdrive() ? 1.15f : 1.f);
+				// Garbage landing hits back: flash, thud, a small shudder.
+				const int pending = sim.pending_garbage();
+				if (pending > app.last_pending) {
+					app.hit_flash = 8;
+					app.audio.play("hit");
+					if (app.config.shake) {
+						app.shake_until = sim.frame() + 4;
+					}
+				}
+				app.last_pending = pending;
+				// The wire's traffic becomes streaks between the boards.
+				if (app.versus.has_value()) {
+					if (app.versus->wire_to_bot > 0) {
+						launch_streak(app,
+							kBoardX + kBoardW * 0.5f,
+							kBoardY + kBoardH * 0.35f,
+							kMiniX + kWidth * kMiniCell * 0.5f,
+							kMiniY + kHeight * kMiniCell * 0.4f,
+							app.versus->wire_to_bot);
+					}
+					if (app.versus->wire_to_player > 0) {
+						launch_streak(app,
+							kMiniX + kWidth * kMiniCell * 0.5f,
+							kMiniY + kHeight * kMiniCell * 0.4f,
+							kBoardX + kBoardW * 0.5f,
+							kBoardY + kBoardH * 0.5f,
+							app.versus->wire_to_player);
+					}
+					app.versus->wire_to_bot = 0;
+					app.versus->wire_to_player = 0;
+				}
+				// The ignition flash and banner, over everything.
+				if (app.od_flash > 0) {
+					--app.od_flash;
+					int w = 0;
+					int h = 0;
+					SDL_GetRendererOutputSize(app.renderer, &w, &h);
+					SDL_SetRenderDrawBlendMode(app.renderer,
+						SDL_BLENDMODE_BLEND);
+					fill(app.renderer, 0, 0, w, h, {255, 214, 96,
+						static_cast<Uint8>(app.od_flash * 10)});
+				}
+				if (app.od_banner > 0) {
+					--app.od_banner;
+					ImFont* font = app.fonts.title;
+					const char* cry = "OVERDRIVE";
+					const ImVec2 extent = font->CalcTextSizeA(
+						font->FontSize, FLT_MAX, 0.f, cry);
+					const float alpha = app.od_banner > 12
+						? 1.f : app.od_banner / 12.f;
+					ImGui::GetForegroundDrawList()->AddText(font,
+						font->FontSize,
+						ImVec2(kBoardX + (kBoardW - extent.x) / 2,
+							kBoardY + kBoardH * 0.30f),
+						IM_COL32(255, 214, 96,
+							static_cast<int>(alpha * 255)), cry);
+				}
+				// Overdrive sheds sparks off the Flow rail while it burns.
+				if (sim.overdrive() && sim.frame() % 5 == 0) {
+					spawn_sparks_at(app,
+						static_cast<float>(kBoardX - px(15)),
+						kBoardY + px(120)
+							+ static_cast<float>(app.seeds()
+								% std::max(1, kBoardH - px(130))),
+						{255, 214, 96, 255}, 1, 1.4f);
+				}
 			}
 			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
 			draw_label("NEXT", kBoardX + kBoardW + ui(18), kBoardY - ui(24));

@@ -41,6 +41,8 @@ public:
 	void start_music ();
 	// Fade it out over a stretch of seconds, as the game over screen does.
 	void fade_music (double seconds);
+	// Playback speed, 1.0 for the plain track - Overdrive runs it hot.
+	void set_music_rate (float rate);
 
 	bool ready () const { return device_ != 0; }
 
@@ -59,6 +61,8 @@ private:
 	Voice voices_[12];
 	size_t music_at_ = 0;
 	bool music_on_ = false;
+	float music_rate_ = 1.f;     // Playback speed; Overdrive leans on it.
+	double music_pos_ = 0.;      // Fractional frame position for the rate.
 	float sfx_volume_ = 1.f;
 	float music_volume_ = 1.f;
 	float fade_ = 1.f;
