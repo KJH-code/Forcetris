@@ -231,29 +231,31 @@ void apply_theme () {
 	style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
 	style.SeparatorTextBorderSize = 2.f;
 
-	const ImVec4 canvas(0.070f, 0.086f, 0.118f, 0.98f);   // #12161E
-	const ImVec4 well(0.118f, 0.145f, 0.196f, 1.f);       // #1E2532
-	const ImVec4 wellHover(0.153f, 0.188f, 0.251f, 1.f);
-	const ImVec4 wellActive(0.180f, 0.227f, 0.306f, 1.f);
-	const ImVec4 accent(0.255f, 0.776f, 0.878f, 1.f);     // The I piece.
-	const ImVec4 accentDim(0.255f, 0.776f, 0.878f, 0.28f);
-	const ImVec4 edge(0.165f, 0.196f, 0.259f, 0.65f);
-	const ImVec4 text(0.910f, 0.929f, 0.957f, 1.f);
-	const ImVec4 faded(0.486f, 0.529f, 0.596f, 1.f);
+	// The ember palette: soot grounds, ember accents, gold for Overdrive.
+	// The game is about things burning; the chrome smoulders to match.
+	const ImVec4 canvas(0.086f, 0.063f, 0.047f, 0.98f);   // #161008
+	const ImVec4 well(0.165f, 0.122f, 0.086f, 1.f);       // #2A1F16
+	const ImVec4 wellHover(0.216f, 0.157f, 0.110f, 1.f);
+	const ImVec4 wellActive(0.267f, 0.192f, 0.133f, 1.f);
+	const ImVec4 accent(1.f, 0.541f, 0.227f, 1.f);        // Ember.
+	const ImVec4 accentDim(1.f, 0.541f, 0.227f, 0.28f);
+	const ImVec4 edge(0.302f, 0.220f, 0.149f, 0.65f);
+	const ImVec4 text(0.957f, 0.929f, 0.894f, 1.f);
+	const ImVec4 faded(0.616f, 0.549f, 0.471f, 1.f);
 
 	ImVec4* colors = style.Colors;
 	colors[ImGuiCol_Text] = text;
 	colors[ImGuiCol_TextDisabled] = faded;
 	colors[ImGuiCol_WindowBg] = canvas;
 	colors[ImGuiCol_ChildBg] = ImVec4(0.f, 0.f, 0.f, 0.f);
-	colors[ImGuiCol_PopupBg] = ImVec4(0.086f, 0.106f, 0.145f, 0.98f);
+	colors[ImGuiCol_PopupBg] = ImVec4(0.106f, 0.078f, 0.055f, 0.98f);
 	colors[ImGuiCol_Border] = edge;
 	colors[ImGuiCol_BorderShadow] = ImVec4(0.f, 0.f, 0.f, 0.f);
 	colors[ImGuiCol_FrameBg] = well;
 	colors[ImGuiCol_FrameBgHovered] = wellHover;
 	colors[ImGuiCol_FrameBgActive] = wellActive;
-	colors[ImGuiCol_TitleBg] = ImVec4(0.055f, 0.067f, 0.094f, 1.f);
-	colors[ImGuiCol_TitleBgActive] = ImVec4(0.078f, 0.098f, 0.137f, 1.f);
+	colors[ImGuiCol_TitleBg] = ImVec4(0.067f, 0.049f, 0.035f, 1.f);
+	colors[ImGuiCol_TitleBgActive] = ImVec4(0.098f, 0.071f, 0.051f, 1.f);
 	colors[ImGuiCol_TitleBgCollapsed] = colors[ImGuiCol_TitleBg];
 	colors[ImGuiCol_MenuBarBg] = colors[ImGuiCol_TitleBg];
 	colors[ImGuiCol_ScrollbarBg] = ImVec4(0.f, 0.f, 0.f, 0.f);
@@ -262,7 +264,7 @@ void apply_theme () {
 	colors[ImGuiCol_ScrollbarGrabActive] = wellActive;
 	colors[ImGuiCol_CheckMark] = accent;
 	colors[ImGuiCol_SliderGrab] = accent;
-	colors[ImGuiCol_SliderGrabActive] = ImVec4(0.42f, 0.86f, 0.94f, 1.f);
+	colors[ImGuiCol_SliderGrabActive] = ImVec4(1.f, 0.671f, 0.373f, 1.f);
 	colors[ImGuiCol_Button] = well;
 	colors[ImGuiCol_ButtonHovered] = wellHover;
 	colors[ImGuiCol_ButtonActive] = wellActive;
@@ -281,9 +283,9 @@ void apply_theme () {
 	colors[ImGuiCol_TabSelectedOverline] = accent;
 	colors[ImGuiCol_TabDimmed] = ImVec4(0.f, 0.f, 0.f, 0.f);
 	colors[ImGuiCol_TabDimmedSelected] = well;
-	colors[ImGuiCol_TableHeaderBg] = ImVec4(0.086f, 0.106f, 0.145f, 1.f);
+	colors[ImGuiCol_TableHeaderBg] = ImVec4(0.106f, 0.078f, 0.055f, 1.f);
 	colors[ImGuiCol_TableBorderStrong] = edge;
-	colors[ImGuiCol_TableBorderLight] = ImVec4(0.165f, 0.196f, 0.259f, 0.35f);
+	colors[ImGuiCol_TableBorderLight] = ImVec4(0.302f, 0.220f, 0.149f, 0.35f);
 	colors[ImGuiCol_TableRowBg] = ImVec4(0.f, 0.f, 0.f, 0.f);
 	colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.f, 1.f, 1.f, 0.02f);
 	colors[ImGuiCol_TextSelectedBg] = accentDim;
@@ -898,9 +900,9 @@ void draw_board (App& app) {
 	const Session& session = *app.session;
 	const Sim& sim = session.sim();
 
-	fill(renderer, kBoardX - px(3), kBoardY - px(3), kBoardW + px(6), kBoardH + px(6), {32, 40, 53, 255});
-	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {14, 18, 24, 255});
-	SDL_SetRenderDrawColor(renderer, 26, 33, 44, 255);
+	fill(renderer, kBoardX - px(3), kBoardY - px(3), kBoardW + px(6), kBoardH + px(6), {58, 42, 30, 255});
+	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {17, 12, 9, 255});
+	SDL_SetRenderDrawColor(renderer, 36, 27, 20, 255);
 	for (int x = 1; x < kWidth; ++x) {
 		SDL_RenderDrawLine(renderer, kBoardX + x * kCell, kBoardY,
 			kBoardX + x * kCell, kBoardY + kBoardH - 1);
@@ -945,13 +947,13 @@ void draw_board (App& app) {
 	}
 
 	// The hold box and the coming pieces.
-	fill(renderer, kBoardX - px(122), kBoardY, px(104), px(86), {20, 26, 34, 255});
+	fill(renderer, kBoardX - px(122), kBoardY, px(104), px(86), {30, 22, 17, 255});
 	draw_preview(renderer, sim.stored(), kBoardX - px(122) + px(16), kBoardY + px(12), px(18));
 	const auto& queue = sim.queue();
 	for (int slot = 0; slot < kPreviews
 		&& slot < static_cast<int>(queue.size()); ++slot) {
 		fill(renderer, kBoardX + kBoardW + px(18), kBoardY + slot * px(92), px(104), px(86),
-			{20, 26, 34, 255});
+			{30, 22, 17, 255});
 		draw_preview(renderer, queue[slot],
 			kBoardX + kBoardW + px(18) + px(16), kBoardY + slot * px(92) + px(12), px(18));
 	}
@@ -962,7 +964,7 @@ void draw_board (App& app) {
 	const bool fused = sim.config().fuse;
 	const double limit = fused ? sim.fuse_total() : app.config.forced_delay;
 	if (limit > 0.) {
-		fill(renderer, kBoardX, kBoardY + kBoardH + px(10), kBoardW, px(8), {26, 33, 44, 255});
+		fill(renderer, kBoardX, kBoardY + kBoardH + px(10), kBoardW, px(8), {36, 27, 20, 255});
 		const auto elapsed = sim.piece_elapsed();
 		if (elapsed.has_value()) {
 			const double part = std::min(1.0, *elapsed / limit);
@@ -982,13 +984,13 @@ void draw_board (App& app) {
 		const int rail_x = kBoardX - px(20);
 		const int rail_y = kBoardY + px(120);
 		const int rail_h = kBoardH - px(130);
-		fill(renderer, rail_x, rail_y, px(10), rail_h, {26, 33, 44, 255});
+		fill(renderer, rail_x, rail_y, px(10), rail_h, {36, 27, 20, 255});
 		const bool burning = sim.overdrive();
 		const int charge = burning ? rail_h
 			: static_cast<int>(rail_h * (sim.flow() / 100.));
 		if (charge > 0) {
 			const SDL_Color glow = burning
-				? SDL_Color{255, 214, 96, 255} : SDL_Color{65, 198, 224, 255};
+				? SDL_Color{255, 214, 96, 255} : SDL_Color{255, 138, 58, 255};
 			fill(renderer, rail_x, rail_y + rail_h - charge, px(10), charge,
 				glow);
 		}
@@ -1008,7 +1010,7 @@ void draw_board (App& app) {
 
 // --- The ImGui layers: labels, stat panels, menus. -------------------------
 
-void draw_label (const char* text, float x, float y, ImU32 color = IM_COL32(150, 165, 185, 255)) {
+void draw_label (const char* text, float x, float y, ImU32 color = IM_COL32(176, 158, 140, 255)) {
 	ImGui::GetBackgroundDrawList()->AddText(ImVec2(x, y), color, text);
 }
 
@@ -1039,7 +1041,7 @@ void spawn_sparks (App& app, SDL_Color color, int per_cell, float kick) {
 // The cues' visible half: what the ear hears, the eye sees.
 void juice_cue (App& app, const std::string& cue) {
 	if (cue == "clear") {
-		spawn_sparks(app, {120, 210, 235, 255}, 3, 2.2f);
+		spawn_sparks(app, {255, 150, 70, 255}, 3, 2.2f);
 	} else if (cue == "tetris") {
 		spawn_sparks(app, {255, 214, 96, 255}, 6, 3.2f);
 		app.shake_until = app.session->sim().frame() + 8;
@@ -1108,7 +1110,7 @@ void draw_versus_panel (App& app) {
 	const int left = kMiniX;
 	const int top = kMiniY;
 	fill(renderer, left - px(2), top - px(2),
-		kWidth * cell + px(4), kHeight * cell + px(4), {32, 40, 53, 255});
+		kWidth * cell + px(4), kHeight * cell + px(4), {58, 42, 30, 255});
 	// The bot's Overdrive shows the way the player's does, scaled down:
 	// the board rimmed in gold while it burns.
 	if (theirs.overdrive()) {
@@ -1120,7 +1122,7 @@ void draw_versus_panel (App& app) {
 		fill(renderer, left - px(3), top, px(3), tall, rim);
 		fill(renderer, left + wide, top, px(3), tall, rim);
 	}
-	fill(renderer, left, top, kWidth * cell, kHeight * cell, {14, 18, 24, 255});
+	fill(renderer, left, top, kWidth * cell, kHeight * cell, {17, 12, 9, 255});
 	for (int y = 0; y < kHeight; ++y) {
 		for (int x = 0; x < kWidth; ++x) {
 			const int form = theirs.board().at(x, y);
@@ -1140,20 +1142,20 @@ void draw_versus_panel (App& app) {
 	}
 	draw_label("BOT", static_cast<float>(left), top - ui(22),
 		theirs.overdrive() ? IM_COL32(255, 214, 96, 255)
-			: IM_COL32(150, 165, 185, 255));
+			: IM_COL32(176, 158, 140, 255));
 	// The bot's Flow rail on its board's right flank - watching the gauge
 	// creep up is the warning the ignition deserves.
 	if (theirs.config().fuse) {
 		const int rail_x = left + kWidth * cell + px(4);
 		const int rail_h = kHeight * cell;
-		fill(renderer, rail_x, top, px(4), rail_h, {26, 33, 44, 255});
+		fill(renderer, rail_x, top, px(4), rail_h, {36, 27, 20, 255});
 		const bool burning = theirs.overdrive();
 		const int charge = burning ? rail_h
 			: static_cast<int>(rail_h * (theirs.flow() / 100.));
 		if (charge > 0) {
 			fill(renderer, rail_x, top + rail_h - charge, px(4), charge,
 				burning ? SDL_Color{255, 214, 96, 255}
-					: SDL_Color{65, 198, 224, 255});
+					: SDL_Color{255, 138, 58, 255});
 		}
 	}
 	// Incoming garbage, as red columns: theirs beside their board, the
@@ -1186,7 +1188,7 @@ void draw_versus_panel (App& app) {
 	ImGui::TextDisabled("first to %d  round %d", match.first_to, match.round);
 	const int surge = app.session->sim().surge_charge();
 	if (surge > 0) {
-		ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f),
+		ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
 			"SURGE +%d", surge);
 	}
 	ImGui::End();
@@ -1278,16 +1280,16 @@ void draw_touch (App& app) {
 		const ImVec2 a(static_cast<float>(button.rect.x),
 			static_cast<float>(button.rect.y));
 		const ImVec2 b(a.x + button.rect.w, a.y + button.rect.h);
-		draw->AddRectFilled(a, b, held ? IM_COL32(64, 198, 224, 80)
+		draw->AddRectFilled(a, b, held ? IM_COL32(255, 138, 58, 70)
 			: IM_COL32(255, 255, 255, 22), ui(12));
-		draw->AddRect(a, b, IM_COL32(150, 165, 185, 90), ui(12));
+		draw->AddRect(a, b, IM_COL32(176, 158, 140, 90), ui(12));
 		ImFont* font = app.fonts.head;
 		const ImVec2 extent = font->CalcTextSizeA(
 			font->FontSize, FLT_MAX, 0.f, button.label);
 		draw->AddText(font, font->FontSize,
 			ImVec2(a.x + (button.rect.w - extent.x) / 2,
 				a.y + (button.rect.h - extent.y) / 2),
-			IM_COL32(210, 220, 235, 210), button.label);
+			IM_COL32(235, 222, 205, 210), button.label);
 	}
 }
 
@@ -1312,7 +1314,7 @@ void draw_stat_panels (App& app) {
 			flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoMouseInputs;
 		}
 		ImGui::PushStyleColor(ImGuiCol_WindowBg,
-			app.editing ? ImVec4(0.16f, 0.22f, 0.32f, 0.9f) : ImVec4(0.07f, 0.09f, 0.12f, 0.65f));
+			app.editing ? ImVec4(0.30f, 0.21f, 0.13f, 0.9f) : ImVec4(0.10f, 0.075f, 0.055f, 0.65f));
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(ui(14), ui(8)));
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(2)));
 		ImGui::SetNextWindowSizeConstraints(
@@ -1746,7 +1748,7 @@ void draw_analysis_rating (App& app, const replay::Replay& game) {
 	}
 	ImGui::Spacing();
 	ImGui::PushFont(app.fonts.title);
-	ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f), "%s", guess.rank);
+	ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f), "%s", guess.rank);
 	ImGui::PopFont();
 	ImGui::SameLine();
 	ImGui::PushFont(app.fonts.head);
@@ -1984,8 +1986,8 @@ void draw_row_strings (App& app, const std::vector<std::string>& rows,
 	SDL_Renderer* renderer = app.renderer;
 	const int w = kWidth * size;
 	const int h = kHeight * size;
-	fill(renderer, left - px(3), top - px(3), w + px(6), h + px(6), {32, 40, 53, 255});
-	fill(renderer, left, top, w, h, {14, 18, 24, 255});
+	fill(renderer, left - px(3), top - px(3), w + px(6), h + px(6), {58, 42, 30, 255});
+	fill(renderer, left, top, w, h, {17, 12, 9, 255});
 	for (size_t y = 0; y < rows.size() && y < kHeight; ++y) {
 		for (size_t x = 0; x < rows[y].size() && x < kWidth; ++x) {
 			const char cell = rows[y][x];
@@ -2061,13 +2063,13 @@ void draw_viewer (App& app) {
 	}
 
 	// What the player could see at the time: the hold box and the previews.
-	fill(app.renderer, kBoardX - px(122), kBoardY, px(104), px(86), {20, 26, 34, 255});
+	fill(app.renderer, kBoardX - px(122), kBoardY, px(104), px(86), {30, 22, 17, 255});
 	draw_preview(app.renderer, place.stored,
 		kBoardX - px(122) + px(16), kBoardY + px(12), px(18));
 	for (size_t slot = 0; slot < place.queue.size() && slot < 3; ++slot) {
 		fill(app.renderer, kBoardX + kBoardW + px(18),
 			kBoardY + static_cast<int>(slot) * px(92), px(104), px(86),
-			{20, 26, 34, 255});
+			{30, 22, 17, 255});
 		draw_preview(app.renderer, place.queue[slot],
 			kBoardX + kBoardW + px(18) + px(16),
 			kBoardY + static_cast<int>(slot) * px(92) + px(12), px(18));
@@ -2262,7 +2264,7 @@ void draw_chart (const char* label, const std::vector<double>& values,
 	lo -= pad;
 	hi += pad;
 	draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height),
-		IM_COL32(20, 26, 34, 255), ui(6));
+		IM_COL32(30, 22, 17, 255), ui(6));
 	for (int line = 1; line < 4; ++line) {
 		const float y = origin.y + height * line / 4.f;
 		draw->AddLine(ImVec2(origin.x, y), ImVec2(origin.x + width, y),
@@ -2277,7 +2279,7 @@ void draw_chart (const char* label, const std::vector<double>& values,
 	};
 	for (size_t i = 1; i < values.size(); ++i) {
 		draw->AddLine(at(i - 1, values[i - 1]), at(i, values[i]),
-			IM_COL32(65, 198, 224, 90), std::max(1.f, ui(1)));
+			IM_COL32(255, 138, 58, 90), std::max(1.f, ui(1)));
 	}
 	// The moving average, the line the eye should follow.
 	double rolling = 0.;
@@ -2293,7 +2295,7 @@ void draw_chart (const char* label, const std::vector<double>& values,
 		}
 		const ImVec2 point = at(i, rolling / window.size());
 		if (started) {
-			draw->AddLine(last, point, IM_COL32(65, 198, 224, 255),
+			draw->AddLine(last, point, IM_COL32(255, 138, 58, 255),
 				std::max(1.f, ui(2)));
 		}
 		last = point;
@@ -2302,14 +2304,14 @@ void draw_chart (const char* label, const std::vector<double>& values,
 	char text[48];
 	std::snprintf(text, sizeof text, "%.1f", hi - pad);
 	draw->AddText(ImVec2(origin.x + ui(6), origin.y + ui(2)),
-		IM_COL32(150, 165, 185, 200), text);
+		IM_COL32(176, 158, 140, 200), text);
 	std::snprintf(text, sizeof text, "%.1f", lo + pad);
 	draw->AddText(ImVec2(origin.x + ui(6), origin.y + height - ui(18)),
-		IM_COL32(150, 165, 185, 200), text);
+		IM_COL32(176, 158, 140, 200), text);
 	std::snprintf(text, sizeof text, "%.1f",
 		rolling / std::max<size_t>(1, window.size()));
 	draw->AddText(ImVec2(origin.x + width - ui(56), origin.y + ui(2)),
-		IM_COL32(65, 198, 224, 255), text);
+		IM_COL32(255, 138, 58, 255), text);
 	ImGui::Dummy(ImVec2(width, height + ui(10)));
 }
 
@@ -2596,9 +2598,9 @@ void draw_career (App& app) {
 // true when clicked.
 bool option_button (const char* label, bool selected, float width) {
 	if (selected) {
-		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.16f, 0.42f, 0.49f, 1.f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.50f, 0.58f, 1.f));
-		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.24f, 0.58f, 0.67f, 1.f));
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.42f, 0.24f, 0.10f, 1.f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.50f, 0.29f, 0.13f, 1.f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.58f, 0.34f, 0.16f, 1.f));
 	}
 	const bool clicked = ImGui::Button(label, ImVec2(width, 0));
 	if (selected) {
@@ -2618,7 +2620,7 @@ void draw_menus (App& app) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 		ImGui::Begin("main menu", nullptr, box);
 		ImGui::PushFont(app.fonts.title);
-		ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f), "FORCETRIS");
+		ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f), "FORCETRIS");
 		ImGui::PopFont();
 		ImGui::TextDisabled("every piece burns");
 		ImGui::Dummy(ImVec2(0.f, ui(10)));
@@ -2849,7 +2851,7 @@ void draw_menus (App& app) {
 		}
 		ImGui::PopFont();
 		if (app.versus.has_value()) {
-			ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f),
+			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
 				"You %d - %d Bot (%s)  first to %d",
 				app.versus->player_wins, app.versus->bot_wins,
 				bot::ranks()[app.versus->rank_index].name,
@@ -2857,7 +2859,7 @@ void draw_menus (App& app) {
 		}
 		if (won) {
 			const double seconds = app.session->sim().frame() * 0.02;
-			ImGui::TextColored(ImVec4(0.255f, 0.776f, 0.878f, 1.f),
+			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
 				"All the cheese in %d:%05.2f",
 				static_cast<int>(seconds) / 60, std::fmod(seconds, 60.));
 		}
@@ -3381,7 +3383,7 @@ int run (bool smoke, long smoke_frames) {
 		ImGui_ImplSDL2_NewFrame();
 		ImGui::NewFrame();
 
-		SDL_SetRenderDrawColor(app.renderer, 12, 15, 20, 255);
+		SDL_SetRenderDrawColor(app.renderer, 14, 11, 9, 255);
 		SDL_RenderClear(app.renderer);
 		if (app.session.has_value()
 			&& (app.screen == Screen::Game || app.screen == Screen::Over)) {
