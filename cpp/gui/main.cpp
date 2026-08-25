@@ -499,6 +499,30 @@ replay::Meta meta_for (const Config& config, int mode) {
 	return meta;
 }
 
+// Everything the last game left burning. The shake deadline is a *sim
+// frame number*, and a new game starts counting from zero again - so a
+// deadline inherited from a long round would shake the opening of the
+// next one for as many frames as the last one lasted. The rest of the
+// intensity state carries the same way: countdowns mid-tick, the
+// pending-garbage watermark, the ignition and pressure edges, live
+// sparks and streaks, and the music left running hot.
+void reset_effects (App& app) {
+	app.shake_until = -1;
+	app.last_pending = 0;
+	app.od_flash = 0;
+	app.od_banner = 0;
+	app.hit_flash = 0;
+	app.was_overdrive = false;
+	app.was_pressured = false;
+	for (App::Spark& spark : app.sparks) {
+		spark.life = 0;
+	}
+	for (App::Streak& streak : app.streaks) {
+		streak.at = -1.f;
+	}
+	app.audio.set_music_rate(1.f);
+}
+
 void start_game (App& app, int mode,
 		std::optional<unsigned> fixed_seed = std::nullopt) {
 	app.versus.reset();
@@ -529,6 +553,7 @@ void start_game (App& app, int mode,
 	app.hiscore_place = -1;
 	app.score_saved = false;
 	app.countdown = app.start_delay;
+	reset_effects(app);
 	app.audio.start_music();
 }
 
@@ -565,6 +590,7 @@ void start_versus (App& app, int career_stage = -1) {
 	app.hiscore_place = -1;
 	app.score_saved = false;
 	app.countdown = app.start_delay;
+	reset_effects(app);
 	app.audio.start_music();
 }
 
@@ -638,6 +664,7 @@ void next_versus_round (App& app) {
 	app.versus->round += 1;
 	app.versus->begin_round(config, app.seeds(), meta);
 	app.countdown = app.start_delay;
+	reset_effects(app);
 }
 
 void end_game (App& app) {
@@ -646,6 +673,9 @@ void end_game (App& app) {
 	// to look at it.
 	app.screen = Screen::Over;
 	app.audio.fade_music(2.5);
+	// A game that ended mid-Overdrive leaves the sim's flag stuck on; the
+	// track would stay fast through the loss screen and the menu behind it.
+	app.audio.set_music_rate(1.f);
 	app.last_replay = finish_round(app);
 	if (app.last_replay.has_value()) {
 		replay::save(*app.last_replay, replay::folder(app.root));
@@ -1532,6 +1562,7 @@ void open_layout_editor (App& app) {
 	if (!app.session.has_value() || app.screen != Screen::Game) {
 		app.session.emplace(app.config.sim(), app.seeds(),
 			meta_for(app.config, 0));
+		reset_effects(app);
 		app.layout_preview = true;
 		app.screen = Screen::Game;
 	}
