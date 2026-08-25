@@ -99,8 +99,16 @@ struct SimConfig {
 	double fuse_refuel_attack = 0.5; // ...and per point of attack it sent.
 	double flash_frac = 0.30;     // The Flash window, as a share of the fuse...
 	double flash_floor = 0.25;    // ...but never thinner than this.
-	double flow_lock_gain = 8.;   // Flow for a lock, scaled by fuse left.
-	double flow_flash_gain = 12.; // Flow on top for a lock inside the Flash.
+	// Flow charges on quality, not haste: cleared lines and the attack they
+	// carried - spins, quads, back-to-backs, combos and perfect clears all
+	// speak through the attack number - with only the small Flash bonus
+	// left for pure speed. Retired: flow_lock_gain once paid for unspent
+	// fuse alone, which made raw pace the whole game; it stays a field for
+	// compatibility, dead at zero.
+	double flow_gain_line = 2.;   // Flow per cleared line.
+	double flow_gain_attack = 4.; // Flow per point of (unboosted) attack.
+	double flow_lock_gain = 0.;   // Retired; kept so old tunings still parse.
+	double flow_flash_gain = 4.;  // Flow for a lock inside the Flash window.
 	double flow_burn_loss = 18.;  // Flow lost when the fuse forces the drop.
 	double overdrive_secs = 8.;   // How long Overdrive freezes the fuse.
 	double overdrive_mult = 1.5;  // Score and attack multiplier inside it.
@@ -291,6 +299,7 @@ private:
 	int fuse_level () const;
 	void fuse_prime ();
 	void fuse_lock (bool forced);
+	void fuse_charge (double gain);
 	void cue (std::string name) { cues_.push_back(std::move(name)); }
 
 	SimConfig config_;

@@ -463,6 +463,8 @@ replay::Meta meta_for (const Config& config, int mode) {
 		meta.fuse_refuel_attack = rules.fuse_refuel_attack;
 		meta.flash_frac = rules.flash_frac;
 		meta.flash_floor = rules.flash_floor;
+		meta.flow_gain_line = rules.flow_gain_line;
+		meta.flow_gain_attack = rules.flow_gain_attack;
 		meta.flow_lock_gain = rules.flow_lock_gain;
 		meta.flow_flash_gain = rules.flow_flash_gain;
 		meta.flow_burn_loss = rules.flow_burn_loss;
@@ -1050,6 +1052,8 @@ void juice_cue (App& app, const std::string& cue) {
 	} else if (cue == "overdrive") {
 		spawn_sparks(app, {255, 214, 96, 255}, 8, 3.6f);
 		app.shake_until = app.session->sim().frame() + 10;
+	} else if (cue == "burn") {
+		spawn_sparks(app, {255, 140, 60, 255}, 4, 2.6f);
 	}
 }
 
@@ -1893,12 +1897,14 @@ void draw_help (App& app) {
 		ImGui::TextUnformatted("");
 		ImGui::TextUnformatted("Flow and Overdrive");
 		ImGui::TextUnformatted(
-			"Lock with fuse to spare and the Flow rail climbs - lock in the\n"
-			"first moments, the Flash window, and it climbs hardest. Burn a\n"
-			"fuse to the end and it drains.");
+			"The Flow rail climbs on quality: spins, quads, back-to-backs,\n"
+			"combos and perfect clears fill it - haste alone barely moves\n"
+			"it, though a lock inside the Flash window adds a little. Burn\n"
+			"a fuse to the end and it drains.");
 		ImGui::TextUnformatted(
-			"A full rail ignites Overdrive: the fuse freezes and everything\n"
-			"you send is multiplied, until it gutters out.");
+			"A full rail ignites Overdrive: the fuse freezes, everything\n"
+			"you send is multiplied, and every clear also burns a garbage\n"
+			"row off your own floor - until it gutters out.");
 		ImGui::TextDisabled(
 			"The plain trainer rules live under Settings, Rules, Fuse.");
 	} else {

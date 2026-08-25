@@ -81,10 +81,14 @@ The bot plays under whichever you pick, its pace re-tuned so its rank
 dial still means what it says. And above all of it sits the fuse - the
 variant's own ruleset, on by default and switchable off in Rules: every
 piece burns a per-level fuse and is slammed down when it runs out, clears
-bank refuel for the pieces to come, quick locks charge the Flow rail on
-the board's left flank - locks inside the Flash window charge it hardest -
-and a full rail ignites Overdrive: the fuse frozen, score and attack
-multiplied, the board rimmed in gold until it gutters out. Duel burns it
+bank refuel for the pieces to come, and the Flow rail on the board's
+left flank charges on quality - the lines and attack a clear resolves
+into, so spins, quads, back-to-backs and perfect clears fill it while
+haste alone barely moves it (a lock inside the Flash window adds a
+little). A full rail ignites Overdrive: the fuse frozen, score and
+attack multiplied, every clear burning a garbage row off your own floor
+besides - the backdraft that makes it a digging window too - with the
+board rimmed in gold until it gutters out. Duel burns it
 on both sides: the bot's driver types inside the fuse - a rank slower
 than the burn abandons its pace rather than its piece, the way a rushed
 player would - replans cleanly when a slam beats it to the lock, and

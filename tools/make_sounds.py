@@ -16,7 +16,9 @@ RATE = 44100
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'sound')
 
-# Seeded so that regenerating the files produces byte-identical noise.
+# Re-seeded per effect (see __main__) so that regenerating produces
+# byte-identical noise AND adding a new effect never shifts the noise of
+# the ones already shipped - each file's randomness is its own.
 rng = random.Random(20260812)
 
 
@@ -196,6 +198,11 @@ SOUNDS.update({
             tone(1175, 0.26, 0.18, 'sine', release=0.25),
         ),
     ),
+    # The backdraft eating a garbage row: a short crackle, low and dry.
+    'burn': lambda: mix(
+        tone(140, 0.12, 0.30, 'noise', release=0.6),
+        tone(196, 0.10, 0.18, 'saw', freq_end=98, release=0.5),
+    ),
     # ...and guttering out: the same fifth folding back down.
     'overdrive_end': lambda: chain(
         tone(784, 0.10, 0.26, 'saw', freq_end=392, release=0.3),
@@ -206,5 +213,6 @@ SOUNDS.update({
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     for name in sorted(SOUNDS):
+        rng.seed('forcetris-' + name)
         write(name, SOUNDS[name]())
     print('\nWrote {} effects to {}'.format(len(SOUNDS), OUT))

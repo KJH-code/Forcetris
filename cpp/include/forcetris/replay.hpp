@@ -57,6 +57,7 @@ struct Meta {
 	double fuse_bank_cap = 0., fuse_draw_cap = 0.;
 	double fuse_refuel_line = 0., fuse_refuel_attack = 0.;
 	double flash_frac = 0., flash_floor = 0.;
+	double flow_gain_line = 0., flow_gain_attack = 0.;
 	double flow_lock_gain = 0., flow_flash_gain = 0., flow_burn_loss = 0.;
 	double overdrive_secs = 0., overdrive_mult = 0.;
 };

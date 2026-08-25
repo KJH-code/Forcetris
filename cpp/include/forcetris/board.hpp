@@ -100,6 +100,9 @@ public:
 	// Rows still carrying garbage cells, for the cheese modes' bookkeeping:
 	// how much of the stack is cheese, and whether the race has dug it all.
 	int garbage_rows () const;
+	// Overdrive's backdraft: splice the bottom row out if it holds garbage.
+	// True when a row actually burned.
+	bool burn_bottom_garbage ();
 
 	// The cascade bookkeeping riding along with every cell: the intra-piece
 	// links (bit 0 up, 1 right, 2 down, 3 left) and whether the cell has

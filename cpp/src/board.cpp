@@ -168,6 +168,38 @@ int Board::garbage_rows () const {
 	return rows;
 }
 
+bool Board::burn_bottom_garbage () {
+	// Overdrive's backdraft: the bottom row, if it holds garbage, is
+	// spliced out whole - hole and all - and a blank row drops in on top.
+	// The link surgery is the clearer's: a cell above that leaned on a
+	// burned cell loses that lean; the floor has nothing below to fix.
+	const int y = kHeight - 1;
+	bool garbage = false;
+	for (int x = 0; x < kWidth; ++x) {
+		if (cells_[y][x] == GARBAGE) {
+			garbage = true;
+			break;
+		}
+	}
+	if (!garbage) {
+		return false;
+	}
+	for (int x = 0; x < kWidth; ++x) {
+		if (cells_[y - 1][x] >= 0 && (links_[y][x] & 1)) {
+			links_[y - 1][x] &= static_cast<unsigned char>(~4);
+		}
+	}
+	for (int above = y; above > 0; --above) {
+		cells_[above] = cells_[above - 1];
+		links_[above] = links_[above - 1];
+		fallen_[above] = fallen_[above - 1];
+	}
+	cells_[0].fill(-1);
+	links_[0].fill(0);
+	fallen_[0].fill(false);
+	return true;
+}
+
 int Board::clear_pass (int cleartype, int& base_row, int& downstacked) {
 	// One iteration of the clearer's `while cleared` loop: the bottom-up row
 	// scan, the link surgery, and either the in-place blanking the cascade

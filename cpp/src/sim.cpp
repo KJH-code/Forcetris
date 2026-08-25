@@ -161,10 +161,10 @@ void Sim::fuse_prime () {
 	fuse_warned_ = false;
 }
 
-// The Flow accounting at a lock: a forced drop bleeds the gauge, a lock
-// with fuse to spare charges it - scaled by how much was spared, plus the
-// Flash bonus for a lock inside the window. A full gauge ignites
-// Overdrive, unless one is already burning.
+// The Flow accounting at a lock: a forced drop bleeds the gauge, and a
+// lock inside the Flash window earns speed's one small bonus. Quality -
+// the lines and attack the placement resolves into - charges the gauge
+// where the clear is scored, not here.
 void Sim::fuse_lock (bool forced) {
 	if (!config_.fuse || lost_ || !piece_elapsed_.has_value()) {
 		return;
@@ -176,14 +176,17 @@ void Sim::fuse_lock (bool forced) {
 	if (fuse_total_ <= 0.) {
 		return;
 	}
-	const double left = std::max(0., fuse_total_ - *piece_elapsed_);
-	double gain = config_.flow_lock_gain * (left / fuse_total_);
 	const double window = std::max(
 		config_.flash_floor, fuse_total_ * config_.flash_frac);
 	if (*piece_elapsed_ <= window) {
-		gain += config_.flow_flash_gain;
 		cue("flash");
+		fuse_charge(config_.flow_flash_gain);
 	}
+}
+
+// Feed the gauge and ignite Overdrive when it fills, unless one is
+// already burning - the gauge holds full until that one gutters out.
+void Sim::fuse_charge (double gain) {
 	flow_ = std::min(100., flow_ + gain);
 	if (flow_ >= 100. && overdrive_frames_ == 0) {
 		overdrive_frames_ = static_cast<long>(config_.overdrive_secs * 50.);
@@ -756,18 +759,31 @@ void Sim::resolve_score () {
 	const int sent = attack::attack_for(
 		total, static_cast<attack::SpinKind>(last.spin), b2b_ > 1,
 		std::max(0, combo_ - 1), perfect);
-	// Under the fuse: the clear refuels the bank - lines plus the base
-	// attack, so quality pays - and Overdrive multiplies what goes out.
-	// Refuel reads the unboosted attack, or Overdrive would feed itself.
+	// Under the fuse: the clear refuels the bank and charges the gauge -
+	// lines plus the base attack, so spins, quads, back-to-backs and
+	// perfect clears are what fill it, not haste - and Overdrive
+	// multiplies what goes out and burns the floor's garbage besides.
+	// Refuel and Flow read the unboosted attack, or Overdrive would feed
+	// itself.
 	int boosted = sent;
 	if (config_.fuse) {
 		if (total > 0) {
 			fuse_bank_ = std::min(config_.fuse_bank_cap,
 				fuse_bank_ + config_.fuse_refuel_line * total
 					+ config_.fuse_refuel_attack * sent);
+			fuse_charge(config_.flow_gain_line * total
+				+ config_.flow_gain_attack * sent);
 		}
 		if (overdrive_frames_ > 0) {
 			boosted = py_round(sent * config_.overdrive_mult);
+			// The backdraft: a clear resolved inside Overdrive burns the
+			// bottom garbage row off this board too - worth no score and
+			// no attack, but the dig is real.
+			if (total > 0 && board_.burn_bottom_garbage()) {
+				++downstack_;
+				++lines_cleared_;
+				cue("burn");
+			}
 		}
 	}
 	attack_sent_ += boosted;

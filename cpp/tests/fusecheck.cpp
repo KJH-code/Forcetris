@@ -131,18 +131,38 @@ int main () {
 		check("a burned fuse leaves the gauge empty", sim.flow() == 0.);
 	}
 
-	// Flow: an instant lock lands inside the Flash window and charges the
-	// gauge by the lock gain (scaled by fuse left, near full) plus the
-	// Flash bonus.
+	// Flow charges on quality: a clearless lock, however fast, earns only
+	// the small Flash bonus; a single clear adds its line's worth; and a
+	// quad perfect clear pours it in - lines plus attack.
 	{
-		Sim sim(fused(), bags());
+		SimConfig config = fused();
+		config.clear_delay = false;
+		Sim sim(config, bags());
 		std::set<std::string> heard;
 		wait_spawn(sim, &heard);
 		tap(sim, Key::Hard, &heard);
-		check("a flash lock charges lock gain plus flash",
-			sim.flow() > 12. && sim.flow() <= 20.,
-			std::to_string(sim.flow()));
+		check("a clearless flash lock earns only the flash bonus",
+			sim.flow() == 4., std::to_string(sim.flow()));
 		check("and the flash cue fired", heard.count("flash") == 1);
+
+		Sim single(config, bags());
+		wait_spawn(single);
+		single.seed(welled(1));
+		tap(single, Key::Cw);
+		tap(single, Key::Hard);
+		// Flash 4 at the lock, then line gain 2 for the single, attack 0.
+		check("a single clear adds its line's worth",
+			single.flow() == 6., std::to_string(single.flow()));
+
+		Sim quad(config, std::vector<int>(40, I));
+		wait_spawn(quad);
+		quad.seed(welled(4));
+		tap(quad, Key::Cw);
+		tap(quad, Key::Hard);
+		// Flash 4, lines 4x2, and the quad's perfect clear attack (14) at
+		// 4 apiece: quality is what fills the gauge.
+		check("a quad perfect clear pours it in",
+			quad.flow() == 4. + 8. + 56., std::to_string(quad.flow()));
 	}
 
 	// The bank: at level zero a clear banks refuel but the schedule is
@@ -208,18 +228,19 @@ int main () {
 			std::to_string(sim.piece_elapsed().value_or(-1.)));
 	}
 
-	// Overdrive: cranked gains fill the gauge in one flash lock; the fuse
+	// Overdrive: a cranked line gain lets one single ignite it; the fuse
 	// freezes while it burns, attack is multiplied, and when it ends the
 	// gauge starts over.
 	{
 		SimConfig config = fused();
-		config.flow_lock_gain = 60.;
-		config.flow_flash_gain = 60.;
+		config.flow_gain_line = 120.;
 		config.overdrive_secs = 0.5;   // 25 frames.
 		config.clear_delay = false;    // The quad must resolve inside it.
 		Sim sim(config, std::vector<int>(40, I));   // An all-I deck: quads.
 		std::set<std::string> heard;
 		wait_spawn(sim, &heard);
+		sim.seed(welled(1));
+		tap(sim, Key::Cw, &heard);
 		tap(sim, Key::Hard, &heard);
 		check("a full gauge ignites overdrive",
 			sim.overdrive() && heard.count("overdrive") == 1);
@@ -291,6 +312,54 @@ int main () {
 		const auto legacy = replay::load(plain.path);
 		check("and reads back as trainer rules",
 			legacy.has_value() && !legacy->meta.fuse);
+	}
+
+	// The backdraft: a clear resolved inside Overdrive burns the bottom
+	// garbage row off this board too - dig counted, nothing paid - and
+	// outside Overdrive the same clear burns nothing.
+	{
+		const auto dig_board = [] {
+			Board board;
+			for (int x = 0; x < kWidth; ++x) {
+				if (x != kSpawnX + 1) {
+					board.set(x, kHeight - 3, S);
+				}
+			}
+			for (const int y : {kHeight - 2, kHeight - 1}) {
+				for (int x = 0; x < kWidth; ++x) {
+					if (x != 0) {
+						board.set(x, y, GARBAGE);
+					}
+				}
+			}
+			return board;
+		};
+		SimConfig config = fused();
+		config.clear_delay = false;
+		for (const bool ignited : {true, false}) {
+			SimConfig run = config;
+			if (ignited) {
+				run.flow_gain_line = 120.;   // The single itself ignites.
+			}
+			Sim sim(run, std::vector<int>(40, I));
+			std::set<std::string> heard;
+			wait_spawn(sim, &heard);
+			sim.seed(dig_board());
+			tap(sim, Key::Cw, &heard);
+			tap(sim, Key::Hard, &heard);
+			if (ignited) {
+				check("overdrive's clear burns the floor's garbage",
+					sim.board().garbage_rows() == 1
+						&& sim.downstack() == 1
+						&& heard.count("burn") == 1,
+					std::to_string(sim.board().garbage_rows()));
+			} else {
+				check("outside overdrive nothing burns",
+					sim.board().garbage_rows() == 2
+						&& heard.count("burn") == 0,
+					std::to_string(sim.board().garbage_rows()));
+			}
+		}
 	}
 
 	// The variant's own score file: a duel entry round-trips through

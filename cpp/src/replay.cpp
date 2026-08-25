@@ -194,6 +194,8 @@ Meta read_meta (const json& data) {
 		meta.fuse_refuel_attack = num_or(data, "fuse_refuel_attack", 0.);
 		meta.flash_frac = num_or(data, "flash_frac", 0.);
 		meta.flash_floor = num_or(data, "flash_floor", 0.);
+		meta.flow_gain_line = num_or(data, "flow_gain_line", 0.);
+		meta.flow_gain_attack = num_or(data, "flow_gain_attack", 0.);
 		meta.flow_lock_gain = num_or(data, "flow_lock_gain", 0.);
 		meta.flow_flash_gain = num_or(data, "flow_flash_gain", 0.);
 		meta.flow_burn_loss = num_or(data, "flow_burn_loss", 0.);
@@ -233,6 +235,8 @@ json write_meta (const Meta& meta) {
 		out["fuse_refuel_attack"] = meta.fuse_refuel_attack;
 		out["flash_frac"] = meta.flash_frac;
 		out["flash_floor"] = meta.flash_floor;
+		out["flow_gain_line"] = meta.flow_gain_line;
+		out["flow_gain_attack"] = meta.flow_gain_attack;
 		out["flow_lock_gain"] = meta.flow_lock_gain;
 		out["flow_flash_gain"] = meta.flow_flash_gain;
 		out["flow_burn_loss"] = meta.flow_burn_loss;
