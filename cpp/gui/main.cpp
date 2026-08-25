@@ -1109,6 +1109,17 @@ void draw_versus_panel (App& app) {
 	const int top = kMiniY;
 	fill(renderer, left - px(2), top - px(2),
 		kWidth * cell + px(4), kHeight * cell + px(4), {32, 40, 53, 255});
+	// The bot's Overdrive shows the way the player's does, scaled down:
+	// the board rimmed in gold while it burns.
+	if (theirs.overdrive()) {
+		const SDL_Color rim{255, 214, 96, 255};
+		const int wide = kWidth * cell;
+		const int tall = kHeight * cell;
+		fill(renderer, left - px(3), top - px(3), wide + px(6), px(3), rim);
+		fill(renderer, left - px(3), top + tall, wide + px(6), px(3), rim);
+		fill(renderer, left - px(3), top, px(3), tall, rim);
+		fill(renderer, left + wide, top, px(3), tall, rim);
+	}
 	fill(renderer, left, top, kWidth * cell, kHeight * cell, {14, 18, 24, 255});
 	for (int y = 0; y < kHeight; ++y) {
 		for (int x = 0; x < kWidth; ++x) {
@@ -1127,7 +1138,24 @@ void draw_versus_panel (App& app) {
 			}
 		}
 	}
-	draw_label("BOT", static_cast<float>(left), top - ui(22));
+	draw_label("BOT", static_cast<float>(left), top - ui(22),
+		theirs.overdrive() ? IM_COL32(255, 214, 96, 255)
+			: IM_COL32(150, 165, 185, 255));
+	// The bot's Flow rail on its board's right flank - watching the gauge
+	// creep up is the warning the ignition deserves.
+	if (theirs.config().fuse) {
+		const int rail_x = left + kWidth * cell + px(4);
+		const int rail_h = kHeight * cell;
+		fill(renderer, rail_x, top, px(4), rail_h, {26, 33, 44, 255});
+		const bool burning = theirs.overdrive();
+		const int charge = burning ? rail_h
+			: static_cast<int>(rail_h * (theirs.flow() / 100.));
+		if (charge > 0) {
+			fill(renderer, rail_x, top + rail_h - charge, px(4), charge,
+				burning ? SDL_Color{255, 214, 96, 255}
+					: SDL_Color{65, 198, 224, 255});
+		}
+	}
 	// Incoming garbage, as red columns: theirs beside their board, the
 	// player's beside the player's.
 	const auto meter = [renderer] (int x, int bottom, int rows, int step) {
