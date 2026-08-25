@@ -391,6 +391,10 @@ struct App {
 	// The menu screens' ambient embers, drifting up behind the windows.
 	std::array<Spark, 48> embers{};
 	size_t ember_at = 0;
+	// A game key arrived this loop: the sim may borrow its next tick early
+	// (one tick at most - the accumulator repays), so the press lands now
+	// instead of waiting out the 20ms boundary.
+	bool input_nudge = false;
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
 	bool relayout = false;       // The screen rotated; rebuild before drawing.
@@ -758,6 +762,7 @@ void handle_event (App& app, const SDL_Event& event) {
 						&& y >= rect.y && y < rect.y + rect.h) {
 						app.touch_held[event.tfinger.fingerId] = i;
 						app.session->key(app.touch[i].key, true);
+						app.input_nudge = true;
 						break;
 					}
 				}
@@ -844,6 +849,15 @@ void handle_event (App& app, const SDL_Event& event) {
 		}
 		return;
 	}
+	// F11 toggles fullscreen - on Windows the compositor adds a frame of
+	// latency to a mere window, and a fullscreen one gets the direct path.
+	if (down && event.key.keysym.scancode == SDL_SCANCODE_F11 && !kMobile) {
+		const bool full = (SDL_GetWindowFlags(app.window)
+			& SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+		SDL_SetWindowFullscreen(app.window,
+			full ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+		return;
+	}
 	// R restarts the run, hardcoded like Escape rather than rebindable - a
 	// binding would put it in the smoke masher's pool, and the masher would
 	// never finish a game again. Works paused and on the loss screen; stays
@@ -871,6 +885,7 @@ void handle_event (App& app, const SDL_Event& event) {
 			app.touch_shown = false;
 		}
 		app.session->key(*key, down);
+		app.input_nudge = true;
 	}
 }
 
@@ -1993,6 +2008,13 @@ void draw_help (App& app) {
 		ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "R");
 		ImGui::TableSetColumnIndex(1);
 		ImGui::TextUnformatted("Restart the run");
+		if (!kMobile) {
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "F11");
+			ImGui::TableSetColumnIndex(1);
+			ImGui::TextUnformatted("Fullscreen (less latency on Windows)");
+		}
 		ImGui::EndTable();
 	}
 	ImGui::Separator();
@@ -3433,8 +3455,12 @@ int run (bool smoke, long smoke_frames) {
 			behind = std::min(behind, 0.25);
 		}
 
-		while (behind >= 0.02) {
+		if (smoke) {
+			app.input_nudge = false;
+		}
+		while (behind >= 0.02 || (app.input_nudge && behind >= 0.0)) {
 			behind -= 0.02;
+			app.input_nudge = false;
 			if (app.screen == Screen::Game && !app.paused && !app.editing) {
 				if (app.countdown > 0) {
 					// The pre-game breath: both boards stand frozen - the

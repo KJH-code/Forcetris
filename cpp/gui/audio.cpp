@@ -44,7 +44,11 @@ void Audio::open (const std::string& root) {
 	want.freq = kRate;
 	want.format = AUDIO_F32SYS;
 	want.channels = kChannels;
-	want.samples = 1024;
+	// A small buffer: the keypress cues are half the feel of the game, and
+	// 1024 samples was 23ms of extra lag on every one of them. The mixer
+	// only sums a couple of dozen voices, so 256 (about 6ms) is safe; a
+	// device that cannot do it hands back what it can in `got`.
+	want.samples = 256;
 	want.callback = mix_callback;
 	want.userdata = this;
 	SDL_AudioSpec got{};

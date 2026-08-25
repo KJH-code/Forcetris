@@ -111,7 +111,13 @@ says which game its score belongs to (`fuse_check` pins the ruleset and
 the meta round trip both). On a desk the renderer runs uncapped by default - vsync off, the loop
 paced by a millisecond nap - which cuts a frame or two of input latency;
 the Rules tab's Low-latency toggle brings vsync back for tearing-averse
-displays, and phones keep vsync regardless. Input is not spread out the way the
+displays, and phones keep vsync regardless. Three more shavings: the
+audio buffer is 256 samples (about 6ms), so the keypress cues land with
+the press instead of 23ms behind it; a game key lets the sim borrow its
+next tick early - one tick at most, repaid by the accumulator, so the
+pace never changes but the press never waits out a 20ms boundary; and
+F11 flips fullscreen, which on Windows trades the compositor's extra
+frame for the direct path. Input is not spread out the way the
 Python engine's one-event-per-frame poll spreads it: every press and
 release that arrived since the last 20ms frame lands on the next one, in
 order, so a quick tap-rotate-drop is on the board the frame after the
