@@ -57,6 +57,9 @@ struct Config {
 	bool fuse = true;
 	// The board's shudder on quads, spins and Overdrive. Purely cosmetic.
 	bool shake = true;
+	// Uncapped rendering: vsync off, the loop paced by a millisecond nap.
+	// Cuts a frame or two of input latency on a desk; phones keep vsync.
+	bool lowlatency = true;
 
 	// The mode picker's dials, remembered between runs: how the cheese is
 	// cut and how the bot fight is set up.

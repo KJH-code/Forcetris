@@ -214,7 +214,7 @@ void apply_theme () {
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.WindowRounding = 10.f;
 	style.ChildRounding = 8.f;
-	style.FrameRounding = 6.f;
+	style.FrameRounding = 8.f;
 	style.PopupRounding = 8.f;
 	style.GrabRounding = 6.f;
 	style.TabRounding = 6.f;
@@ -227,7 +227,7 @@ void apply_theme () {
 	style.ScrollbarSize = 12.f;
 	style.GrabMinSize = 12.f;
 	style.WindowBorderSize = 1.f;
-	style.FrameBorderSize = 0.f;
+	style.FrameBorderSize = 1.f;
 	style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
 	style.SeparatorTextBorderSize = 2.f;
 
@@ -239,7 +239,7 @@ void apply_theme () {
 	const ImVec4 wellActive(0.267f, 0.192f, 0.133f, 1.f);
 	const ImVec4 accent(1.f, 0.541f, 0.227f, 1.f);        // Ember.
 	const ImVec4 accentDim(1.f, 0.541f, 0.227f, 0.28f);
-	const ImVec4 edge(0.302f, 0.220f, 0.149f, 0.65f);
+	const ImVec4 edge(0.376f, 0.267f, 0.176f, 0.60f);
 	const ImVec4 text(0.957f, 0.929f, 0.894f, 1.f);
 	const ImVec4 faded(0.616f, 0.549f, 0.471f, 1.f);
 
@@ -388,6 +388,9 @@ struct App {
 	std::array<Spark, 256> sparks{};
 	size_t spark_at = 0;
 	long shake_until = -1;
+	// The menu screens' ambient embers, drifting up behind the windows.
+	std::array<Spark, 48> embers{};
+	size_t ember_at = 0;
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
 	bool relayout = false;       // The screen rotated; rebuild before drawing.
@@ -880,7 +883,24 @@ void fill (SDL_Renderer* renderer, int x, int y, int w, int h, SDL_Color c) {
 }
 
 void draw_cell (SDL_Renderer* renderer, int px, int py, SDL_Color c, int size = kCell) {
-	fill(renderer, px + 1, py + 1, size - 2, size - 2, c);
+	// A block, not a swatch: the face, a lit lip on top and left, a shadow
+	// at the foot and right - the cheap bevel that reads as depth at any
+	// cell size. Ghost cells arrive with a low alpha and keep it.
+	const auto scaled = [&c] (double factor, int lift) {
+		return SDL_Color{
+			static_cast<Uint8>(std::min(255., c.r * factor + lift)),
+			static_cast<Uint8>(std::min(255., c.g * factor + lift)),
+			static_cast<Uint8>(std::min(255., c.b * factor + lift)), c.a};
+	};
+	const int t = std::max(1, size / 8);
+	fill(renderer, px + 1, py + 1, size - 2, size - 2, scaled(1.0, 0));
+	const SDL_Color lit = scaled(1.25, 28);
+	const SDL_Color shade = scaled(0.55, 0);
+	fill(renderer, px + 1, py + 1, size - 2, t, lit);
+	fill(renderer, px + 1, py + 1 + t, t, size - 2 - t, scaled(1.1, 12));
+	fill(renderer, px + 1, py + size - 1 - t, size - 2, t, shade);
+	fill(renderer, px + size - 1 - t, py + 1 + t, t, size - 2 - 2 * t,
+		scaled(0.75, 0));
 }
 
 // A piece drawn on its own, for the hold box and the queue previews.
@@ -902,6 +922,12 @@ void draw_board (App& app) {
 
 	fill(renderer, kBoardX - px(3), kBoardY - px(3), kBoardW + px(6), kBoardH + px(6), {58, 42, 30, 255});
 	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {17, 12, 9, 255});
+	// A thin ember line inside the frame, the crucible's rim.
+	SDL_SetRenderDrawColor(renderer, 122, 82, 50, 255);
+	{
+		const SDL_Rect rim{kBoardX - 1, kBoardY - 1, kBoardW + 2, kBoardH + 2};
+		SDL_RenderDrawRect(renderer, &rim);
+	}
 	SDL_SetRenderDrawColor(renderer, 36, 27, 20, 255);
 	for (int x = 1; x < kWidth; ++x) {
 		SDL_RenderDrawLine(renderer, kBoardX + x * kCell, kBoardY,
@@ -1012,6 +1038,52 @@ void draw_board (App& app) {
 
 void draw_label (const char* text, float x, float y, ImU32 color = IM_COL32(176, 158, 140, 255)) {
 	ImGui::GetBackgroundDrawList()->AddText(ImVec2(x, y), color, text);
+}
+
+// The backdrop: a warm vertical gradient - lit faintly from above, the
+// way a room lit by a fire is - with slow embers drifting up behind the
+// menu screens. The game screens keep the gradient and skip the embers;
+// a fight needs the air still.
+void draw_backdrop (App& app) {
+	int w = 0;
+	int h = 0;
+	SDL_GetRendererOutputSize(app.renderer, &w, &h);
+	const int bands = 12;
+	for (int i = 0; i < bands; ++i) {
+		const double part = static_cast<double>(i) / (bands - 1);
+		fill(app.renderer, 0, h * i / bands, w, h / bands + 1,
+			{static_cast<Uint8>(26 - 14 * part),
+			 static_cast<Uint8>(18 - 9 * part),
+			 static_cast<Uint8>(13 - 6 * part), 255});
+	}
+	if (app.screen == Screen::Game || app.screen == Screen::Viewer) {
+		return;
+	}
+	// One ember born every few frames, dying out near the top.
+	if (app.seeds() % 5 == 0) {
+		App::Spark& born = app.embers[app.ember_at];
+		app.ember_at = (app.ember_at + 1) % app.embers.size();
+		born.x = static_cast<float>(app.seeds() % std::max(1, w));
+		born.y = static_cast<float>(h + px(4));
+		born.vx = ((app.seeds() % 100) - 50) / 220.f;
+		born.vy = -0.4f - (app.seeds() % 100) / 130.f;
+		born.life = 240 + static_cast<int>(app.seeds() % 240);
+		born.color = {255, static_cast<Uint8>(120 + app.seeds() % 80),
+			50, 255};
+	}
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+	for (App::Spark& ember : app.embers) {
+		if (ember.life <= 0) {
+			continue;
+		}
+		--ember.life;
+		ember.x += ember.vx + std::sin(ember.life * 0.05f) * 0.3f;
+		ember.y += ember.vy;
+		SDL_Color faded = ember.color;
+		faded.a = static_cast<Uint8>(std::min(90, ember.life / 3));
+		fill(app.renderer, static_cast<int>(ember.x),
+			static_cast<int>(ember.y), px(3), px(3), faded);
+	}
 }
 
 // A burst of sparks from the cells of the piece that just locked.
@@ -1452,6 +1524,14 @@ void draw_settings (App& app) {
 			ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);
 			ImGui::Checkbox("Wall kicks", &app.config.kicks);
 			ImGui::Checkbox("Screen shake", &app.config.shake);
+			if (!kMobile && ImGui::Checkbox("Low-latency rendering",
+				&app.config.lowlatency)) {
+				SDL_RenderSetVSync(app.renderer,
+					app.config.lowlatency ? 0 : 1);
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", kMobile ? ""
+				: "vsync off; a frame or two less input lag");
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Sound")) {
@@ -2619,8 +2699,42 @@ void draw_menus (App& app) {
 	if (app.screen == Screen::Menu) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 		ImGui::Begin("main menu", nullptr, box);
+		// The wordmark: a small drawn flame, then the letters cooling from
+		// gold at the fire's edge to ember at the far end.
 		ImGui::PushFont(app.fonts.title);
-		ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f), "FORCETRIS");
+		ImFont* mark = app.fonts.title;
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		const ImVec2 at = ImGui::GetCursorScreenPos();
+		const float tall = mark->FontSize;
+		const float fx = at.x + tall * 0.28f;
+		const float fy = at.y + tall * 0.52f;
+		dl->AddTriangleFilled(ImVec2(fx, fy - tall * 0.42f),
+			ImVec2(fx - tall * 0.20f, fy + tall * 0.30f),
+			ImVec2(fx + tall * 0.20f, fy + tall * 0.30f),
+			IM_COL32(255, 138, 58, 255));
+		dl->AddCircleFilled(ImVec2(fx, fy + tall * 0.18f), tall * 0.21f,
+			IM_COL32(255, 138, 58, 255));
+		dl->AddTriangleFilled(ImVec2(fx, fy - tall * 0.16f),
+			ImVec2(fx - tall * 0.10f, fy + tall * 0.26f),
+			ImVec2(fx + tall * 0.10f, fy + tall * 0.26f),
+			IM_COL32(255, 214, 96, 255));
+		dl->AddCircleFilled(ImVec2(fx, fy + tall * 0.16f), tall * 0.11f,
+			IM_COL32(255, 214, 96, 255));
+		float pen = at.x + tall * 0.66f;
+		const char* word = "FORCETRIS";
+		const int letters = 9;
+		for (int i = 0; i < letters; ++i) {
+			const char glyph[2] = {word[i], '\0'};
+			const float part = static_cast<float>(i) / (letters - 1);
+			const ImU32 shade = IM_COL32(255,
+				static_cast<int>(214 - 76 * part),
+				static_cast<int>(96 - 38 * part), 255);
+			dl->AddText(mark, tall, ImVec2(pen + 2.f, at.y + 2.f),
+				IM_COL32(40, 16, 6, 200), glyph);
+			dl->AddText(mark, tall, ImVec2(pen, at.y), shade, glyph);
+			pen += mark->CalcTextSizeA(tall, FLT_MAX, 0.f, glyph).x;
+		}
+		ImGui::Dummy(ImVec2(pen - at.x, tall));
 		ImGui::PopFont();
 		ImGui::TextDisabled("every piece burns");
 		ImGui::Dummy(ImVec2(0.f, ui(10)));
@@ -3208,9 +3322,16 @@ int run (bool smoke, long smoke_frames) {
 		SDL_Log("SDL_CreateWindow: %s", SDL_GetError());
 		return 1;
 	}
+	// Low-latency mode drops vsync on a desk - the loop is paced by a
+	// millisecond nap instead, so input is polled and simmed within a few
+	// ms of arriving rather than waiting out a display refresh. Phones
+	// keep vsync: their compositors enforce it anyway, and the nap-loop
+	// would only heat the battery.
+	const bool vsynced = kMobile || !app.config.lowlatency;
 	app.renderer = SDL_CreateRenderer(app.window, -1,
 		smoke ? SDL_RENDERER_SOFTWARE
-		      : SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+		      : (SDL_RENDERER_ACCELERATED
+		         | (vsynced ? SDL_RENDERER_PRESENTVSYNC : 0)));
 	if (app.renderer == nullptr) {
 		app.renderer = SDL_CreateRenderer(app.window, -1, SDL_RENDERER_SOFTWARE);
 	}
@@ -3385,6 +3506,7 @@ int run (bool smoke, long smoke_frames) {
 
 		SDL_SetRenderDrawColor(app.renderer, 14, 11, 9, 255);
 		SDL_RenderClear(app.renderer);
+		draw_backdrop(app);
 		if (app.session.has_value()
 			&& (app.screen == Screen::Game || app.screen == Screen::Over)) {
 			// The shudder: the whole board pane jolts a few pixels while a
@@ -3488,6 +3610,9 @@ int run (bool smoke, long smoke_frames) {
 			}
 		}
 		SDL_RenderPresent(app.renderer);
+		if (!smoke && !kMobile && app.config.lowlatency) {
+			SDL_Delay(1);   // Vsync is off; don't spin the whole core.
+		}
 
 		if (smoke) {
 			if (app.screen == Screen::Over) {
