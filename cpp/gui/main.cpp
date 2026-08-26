@@ -1584,17 +1584,19 @@ void draw_board (App& app) {
 		draw_preview(renderer, queue[slot], x + px(16) - shrink / 2,
 			y + px(12), px(18) - shrink / 6);
 	}
-	// The furnace rails: the well stands between two pillars, riveted.
+	// The furnace rail: a riveted pillar down the well's right flank. There
+	// is no matching one on the left because the Flow gauge stands there and
+	// is that pillar - anywhere a decorative twin would fit on that side is
+	// already inside the hold box.
 	if (!kPortrait) {
-		for (const int side : {kBoardX - px(56), kBoardX + kBoardW + px(8)}) {
-			fill(renderer, side, kBoardY - px(6), px(8),
-				kBoardH + px(12), {44, 32, 23, 255});
-			fill(renderer, side, kBoardY - px(6), std::max(1, px(2)),
-				kBoardH + px(12), {68, 49, 35, 255});
-			for (int at = px(14); at < kBoardH; at += px(64)) {
-				fill(renderer, side + px(2), kBoardY + at, px(4), px(4),
-					{96, 68, 46, 255});
-			}
+		const int side = kBoardX + kBoardW + px(8);
+		fill(renderer, side, kBoardY - px(6), px(8),
+			kBoardH + px(12), {44, 32, 23, 255});
+		fill(renderer, side, kBoardY - px(6), std::max(1, px(2)),
+			kBoardH + px(12), {68, 49, 35, 255});
+		for (int at = px(14); at < kBoardH; at += px(64)) {
+			fill(renderer, side + px(2), kBoardY + at, px(4), px(4),
+				{96, 68, 46, 255});
 		}
 	}
 
@@ -1631,6 +1633,8 @@ void draw_board (App& app) {
 		const int rail_y = kBoardY + px(120);
 		const int rail_h = kBoardH - px(130);
 		fill(renderer, rail_x, rail_y, px(12), rail_h, {36, 27, 20, 255});
+		fill(renderer, rail_x, rail_y, std::max(1, px(2)), rail_h,
+			{68, 49, 35, 255});
 		const bool burning = sim.overdrive();
 		const int charge = burning ? rail_h
 			: static_cast<int>(rail_h * (sim.flow() / 100.));
