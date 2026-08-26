@@ -11,6 +11,7 @@
 // machines with no display.
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <cstdarg>
 #include <cstdlib>
 #include <ctime>
@@ -410,6 +411,16 @@ struct App {
 	bool was_overdrive = false;
 	bool was_pressured = false;
 	int hit_flash = 0;          // Frames of the garbage-landing flash.
+	// Rows going white-hot as they clear: the row, and the frames left of
+	// its burn. Kept here so an instant clear - where the row is spliced
+	// out on the lock frame - still gets its moment.
+	struct BurnRow {
+		int row = 0;
+		int life = 0;
+	};
+	std::array<BurnRow, 8> burn_rows{};
+	size_t burn_at = 0;
+	long burn_seen_lock = -1;   // The lock whose rows were already lit.
 	int last_pending = 0;
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
@@ -512,6 +523,10 @@ void reset_effects (App& app) {
 	app.od_flash = 0;
 	app.od_banner = 0;
 	app.hit_flash = 0;
+	for (App::BurnRow& row : app.burn_rows) {
+		row.life = 0;
+	}
+	app.burn_seen_lock = -1;
 	app.was_overdrive = false;
 	app.was_pressured = false;
 	for (App::Spark& spark : app.sparks) {
@@ -940,10 +955,54 @@ void handle_event (App& app, const SDL_Event& event) {
 void spawn_sparks_at (App& app, float x, float y, SDL_Color color, int count,
 	float kick);
 
+// How much trouble this board is in, 0 to 1: a fuse nearly spent, garbage
+// massing, a stack near the sky, the other board's Overdrive bearing down.
+// The well's glow and the screen's vignette both read from it.
+double danger_of (const Sim& sim) {
+	if (!sim.config().fuse) {
+		return 0.;
+	}
+	double danger = 0.;
+	if (sim.fuse_total() > 0. && sim.piece_elapsed().has_value()) {
+		danger = std::max(danger,
+			(*sim.piece_elapsed() / sim.fuse_total() - 0.6) / 0.4);
+	}
+	danger = std::max(danger, sim.pending_garbage() / 8.);
+	int top = kHeight;
+	for (int y = 0; y < kHeight && top == kHeight; ++y) {
+		for (int x = 0; x < kWidth; ++x) {
+			if (sim.board().at(x, y) >= 0) {
+				top = y;
+				break;
+			}
+		}
+	}
+	danger = std::max(danger, (12. - top) / 10.);
+	if (sim.pressured()) {
+		danger = std::max(danger, 0.55);
+	}
+	return std::clamp(danger, 0., 1.);
+}
+
 void fill (SDL_Renderer* renderer, int x, int y, int w, int h, SDL_Color c) {
 	SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);
 	const SDL_Rect rect{x, y, w, h};
 	SDL_RenderFillRect(renderer, &rect);
+}
+
+// Garbage wears its own face: burnt slag, dark and cracked, so a row the
+// other side sent never reads as one you built.
+void draw_char_cell (SDL_Renderer* renderer, int x, int y, int size = kCell) {
+	const int t = std::max(1, size / 8);
+	fill(renderer, x + 1, y + 1, size - 2, size - 2, {58, 48, 44, 255});
+	fill(renderer, x + 1, y + 1, size - 2, t, {84, 70, 62, 255});
+	fill(renderer, x + 1, y + size - 1 - t, size - 2, t, {34, 27, 24, 255});
+	// Two cracks, glowing faintly - the slag has not gone cold.
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+	fill(renderer, x + size / 3, y + t + 1, std::max(1, t / 2),
+		size - 2 * t - 2, {180, 74, 34, 120});
+	fill(renderer, x + t + 1, y + size / 2, size / 3, std::max(1, t / 2),
+		{180, 74, 34, 90});
 }
 
 void draw_cell (SDL_Renderer* renderer, int px, int py, SDL_Color c, int size = kCell) {
@@ -984,20 +1043,51 @@ void draw_board (App& app) {
 	const Session& session = *app.session;
 	const Sim& sim = session.sim();
 
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+	// The halo: the well itself glows as the Flow gauge fills, so the room
+	// warms towards an ignition before it happens.
+	const double charge = sim.config().fuse ? sim.flow() / 100. : 0.;
+	if (charge > 0.02) {
+		const float beat = 0.85f + 0.15f * std::sin(sim.frame() * 0.12f);
+		for (int ring = 5; ring >= 1; --ring) {
+			const int spread = px(9) * ring;
+			fill(renderer, kBoardX - spread, kBoardY - spread,
+				kBoardW + 2 * spread, kBoardH + 2 * spread,
+				{255, 122, 44, static_cast<Uint8>(
+					charge * beat * (7 - ring) * 3.4)});
+		}
+	}
 	fill(renderer, kBoardX - px(3), kBoardY - px(3), kBoardW + px(6), kBoardH + px(6), {58, 42, 30, 255});
 	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {17, 12, 9, 255});
+	// The fire is below: the well's floor smoulders, brighter the more
+	// trouble the board is in.
+	{
+		const double danger = danger_of(sim);
+		const int reach = 8;
+		for (int y = kHeight - reach; y < kHeight; ++y) {
+			const double depth = (y - (kHeight - reach) + 1.) / reach;
+			fill(renderer, kBoardX, kBoardY + y * kCell, kBoardW, kCell,
+				{168, 58, 20, static_cast<Uint8>(
+					depth * depth * (10. + 26. * danger))});
+		}
+	}
 	// A thin ember line inside the frame, the crucible's rim.
 	SDL_SetRenderDrawColor(renderer, 122, 82, 50, 255);
 	{
 		const SDL_Rect rim{kBoardX - 1, kBoardY - 1, kBoardW + 2, kBoardH + 2};
 		SDL_RenderDrawRect(renderer, &rim);
 	}
-	SDL_SetRenderDrawColor(renderer, 36, 27, 20, 255);
+	// The grid fades out towards the sky - the deep end of the well is
+	// where the detail is - and the columns stay legible all the way up.
 	for (int x = 1; x < kWidth; ++x) {
+		SDL_SetRenderDrawColor(renderer, 46, 34, 25, 190);
 		SDL_RenderDrawLine(renderer, kBoardX + x * kCell, kBoardY,
 			kBoardX + x * kCell, kBoardY + kBoardH - 1);
 	}
 	for (int y = 1; y < kHeight; ++y) {
+		const double depth = static_cast<double>(y) / kHeight;
+		SDL_SetRenderDrawColor(renderer, 46, 34, 25,
+			static_cast<Uint8>(40 + 150 * depth));
 		SDL_RenderDrawLine(renderer, kBoardX, kBoardY + y * kCell,
 			kBoardX + kBoardW - 1, kBoardY + y * kCell);
 	}
@@ -1006,7 +1096,10 @@ void draw_board (App& app) {
 	for (int y = 0; y < kHeight; ++y) {
 		for (int x = 0; x < kWidth; ++x) {
 			const int form = board.at(x, y);
-			if (form >= 0) {
+			if (form == GARBAGE) {
+				draw_char_cell(renderer, kBoardX + x * kCell,
+					kBoardY + y * kCell);
+			} else if (form >= 0) {
 				draw_cell(renderer, kBoardX + x * kCell, kBoardY + y * kCell,
 					kFormColors[std::min(form, 7)]);
 			}
@@ -1018,13 +1111,24 @@ void draw_board (App& app) {
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 		const Piece ghost = board.dropped(piece);
 		if (ghost.y != piece.y) {
-			SDL_Color faint = kFormColors[piece.form];
-			faint.a = 70;
+			// Outlined, not filled: a landing marker that never reads as
+			// part of the stack it is standing on.
+			const SDL_Color edge{kFormColors[piece.form].r,
+				kFormColors[piece.form].g, kFormColors[piece.form].b, 190};
+			const SDL_Color inner{kFormColors[piece.form].r,
+				kFormColors[piece.form].g, kFormColors[piece.form].b, 28};
+			const int t = std::max(1, kCell / 10);
 			for (const Offset cell : cells_of(ghost)) {
-				if (cell.y >= 0) {
-					draw_cell(renderer, kBoardX + cell.x * kCell,
-						kBoardY + cell.y * kCell, faint);
+				if (cell.y < 0) {
+					continue;
 				}
+				const int gx = kBoardX + cell.x * kCell;
+				const int gy = kBoardY + cell.y * kCell;
+				fill(renderer, gx + 1, gy + 1, kCell - 2, kCell - 2, inner);
+				fill(renderer, gx + 1, gy + 1, kCell - 2, t, edge);
+				fill(renderer, gx + 1, gy + kCell - 1 - t, kCell - 2, t, edge);
+				fill(renderer, gx + 1, gy + 1, t, kCell - 2, edge);
+				fill(renderer, gx + kCell - 1 - t, gy + 1, t, kCell - 2, edge);
 			}
 		}
 		for (const Offset cell : cells_of(piece)) {
@@ -1070,15 +1174,57 @@ void draw_board (App& app) {
 	}
 
 	// The hold box and the coming pieces.
-	fill(renderer, kBoardX - px(122), kBoardY, px(104), px(86), {30, 22, 17, 255});
+	// A slot in the furnace wall: sunk face, lit top edge, ember hairline.
+	const auto draw_slot = [renderer] (int x, int y, int w, int h,
+			bool spent) {
+		fill(renderer, x - px(2), y - px(2), w + px(4), h + px(4),
+			{54, 39, 28, 255});
+		fill(renderer, x, y, w, h, spent
+			? SDL_Color{22, 17, 14, 255} : SDL_Color{30, 22, 17, 255});
+		fill(renderer, x, y, w, std::max(1, px(2)), {70, 51, 37, 255});
+		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+		fill(renderer, x, y + h - std::max(1, px(2)), w,
+			std::max(1, px(2)), {12, 8, 6, 200});
+		if (spent) {
+			// Hatched out: the hold has already been spent on this piece.
+			for (int i = -h; i < w; i += px(9)) {
+				for (int s = 0; s < px(2); ++s) {
+					SDL_SetRenderDrawColor(renderer, 96, 70, 50, 90);
+					SDL_RenderDrawLine(renderer, x + i + s, y + h - 1,
+						x + i + h + s, y);
+				}
+			}
+		}
+	};
+	draw_slot(kBoardX - px(122), kBoardY, px(104), px(86),
+		sim.hold_locked());
 	draw_preview(renderer, sim.stored(), kBoardX - px(122) + px(16), kBoardY + px(12), px(18));
 	const auto& queue = sim.queue();
 	for (int slot = 0; slot < kPreviews
 		&& slot < static_cast<int>(queue.size()); ++slot) {
-		fill(renderer, kBoardX + kBoardW + px(18), kBoardY + slot * px(92), px(104), px(86),
-			{30, 22, 17, 255});
-		draw_preview(renderer, queue[slot],
-			kBoardX + kBoardW + px(18) + px(16), kBoardY + slot * px(92) + px(12), px(18));
+		// The queue recedes: the next piece is full size, the ones behind
+		// it smaller, so what matters most reads first.
+		const int shrink = kPortrait ? 0 : std::min(slot, 3) * px(6);
+		const int w = px(104) - shrink;
+		const int h = px(86) - shrink;
+		const int x = kBoardX + kBoardW + px(18) + shrink / 2;
+		const int y = kBoardY + slot * px(92) + shrink / 2;
+		draw_slot(x, y, w, h, false);
+		draw_preview(renderer, queue[slot], x + px(16) - shrink / 2,
+			y + px(12), px(18) - shrink / 6);
+	}
+	// The furnace rails: the well stands between two pillars, riveted.
+	if (!kPortrait) {
+		for (const int side : {kBoardX - px(30), kBoardX + kBoardW + px(8)}) {
+			fill(renderer, side, kBoardY - px(6), px(8),
+				kBoardH + px(12), {44, 32, 23, 255});
+			fill(renderer, side, kBoardY - px(6), std::max(1, px(2)),
+				kBoardH + px(12), {68, 49, 35, 255});
+			for (int at = px(14); at < kBoardH; at += px(64)) {
+				fill(renderer, side + px(2), kBoardY + at, px(4), px(4),
+					{96, 68, 46, 255});
+			}
+		}
 	}
 
 	// The fuse wick (or, on trainer rules, the flat forced-drop meter):
@@ -1394,9 +1540,21 @@ void draw_countdown (App& app) {
 	ImFont* font = app.fonts.title;
 	const ImVec2 extent = font->CalcTextSizeA(
 		font->FontSize, FLT_MAX, 0.f, text);
-	ImGui::GetForegroundDrawList()->AddText(font, font->FontSize,
-		ImVec2(kBoardX + (kBoardW - extent.x) / 2,
-			kBoardY + kBoardH / 2.f - font->FontSize),
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	const ImVec2 at(kBoardX + (kBoardW - extent.x) / 2,
+		kBoardY + kBoardH / 2.f - font->FontSize);
+	// A ring winding in as the second runs out, then the numeral over it.
+	const ImVec2 middle(kBoardX + kBoardW / 2.f,
+		at.y + font->FontSize * 0.5f);
+	const float second = (app.countdown % 50) / 50.f;
+	draw->AddCircle(middle, font->FontSize * 1.1f,
+		IM_COL32(255, 138, 58, 70), 48, ui(3));
+	draw->PathArcTo(middle, font->FontSize * 1.1f, -1.5708f,
+		-1.5708f + 6.2832f * second, 48);
+	draw->PathStroke(IM_COL32(255, 214, 96, 220), 0, ui(4));
+	draw->AddText(font, font->FontSize,
+		ImVec2(at.x + ui(3), at.y + ui(3)), IM_COL32(40, 16, 6, 200), text);
+	draw->AddText(font, font->FontSize, at,
 		IM_COL32(255, 210, 74, 255), text);
 }
 
@@ -2691,6 +2849,62 @@ void draw_profile (App& app) {
 	ImGui::End();
 }
 
+// The clear, made an event: every row that is full while the clearer is
+// running goes white-hot, throws embers off both ends, and keeps burning
+// for a few frames after the row itself is gone.
+void light_burn_rows (App& app) {
+	const Sim& sim = app.session->sim();
+	if (!sim.clearing() || sim.locked().empty()) {
+		return;
+	}
+	// Once per lock: the rows are still standing while the clearer runs.
+	const long lock_frame = sim.locked().back().frame;
+	if (lock_frame == app.burn_seen_lock) {
+		return;
+	}
+	app.burn_seen_lock = lock_frame;
+	for (int y = 0; y < kHeight; ++y) {
+		bool full = true;
+		for (int x = 0; x < kWidth; ++x) {
+			if (sim.board().at(x, y) < 0) {
+				full = false;
+				break;
+			}
+		}
+		if (!full) {
+			continue;
+		}
+		App::BurnRow& row = app.burn_rows[app.burn_at];
+		app.burn_at = (app.burn_at + 1) % app.burn_rows.size();
+		row.row = y;
+		row.life = 14;
+		spawn_sparks_at(app, static_cast<float>(kBoardX),
+			kBoardY + (y + 0.5f) * kCell, {255, 236, 190, 255}, 3, 2.4f);
+		spawn_sparks_at(app, static_cast<float>(kBoardX + kBoardW),
+			kBoardY + (y + 0.5f) * kCell, {255, 236, 190, 255}, 3, 2.4f);
+	}
+}
+
+void draw_burn_rows (App& app) {
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+	for (App::BurnRow& row : app.burn_rows) {
+		if (row.life <= 0) {
+			continue;
+		}
+		--row.life;
+		// White-hot at the start, cooling to ember, and spreading out from
+		// the middle of the row as it goes.
+		const double part = row.life / 14.;
+		const int reach = static_cast<int>(kBoardW * (1.2 - part) / 2.);
+		const int wide = std::min(kBoardW, std::max(kCell, reach * 2));
+		fill(app.renderer, kBoardX + (kBoardW - wide) / 2,
+			kBoardY + row.row * kCell, wide, kCell,
+			{255, static_cast<Uint8>(150 + 100 * part),
+			 static_cast<Uint8>(60 + 140 * part),
+			 static_cast<Uint8>(230 * part)});
+	}
+}
+
 // The heat closing in: red glow at the screen's edges, driven by the
 // worst of the dangers - a fuse nearly spent, garbage massing, a stack
 // near the sky, the other board's Overdrive bearing down.
@@ -2699,27 +2913,7 @@ void draw_heat (App& app) {
 	if (!sim.config().fuse) {
 		return;
 	}
-	double danger = 0.;
-	if (sim.fuse_total() > 0. && sim.piece_elapsed().has_value()) {
-		danger = std::max(danger,
-			(*sim.piece_elapsed() / sim.fuse_total() - 0.6) / 0.4);
-	}
-	danger = std::max(danger, sim.pending_garbage() / 8.);
-	int top = kHeight;
-	const Board& board = sim.board();
-	for (int y = 0; y < kHeight && top == kHeight; ++y) {
-		for (int x = 0; x < kWidth; ++x) {
-			if (board.at(x, y) >= 0) {
-				top = y;
-				break;
-			}
-		}
-	}
-	danger = std::max(danger, (12. - top) / 10.);
-	if (sim.pressured()) {
-		danger = std::max(danger, 0.55);
-	}
-	danger = std::clamp(danger, 0., 1.);
+	const double danger = danger_of(sim);
 	if (danger <= 0.) {
 		return;
 	}
@@ -2834,8 +3028,32 @@ void draw_career (App& app) {
 		for (size_t stage = 0; stage < ladder.size(); ++stage) {
 			ImGui::TableNextRow();
 			ImGui::TableSetColumnIndex(0);
-			ImGui::Text("Stage %d  -  %s", static_cast<int>(stage) + 1,
-				ladder[stage].name);
+			// A rank badge: the ladder's colour deepening as it climbs,
+			// greyed out while the rung is still locked.
+			const bool open_rung = career::open(app.career, names, stage);
+			const float heat = static_cast<float>(stage)
+				/ std::max<size_t>(1, ladder.size() - 1);
+			const ImU32 badge = open_rung
+				? IM_COL32(static_cast<int>(196 + 59 * heat),
+					static_cast<int>(150 - 40 * heat),
+					static_cast<int>(70 - 20 * heat), 255)
+				: IM_COL32(78, 68, 60, 255);
+			{
+				ImDrawList* draw = ImGui::GetWindowDrawList();
+				const ImVec2 at = ImGui::GetCursorScreenPos();
+				const float tall = ImGui::GetTextLineHeight() + ui(4);
+				const float wide = ui(38);
+				draw->AddRectFilled(ImVec2(at.x, at.y),
+					ImVec2(at.x + wide, at.y + tall), badge, ui(5));
+				const ImVec2 extent = ImGui::CalcTextSize(ladder[stage].name);
+				draw->AddText(ImVec2(at.x + (wide - extent.x) / 2,
+					at.y + ui(2)),
+					open_rung ? IM_COL32(28, 16, 8, 255)
+						: IM_COL32(150, 140, 130, 255), ladder[stage].name);
+				ImGui::Dummy(ImVec2(wide, tall));
+			}
+			ImGui::SameLine();
+			ImGui::Text("Stage %d", static_cast<int>(stage) + 1);
 			ImGui::TableSetColumnIndex(1);
 			const auto found = app.career.stars.find(names[stage]);
 			const int stars
@@ -2848,7 +3066,7 @@ void draw_career (App& app) {
 				? ImVec4(1.f, 0.84f, 0.38f, 1.f)
 				: ImVec4(0.45f, 0.5f, 0.58f, 1.f), "%s", marks);
 			ImGui::TableSetColumnIndex(2);
-			if (career::open(app.career, names, stage)) {
+			if (open_rung) {
 				ImGui::PushID(static_cast<int>(stage));
 				if (ImGui::Button(stars > 0 ? "Again" : "Fight",
 					ImVec2(ui(70), 0))) {
@@ -2882,6 +3100,63 @@ void draw_career (App& app) {
 		app.screen = Screen::Menu;
 	}
 	ImGui::End();
+}
+
+// A mode entry: the same button as before, with a coloured edge down its
+// left side and a small emblem struck into it. `mark` picks the shape -
+// 0 flame, 1 hourglass, 2 rising floor, 3 brick, 4 crossed blades.
+bool mode_button (const char* label, int mark, ImU32 tint, float width,
+		float height) {
+	const ImVec2 at = ImGui::GetCursorScreenPos();
+	const bool clicked = ImGui::Button(label, ImVec2(width, height));
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	// The edge: a thick warm stripe that names the mode's family.
+	draw->AddRectFilled(ImVec2(at.x, at.y + ui(4)),
+		ImVec2(at.x + ui(4), at.y + height - ui(4)), tint, ui(2));
+	const float mid = at.y + height / 2.f;
+	const float cx = at.x + ui(24);
+	const float r = height * 0.26f;
+	switch (mark) {
+		case 0:   // A flame.
+			draw->AddTriangleFilled(ImVec2(cx, mid - r * 1.3f),
+				ImVec2(cx - r * 0.75f, mid + r * 0.7f),
+				ImVec2(cx + r * 0.75f, mid + r * 0.7f), tint);
+			draw->AddCircleFilled(ImVec2(cx, mid + r * 0.45f), r * 0.62f,
+				tint);
+			break;
+		case 1:   // An hourglass.
+			draw->AddTriangleFilled(ImVec2(cx - r, mid - r),
+				ImVec2(cx + r, mid - r), ImVec2(cx, mid), tint);
+			draw->AddTriangleFilled(ImVec2(cx - r, mid + r),
+				ImVec2(cx + r, mid + r), ImVec2(cx, mid), tint);
+			break;
+		case 2:   // A floor, rising.
+			draw->AddRectFilled(ImVec2(cx - r, mid + r * 0.5f),
+				ImVec2(cx + r, mid + r), tint);
+			draw->AddTriangleFilled(ImVec2(cx, mid - r),
+				ImVec2(cx - r * 0.7f, mid + r * 0.1f),
+				ImVec2(cx + r * 0.7f, mid + r * 0.1f), tint);
+			break;
+		case 3:   // Brickwork.
+			for (int row = 0; row < 2; ++row) {
+				for (int col = 0; col < 2; ++col) {
+					const float ox = (row % 2) * r * 0.4f;
+					draw->AddRectFilled(
+						ImVec2(cx - r + ox + col * r * 0.95f,
+							mid - r * 0.6f + row * r * 0.7f),
+						ImVec2(cx - r * 0.2f + ox + col * r * 0.95f,
+							mid - r * 0.05f + row * r * 0.7f), tint);
+				}
+			}
+			break;
+		default:  // Crossed blades.
+			draw->AddLine(ImVec2(cx - r, mid - r), ImVec2(cx + r, mid + r),
+				tint, ui(3));
+			draw->AddLine(ImVec2(cx + r, mid - r), ImVec2(cx - r, mid + r),
+				tint, ui(3));
+			break;
+	}
+	return clicked;
 }
 
 // One option in a picker row: drawn selected in the accent, and returns
@@ -3097,31 +3372,31 @@ void draw_menus (App& app) {
 			ImGui::TextUnformatted("Choose a mode");
 			ImGui::PopFont();
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Ignition", ImVec2(ui(280), ui(44)))) {
+			if (mode_button("Ignition", 0, IM_COL32(255, 138, 58, 255), ui(280), ui(44))) {
 				start_game(app, 0);
 			}
 			ImGui::TextDisabled("Endless. The fuse shortens as the levels");
 			ImGui::TextDisabled("climb; burn bright for as long as you can.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Blaze", ImVec2(ui(280), ui(44)))) {
+			if (mode_button("Blaze", 1, IM_COL32(255, 196, 78, 255), ui(280), ui(44))) {
 				start_game(app, 1);
 			}
 			ImGui::TextDisabled("Three minutes on the clock; the multiplier");
 			ImGui::TextDisabled("climbs as it drains. Make them count.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Inferno", ImVec2(ui(280), ui(44)))) {
+			if (mode_button("Inferno", 2, IM_COL32(232, 96, 44, 255), ui(280), ui(44))) {
 				start_game(app, 2);
 			}
 			ImGui::TextDisabled("The floor rises, the levels ramp, and the");
 			ImGui::TextDisabled("fuse keeps shrinking.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Meltdown / Bunker", ImVec2(ui(280), ui(44)))) {
+			if (mode_button("Meltdown / Bunker", 3, IM_COL32(196, 122, 70, 255), ui(280), ui(44))) {
 				app.mode_popup = 1;
 			}
 			ImGui::TextDisabled("Race a stack of holey garbage down, or");
 			ImGui::TextDisabled("outlast the rising floor. Cut to taste.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (ImGui::Button("Duel", ImVec2(ui(280), ui(44)))) {
+			if (mode_button("Duel", 4, IM_COL32(255, 214, 96, 255), ui(280), ui(44))) {
 				app.mode_popup = 2;
 			}
 			ImGui::TextDisabled("Fight the bot, rank D through X.");
@@ -3165,15 +3440,31 @@ void draw_menus (App& app) {
 		ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui(8), ui(3)));
 		ImGui::Begin("game over", nullptr, box);
 		const bool won = app.session.has_value() && app.session->sim().won();
-		ImGui::PushFont(app.fonts.head);
-		if (app.versus.has_value()) {
-			ImGui::TextUnformatted(
-				app.versus->player_wins > app.versus->bot_wins
-					? "You win the match!" : "You lose the match");
-		} else {
-			ImGui::TextUnformatted(won ? "Finished!" : "Game over");
+		{
+			// Struck into the plate: a cast shadow under letters that cool
+			// from gold to ember, the way the wordmark does.
+			const char* verdict = app.versus.has_value()
+				? (app.versus->player_wins > app.versus->bot_wins
+					? "You win the match!" : "You lose the match")
+				: (won ? "Finished!" : "Game over");
+			ImFont* font = app.fonts.head;
+			ImDrawList* draw = ImGui::GetWindowDrawList();
+			const ImVec2 at = ImGui::GetCursorScreenPos();
+			const float tall = font->FontSize;
+			float pen = at.x;
+			for (const char* letter = verdict; *letter != '\0'; ++letter) {
+				const char glyph[2] = {*letter, '\0'};
+				const float part = static_cast<float>(letter - verdict)
+					/ std::max<float>(1.f, std::strlen(verdict) - 1);
+				draw->AddText(font, tall, ImVec2(pen + ui(2), at.y + ui(2)),
+					IM_COL32(38, 15, 6, 190), glyph);
+				draw->AddText(font, tall, ImVec2(pen, at.y),
+					IM_COL32(255, static_cast<int>(214 - 76 * part),
+						static_cast<int>(96 - 38 * part), 255), glyph);
+				pen += font->CalcTextSizeA(tall, FLT_MAX, 0.f, glyph).x;
+			}
+			ImGui::Dummy(ImVec2(pen - at.x, tall));
 		}
-		ImGui::PopFont();
 		if (app.versus.has_value()) {
 			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
 				"You %d - %d Bot (%s)  first to %d",
@@ -3737,7 +4028,9 @@ int run (bool smoke, long smoke_frames) {
 					static_cast<int>(app.seeds() % 7) - 3, w, h};
 				SDL_RenderSetViewport(app.renderer, &quake);
 			}
+			light_burn_rows(app);
 			draw_board(app);
+			draw_burn_rows(app);
 			draw_sparks(app);
 			draw_streaks(app);
 			draw_heat(app);

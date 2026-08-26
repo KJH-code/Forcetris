@@ -206,6 +206,9 @@ public:
 	long frame () const { return frame_; }
 	bool entry () const { return entry_; }
 	bool clearing () const { return clearing_; }
+	// Whether the hold box has already been used for this piece - the
+	// screen dims the box when it has. Read-only; nothing else sees it.
+	bool hold_locked () const { return hold_lock_; }
 	const SimConfig& config () const { return config_; }
 	const Piece& piece () const { return piece_; }
 	const Board& board () const { return board_; }

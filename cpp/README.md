@@ -102,7 +102,13 @@ the pressure is on you), red heat closes in at the edges as danger
 mounts, attack arcs between the boards as ember streaks that burst
 where they land, garbage thuds home with a flash and a shudder, and an
 ignition flashes the screen, cries OVERDRIVE across the board and runs
-the music hot until it gutters out. The
+the music hot until it gutters out. The well is a furnace: its floor
+glows warmer the worse the trouble, the grid fades towards the sky, the
+whole crucible haloes as the Flow gauge fills, and a cleared row goes
+white-hot and throws embers off both ends before it goes. Garbage wears
+burnt slag rather than your own colours, the ghost is an outline that
+never hides in the stack, and the hold box hatches over when it has
+already been spent. The
 ladder still means what it says under the fuse: attack and pace climb it
 monotonically, D through X.
 
