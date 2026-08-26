@@ -117,32 +117,31 @@ as the Flow gauge fills and blazing in Overdrive.
 There are two hand-built sprites and no image files. The first is a soft
 falloff, which every glow in the game is a stamp of, so the light is
 smooth instead of banding into rectangles. The second is fire, and it is
-deliberately the opposite: sixteen frames of a flame on a 26x60 grid,
+deliberately the opposite: sixteen frames of a flame on a 38x88 grid,
 three octaves of value noise warped by a taper wide at the foot and
 pinched at the tip, then quantised onto a five-colour ramp with nothing
 in between and scaled up nearest-neighbour to whole pixels. Pixel art,
-in other words. A soft flame looks like a smear the moment the game
-stops moving, and a paused screen is exactly when it gets looked at
-properly. The noise lattice wraps over exactly the distance the frames
-scroll, so the strip loops with nothing to see at the seam, and each
-frame leans differently, so cycling them licks rather than flickers.
+in other words. The noise lattice wraps over exactly the distance the
+frames scroll, so the strip loops with nothing to see at the seam, and
+each frame leans differently, so cycling them licks rather than
+flickers. It burns in one place: the mark beside FORCETRIS on the main
+menu. Everywhere else the menus stay cool - a centred panel is a plate
+off the forge, dark iron with a bevel lit from above, rivets and a rim
+that pulses like metal fresh out of the coals, over the drifting embers
+the backdrop has always had.
 
-The fire belongs to Overdrive, and the room's whole floor is alight for
-it. Every tongue takes its place, width, height and pixel scale from a
-hash and half of them are mirrored, because a row of evenly spaced
-flames of evenly varying height is a gas hob rather than a fire. How
-tall one may stand depends on where it is: clear of the play column it
-takes most of the screen, behind the column only the floor under the
-well - which is what gives the blaze its silhouette, banked high down
-the sides and low where the board stands in it. The column is the
-guarantee: any tongue whose rectangle would touch the well, the hold
-box, the queue or the Flow rail is dropped outright, so nothing the
-player reads is ever behind fire, on any layout. The menus stay cool: a centred panel is a plate off the same
-forge - dark iron, a bevel lit from above, rivets, a rim that pulses like
-metal fresh out of the coals - over the drifting embers the backdrop has
-always had. The one flame outside a game is the mark beside FORCETRIS,
-one tongue off the strip, cycling. The ladder still means what it says
-under the fuse: attack and pace climb it monotonically, D through X.
+Overdrive is not a bonfire but a charge. The well tears forward and the
+room streaks past it: a ring leaves the board on ignition, and for as
+long as the ignition burns, speed lines break out from behind the board
+and fly to the edges of the screen, thinning as it runs down. Each line
+keeps its own angle and rate out of a hash - even angles turning at an
+even rate would be a wheel, not a charge - and its travel is squared, so
+it leaves slowly and is gone in a blink. The whole thing is drawn
+between the backdrop and the board, so the lines genuinely come out from
+*behind* the well: the board covers their inner ends and what shows is
+the part that has already got past it. That is also why there is nothing
+to guard against - the stack, the ghost and the previews are painted
+over the top of it, every frame, on every layout.
 
 A finished game says three things and stops: the verdict, the score, and
 the estimated rank, out of the same call the analysis window's Rating tab

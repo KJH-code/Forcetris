@@ -1142,33 +1142,10 @@ SDL_Texture* make_flames (SDL_Renderer* renderer) {
 	return made;
 }
 
-// Stand one flame on `base`, `frame` picking which of the strip to show.
-// The destination is snapped to a whole multiple of the sprite so every
-// pixel of it lands as the same size square - an odd scale would leave some
-// rows a pixel taller than others, which is exactly the tell that gives a
-// scaled-up sprite away.
-void draw_flame (App& app, float cx, float base, float w, float h,
-		SDL_Color tint, double alpha, int frame, bool mirror = false) {
-	if (app.flames == nullptr || alpha <= 0. || h <= 0.f) {
-		return;
-	}
-	const int across = std::max(1, static_cast<int>(std::lround(w / kFlameW)));
-	const int up = std::max(1, static_cast<int>(std::lround(h / kFlameH)));
-	SDL_SetTextureColorMod(app.flames, tint.r, tint.g, tint.b);
-	SDL_SetTextureAlphaMod(app.flames,
-		static_cast<Uint8>(std::clamp(alpha, 0., 255.)));
-	const SDL_Rect from{((frame % kFlameFrames) + kFlameFrames) % kFlameFrames
-		* kFlameW, 0, kFlameW, kFlameH};
-	const SDL_Rect over{static_cast<int>(cx) - across * kFlameW / 2,
-		static_cast<int>(base) - up * kFlameH,
-		across * kFlameW, up * kFlameH};
-	SDL_RenderCopyEx(app.renderer, app.flames, &from, &over, 0., nullptr,
-		mirror ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
-}
-
-// A settled number between 0 and 1 for tongue `k`. The fire is placed from
-// these rather than from a sine over the index: an even row of evenly
-// spaced flames of evenly varying height is a gas hob, not a fire.
+// A settled number between 0 and 1 for item `k`. The Overdrive streaks are
+// placed from these rather than from a sine over the index, which would put
+// them at even angles turning at an even rate - a spinning wheel, not a
+// charge.
 float tongue_hash (int k, int salt) {
 	unsigned h = static_cast<unsigned>(k) * 2654435761u
 		+ static_cast<unsigned>(salt) * 40503u;
@@ -1255,85 +1232,110 @@ void forge_panel (App& app) {
 	}
 }
 
-// While Overdrive burns, the room does not merely glow - it catches. Fire
-// stands up out of the margins either side of the play column and off the
-// floor of the room, banking down as the ignition runs out.
+// Overdrive as a charge rather than a bonfire.
 //
-// Every tongue is checked against the play column - the well and the
-// furniture around it, hold box, queue and Flow rail included - and dropped
-// if it would touch. The stack, the ghost and the previews are the things a
-// fire is not allowed to hide, so that is a guarantee rather than careful
-// placement: where there is no room, no flame is drawn at all.
-void draw_overdrive_flames (App& app) {
+// The well tears forward and the room streaks past it: a shockwave leaves
+// the board on ignition, and for as long as the ignition burns, speed lines
+// break out from behind the board and fly to the edges of the screen,
+// thinning as it runs down.
+//
+// It is drawn between the backdrop and the board, so the lines genuinely
+// come out from *behind* the well - the board covers their inner ends, and
+// what shows is the part that has already got past it. That also means
+// there is nothing to guard against: the stack, the ghost and the previews
+// are painted over the top of this, every frame, on every layout.
+void draw_charge (App& app) {
 	if (!app.session.has_value()) {
 		return;
 	}
 	const Sim& sim = app.session->sim();
-	if (!sim.overdrive()) {
+	if (!sim.overdrive() && app.od_flash <= 0) {
 		return;
 	}
 	int screen_w = 0;
 	int screen_h = 0;
 	SDL_GetRendererOutputSize(app.renderer, &screen_w, &screen_h);
-	// 1 at ignition, 0 as it gutters out. The sim runs 20ms frames.
+	const float cx = kBoardX + kBoardW * 0.5f;
+	const float cy = kBoardY + kBoardH * 0.5f;
+	// Out to the far corner, and starting from just inside the board so a
+	// line is already moving by the time it clears the edge.
+	const float reach = std::sqrt(static_cast<float>(screen_w) * screen_w
+		+ static_cast<float>(screen_h) * screen_h) * 0.62f;
+	const float inner = std::sqrt(static_cast<float>(kBoardW) * kBoardW
+		+ static_cast<float>(kBoardH) * kBoardH) * 0.26f;
 	const double span = std::max(1., sim.config().overdrive_secs * 50.);
 	const float left = static_cast<float>(
 		std::clamp(sim.overdrive_left() / span, 0., 1.));
-	const float lit = 0.35f + 0.65f * left;
+	const float lit = sim.overdrive() ? 0.4f + 0.6f * left : 0.f;
 	const float tick = static_cast<float>(app.backdrop_tick);
-	const int spout = static_cast<int>(app.backdrop_tick / 2);
+	// One measure for how long and how thick a sliver is, so the effect
+	// scales with the window rather than with a pile of pixel constants.
+	const float span_px = std::max(1.f, reach * 0.22f);
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
 
-	// The column everything the player reads lives in. It stops at the foot
-	// of the well, so the floor below stays open to the fire.
-	const int guard_x = kBoardX - px(134);
-	const int guard_w = kBoardW + px(134) + px(128);
-	const SDL_Rect column{guard_x, 0, guard_w, kBoardY + kBoardH + px(10)};
-	const auto stand = [&] (float cx, float base, float wide, float tall,
-			double alpha, int frame, bool mirror) {
-		if (wide <= 0.f || tall <= 0.f) {
+	// One streak: a tapered sliver from `head` back along the ray, white hot
+	// at the point and fading to nothing at the tail. Drawn as geometry
+	// rather than a run of squares, because a bar built out of axis-aligned
+	// blocks cannot be thick across a diagonal and comes out a hairline.
+	const auto streak = [&] (float ax, float ay, float head, float len,
+			float wide, float alpha) {
+		if (alpha <= 2.f || len <= 1.f) {
 			return;
 		}
-		const SDL_Rect over{static_cast<int>(cx - wide / 2),
-			static_cast<int>(base - tall), static_cast<int>(wide),
-			static_cast<int>(tall)};
-		SDL_Rect clash{0, 0, 0, 0};
-		if (SDL_IntersectRect(&over, &column, &clash) == SDL_TRUE) {
-			return;
-		}
-		draw_flame(app, cx, base, wide, tall, {255, 255, 255, 255}, alpha,
-			frame, mirror);
+		const float nx = -ay * wide;
+		const float ny = ax * wide;
+		const float hx = cx + ax * head;
+		const float hy = cy + ay * head;
+		const float tx = cx + ax * (head - len);
+		const float ty = cy + ay * (head - len);
+		const SDL_Color hot{255, 218, 126,
+			static_cast<Uint8>(std::clamp(alpha, 0.f, 255.f))};
+		const SDL_Color cold{255, 118, 40, 0};
+		const SDL_Vertex quad[4] = {
+			{{hx + nx * 0.5f, hy + ny * 0.5f}, hot, {0.f, 0.f}},
+			{{hx - nx * 0.5f, hy - ny * 0.5f}, hot, {0.f, 0.f}},
+			{{tx + nx * 0.34f, ty + ny * 0.34f}, cold, {0.f, 0.f}},
+			{{tx - nx * 0.34f, ty - ny * 0.34f}, cold, {0.f, 0.f}},
+		};
+		const int order[6] = {0, 1, 2, 1, 3, 2};
+		SDL_RenderGeometry(app.renderer, nullptr, quad, 4, order, 6);
 	};
 
-	// The room's floor is alight from wall to wall. Every tongue picks its
-	// own place, width, height and pixel scale out of a hash, and half of
-	// them are mirrored, so no two stand the same - a row of evenly spaced
-	// flames of evenly varying height reads as a gas hob rather than a fire.
-	//
-	// How tall a tongue may stand depends on where it is: clear of the play
-	// column it can take most of the screen, behind it only the floor under
-	// the well. That is what gives the fire a silhouette - banked high down
-	// the sides, lower where the board stands in it.
-	const float below = screen_h - (kBoardY + kBoardH + px(10));
-	const int along = 17;
-	for (int k = 0; k < along; ++k) {
-		const float place = tongue_hash(k, 1);
-		const float bulk = tongue_hash(k, 2);
-		const float reach = tongue_hash(k, 3);
-		const float cx = screen_w * (k + 0.1f + 0.8f * place) / along;
-		const float wide = px(120) + px(150) * bulk;
-		const bool behind = cx + wide * 0.5f > guard_x
-			&& cx - wide * 0.5f < guard_x + guard_w;
-		const float room = behind ? below : screen_h * 0.92f;
-		if (room < px(30)) {
-			continue;
+	// The lines. Each keeps its own angle and rate, and its travel is
+	// squared, so it leaves slowly and is gone in a blink - which is what
+	// reads as speed rather than as a wheel turning.
+	const int lines = 110;
+	for (int k = 0; k < lines && lit > 0.f; ++k) {
+		const float angle = tongue_hash(k, 11) * 6.2831853f;
+		const float rate = 0.0085f + 0.0115f * tongue_hash(k, 12);
+		const float phase = std::fmod(tick * rate + tongue_hash(k, 13), 1.f);
+		const float travel = phase * phase;
+		const float ax = std::cos(angle);
+		const float ay = std::sin(angle);
+		const float head = inner + travel * reach;
+		// In as it leaves the board, out as it reaches the rim.
+		const float fade = std::min(1.f, phase * 8.f)
+			* std::min(1.f, (1.f - phase) * 4.f);
+		// Stubby as it clears the board, drawn out into a bar by the time it
+		// reaches the rim.
+		const float len = span_px * (0.28f + 1.5f * travel)
+			* (0.6f + 0.8f * tongue_hash(k, 14));
+		streak(ax, ay, head, len, span_px * 0.036f * (0.6f + 0.7f * travel),
+			245.f * fade * lit);
+	}
+
+	// Ignition: every ray fires at once and the ring leaves the board, gone
+	// in a dozen frames.
+	if (app.od_flash > 0) {
+		const float grow = 1.f - app.od_flash / 12.f;
+		const float ring = inner + grow * reach * 0.95f;
+		const int steps = 64;
+		for (int i = 0; i < steps; ++i) {
+			const float angle = i * 6.2831853f / steps;
+			streak(std::cos(angle), std::sin(angle), ring,
+				span_px * (0.14f + 0.8f * grow), span_px * 0.055f,
+				255.f * (1.f - grow) * (1.f - grow));
 		}
-		// A slow flicker on top of the settled height, so the silhouette
-		// breathes without every tongue breathing together.
-		const float flicker = 0.88f + 0.12f
-			* std::sin(tick * 0.07f + k * 2.4f);
-		stand(cx, screen_h + px(4) * tongue_hash(k, 4),
-			wide, room * lit * flicker * (0.34f + 0.66f * reach * reach),
-			160. + 55. * bulk, spout + k * 5, tongue_hash(k, 5) > 0.5f);
 	}
 }
 
@@ -4523,6 +4525,7 @@ int run (bool smoke, long smoke_frames) {
 		SDL_SetRenderDrawColor(app.renderer, 14, 11, 9, 255);
 		SDL_RenderClear(app.renderer);
 		draw_backdrop(app);
+		draw_charge(app);
 		{
 			// The room, handed to the mixer from the same reading the
 			// backdrop just painted with: the furnace bed and the score's
@@ -4552,7 +4555,6 @@ int run (bool smoke, long smoke_frames) {
 			draw_burn_rows(app);
 			draw_sparks(app);
 			draw_streaks(app);
-			draw_overdrive_flames(app);
 			draw_heat(app);
 			if (quaking) {
 				SDL_RenderSetViewport(app.renderer, nullptr);
