@@ -1219,6 +1219,78 @@ void forge_panel (App& app) {
 	}
 }
 
+// A settled number between 0 and 1 for item `k`, so the drifting motes can
+// each keep their own place and pace without a pool to store them in.
+float drift_hash (int k, int salt) {
+	unsigned h = static_cast<unsigned>(k) * 2654435761u
+		+ static_cast<unsigned>(salt) * 40503u;
+	h ^= h >> 15;
+	h *= 2246822519u;
+	h ^= h >> 13;
+	return (h & 0xffffu) / 65535.f;
+}
+
+// How lit the ignition is: 1 the moment it fires, banking down as it runs
+// out, 0 when it is not burning at all. Both halves of the Overdrive light
+// read from this, so they rise and fall together.
+float overdrive_lit (const App& app) {
+	if (!app.session.has_value()) {
+		return 0.f;
+	}
+	const Sim& sim = app.session->sim();
+	if (!sim.overdrive()) {
+		return 0.f;
+	}
+	const double span = std::max(1., sim.config().overdrive_secs * 50.);
+	return 0.45f + 0.55f * static_cast<float>(
+		std::clamp(sim.overdrive_left() / span, 0., 1.));
+}
+
+// Overdrive is light, not shapes. Behind the board: a sun the well stands
+// in front of, and fine motes drifting up through the room. Both are the
+// same soft falloff sprite every other glow in the game is made of, stamped
+// once very big and many times very small - which is the whole point. The
+// attempts before this drew *things*, tongues of flame and speed lines, and
+// a drawn thing on a dark screen reads as a shape someone cut out. Light
+// does not.
+void draw_overdrive_bloom (App& app) {
+	const float lit = overdrive_lit(app);
+	if (lit <= 0.f) {
+		return;
+	}
+	int screen_w = 0;
+	int screen_h = 0;
+	SDL_GetRendererOutputSize(app.renderer, &screen_w, &screen_h);
+	const float cx = kBoardX + kBoardW * 0.5f;
+	const float cy = kBoardY + kBoardH * 0.5f;
+	const float tick = static_cast<float>(app.backdrop_tick);
+	// A slow breath, so the light is never quite still.
+	const float beat = 0.90f + 0.10f * std::sin(tick * 0.05f);
+
+	// Two blooms, both kept close. The room must stay black: light spread
+	// evenly over the whole screen does not read as a board that is glowing,
+	// it reads as fog, and the contrast that makes the reference work is
+	// exactly the dark around the light.
+	draw_glow(app, cx, cy, screen_w * 1.5f, screen_h * 1.5f,
+		{255, 168, 56, 255}, 15. * lit * beat);
+	draw_glow(app, cx, cy, kBoardW * 2.3f, kBoardH * 1.35f,
+		{255, 206, 102, 255}, 92. * lit * beat);
+
+	// Motes drifting up through it. Small, soft and many - the reference is
+	// dust in a light beam, not sparks off a fire.
+	for (int k = 0; k < 54; ++k) {
+		const float across = drift_hash(k, 1);
+		const float pace = 0.00045f + 0.00115f * drift_hash(k, 3);
+		const float rise = std::fmod(tick * pace + drift_hash(k, 2), 1.f);
+		const float sway = std::sin(tick * 0.012f + k * 1.7f) * px(26);
+		const float size = px(5) + px(14) * drift_hash(k, 4);
+		// In at the floor, out at the ceiling, brightest in between.
+		const float show = std::sin(rise * 3.14159265f);
+		draw_glow(app, screen_w * across + sway, screen_h * (1.f - rise),
+			size, size, {255, 232, 168, 255}, 150. * lit * show * show);
+	}
+}
+
 // How much trouble this board is in, 0 to 1: a fuse nearly spent, garbage
 // massing, a stack near the sky, the other board's Overdrive bearing down.
 // The well's glow and the screen's vignette both read from it.
@@ -1252,6 +1324,45 @@ void fill (SDL_Renderer* renderer, int x, int y, int w, int h, SDL_Color c) {
 	SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);
 	const SDL_Rect rect{x, y, w, h};
 	SDL_RenderFillRect(renderer, &rect);
+}
+
+// ...and the well itself lit like a filament: the rails either side and the
+// lip above and below go white hot, each behind a wide soft bloom. Drawn
+// after the board, so the frame stays crisp, and never inside it - the
+// light frames the playfield, it does not sit on it.
+void draw_overdrive_frame (App& app) {
+	const float lit = overdrive_lit(app);
+	if (lit <= 0.f) {
+		return;
+	}
+	const float beat = 0.86f + 0.14f * std::sin(
+		static_cast<float>(app.backdrop_tick) * 0.09f);
+	const float glow = 215.f * lit * beat;
+	const float cx = kBoardX + kBoardW * 0.5f;
+	const float cy = kBoardY + kBoardH * 0.5f;
+	const int bar = std::max(2, px(3));
+	const int left = kBoardX - px(4);
+	const int right = kBoardX + kBoardW + px(4);
+	const int top = kBoardY - px(4);
+	const int foot = kBoardY + kBoardH + px(4);
+	const SDL_Color tint{255, 198, 84, 255};
+	const SDL_Color core{255, 250, 224,
+		static_cast<Uint8>(std::clamp(240.f * lit * beat, 0.f, 255.f))};
+
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+	// The bloom behind each edge, then the filament itself on top of it.
+	draw_glow(app, static_cast<float>(left), cy, px(78),
+		kBoardH + px(70), tint, glow);
+	draw_glow(app, static_cast<float>(right), cy, px(78),
+		kBoardH + px(70), tint, glow);
+	draw_glow(app, cx, static_cast<float>(top), kBoardW + px(80),
+		px(74), tint, glow * 0.85);
+	draw_glow(app, cx, static_cast<float>(foot), kBoardW + px(80),
+		px(74), tint, glow * 0.85);
+	fill(app.renderer, left - bar / 2, top, bar, foot - top, core);
+	fill(app.renderer, right - bar / 2, top, bar, foot - top, core);
+	fill(app.renderer, left, top - bar / 2, right - left, bar, core);
+	fill(app.renderer, left, foot - bar / 2, right - left, bar, core);
 }
 
 // Garbage wears its own face: burnt slag, dark and cracked, so a row the
@@ -4405,6 +4516,7 @@ int run (bool smoke, long smoke_frames) {
 		SDL_SetRenderDrawColor(app.renderer, 14, 11, 9, 255);
 		SDL_RenderClear(app.renderer);
 		draw_backdrop(app);
+		draw_overdrive_bloom(app);
 		{
 			// The room, handed to the mixer from the same reading the
 			// backdrop just painted with: the furnace bed and the score's
@@ -4434,6 +4546,7 @@ int run (bool smoke, long smoke_frames) {
 			draw_burn_rows(app);
 			draw_sparks(app);
 			draw_streaks(app);
+			draw_overdrive_frame(app);
 			draw_heat(app);
 			if (quaking) {
 				SDL_RenderSetViewport(app.renderer, nullptr);

@@ -130,11 +130,23 @@ off the forge, dark iron with a bevel lit from above, rivets and a rim
 that pulses like metal fresh out of the coals, over the drifting embers
 the backdrop has always had.
 
-Overdrive has no effect of its own beyond what it always had: the screen
-flashes gold, OVERDRIVE is cried across the board, sparks come off the
-Flow rail, the heat vignette closes in and the music runs hot until it
-gutters out. Flames and speed lines were both tried on top of that and
-both were worse than nothing, so neither is here.
+Overdrive is light, not shapes. The well is framed like a filament -
+rails either side and a lip above and below, white hot behind a wide
+soft bloom - a second bloom sits close behind the board so the board
+reads as the thing the light comes from, and fine motes drift up through
+the room. All of it is the same falloff sprite, stamped once very large
+and many times very small.
+
+What matters as much as any of that is the dark. Light spread evenly
+over the whole screen does not read as a board that is glowing; it reads
+as fog. So the blooms are kept close and low and the room stays black,
+and the contrast is what does the work. On top of it sits everything
+Overdrive always had: the gold screen flash, the OVERDRIVE cry, sparks
+off the Flow rail, the heat vignette and the music running hot.
+
+Flames and speed lines were both tried here first and both were worse
+than nothing. The lesson was that a drawn *thing* on a dark screen reads
+as a shape someone cut out, however carefully it is drawn.
 
 A finished game says three things and stops: the verdict, the score, and
 the estimated rank, out of the same call the analysis window's Rating tab
