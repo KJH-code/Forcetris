@@ -1351,9 +1351,9 @@ void draw_overdrive_frame (App& app) {
 
 	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
 	// The bloom behind each edge, then the filament itself on top of it.
-	draw_glow(app, static_cast<float>(left), cy, px(78),
+	draw_glow(app, static_cast<float>(left), cy, px(46),
 		kBoardH + px(70), tint, glow);
-	draw_glow(app, static_cast<float>(right), cy, px(78),
+	draw_glow(app, static_cast<float>(right), cy, px(46),
 		kBoardH + px(70), tint, glow);
 	draw_glow(app, cx, static_cast<float>(top), kBoardW + px(80),
 		px(74), tint, glow * 0.85);
@@ -1586,7 +1586,7 @@ void draw_board (App& app) {
 	}
 	// The furnace rails: the well stands between two pillars, riveted.
 	if (!kPortrait) {
-		for (const int side : {kBoardX - px(30), kBoardX + kBoardW + px(8)}) {
+		for (const int side : {kBoardX - px(56), kBoardX + kBoardW + px(8)}) {
 			fill(renderer, side, kBoardY - px(6), px(8),
 				kBoardH + px(12), {44, 32, 23, 255});
 			fill(renderer, side, kBoardY - px(6), std::max(1, px(2)),
@@ -1621,34 +1621,24 @@ void draw_board (App& app) {
 		}
 	}
 
-	// The Flow gauge, climbing the board's left flank; Overdrive lights the
-	// whole rail and rims the board while it burns.
+	// The Flow gauge, climbing the board's left flank. It stands well clear
+	// of the well: the board's own edge is where Overdrive puts its lit
+	// frame, and a gauge sitting in that is a gauge nobody can read.
+	// Overdrive fills the rail solid, which is the point - the gauge is
+	// spent and the ignition is what it bought.
 	if (fused) {
-		const int rail_x = kBoardX - px(20);
+		const int rail_x = kBoardX - px(38);
 		const int rail_y = kBoardY + px(120);
 		const int rail_h = kBoardH - px(130);
-		fill(renderer, rail_x, rail_y, px(10), rail_h, {36, 27, 20, 255});
+		fill(renderer, rail_x, rail_y, px(12), rail_h, {36, 27, 20, 255});
 		const bool burning = sim.overdrive();
 		const int charge = burning ? rail_h
 			: static_cast<int>(rail_h * (sim.flow() / 100.));
 		if (charge > 0) {
 			const SDL_Color glow = burning
 				? SDL_Color{255, 214, 96, 255} : SDL_Color{255, 138, 58, 255};
-			fill(renderer, rail_x, rail_y + rail_h - charge, px(10), charge,
+			fill(renderer, rail_x, rail_y + rail_h - charge, px(12), charge,
 				glow);
-		}
-		if (burning) {
-			const Uint8 beat = static_cast<Uint8>(
-				200 + 55 * std::sin(sim.frame() * 0.35f));
-			const SDL_Color rim{255, beat, 96, 255};
-			fill(renderer, kBoardX - px(4), kBoardY - px(4),
-				kBoardW + px(8), px(4), rim);
-			fill(renderer, kBoardX - px(4), kBoardY + kBoardH,
-				kBoardW + px(8), px(4), rim);
-			fill(renderer, kBoardX - px(4), kBoardY,
-				px(4), kBoardH, rim);
-			fill(renderer, kBoardX + kBoardW, kBoardY,
-				px(4), kBoardH, rim);
 		}
 	}
 }
@@ -4636,9 +4626,9 @@ int run (bool smoke, long smoke_frames) {
 			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
 			draw_label("NEXT", kBoardX + kBoardW + ui(18), kBoardY - ui(24));
 			if (app.session->sim().config().fuse) {
-				draw_label("FLOW", kBoardX - px(56), kBoardY + px(98));
+				draw_label("FLOW", kBoardX - px(114), kBoardY + px(98));
 				if (app.session->sim().overdrive()) {
-					draw_label("OVERDRIVE", kBoardX - px(56),
+					draw_label("OVERDRIVE", kBoardX - px(114),
 						kBoardY + kBoardH - px(4),
 						IM_COL32(255, 214, 96, 255));
 				}
