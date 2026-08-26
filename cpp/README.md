@@ -127,13 +127,17 @@ properly. The noise lattice wraps over exactly the distance the frames
 scroll, so the strip loops with nothing to see at the seam, and each
 frame leans differently, so cycling them licks rather than flickers.
 
-The fire belongs to Overdrive. Tongues stand up off the floor of the
-room and down both margins, banking as the ignition runs out, and every
-one is tested against the play column and dropped if it would touch it -
-so the stack, the ghost and the previews are never hidden by it, on any
-layout. On a portrait phone, where the column is the whole width, the
-margin flames simply do not draw and the hearth under the well is the
-whole fire. The menus stay cool: a centred panel is a plate off the same
+The fire belongs to Overdrive, and the room's whole floor is alight for
+it. Every tongue takes its place, width, height and pixel scale from a
+hash and half of them are mirrored, because a row of evenly spaced
+flames of evenly varying height is a gas hob rather than a fire. How
+tall one may stand depends on where it is: clear of the play column it
+takes most of the screen, behind the column only the floor under the
+well - which is what gives the blaze its silhouette, banked high down
+the sides and low where the board stands in it. The column is the
+guarantee: any tongue whose rectangle would touch the well, the hold
+box, the queue or the Flow rail is dropped outright, so nothing the
+player reads is ever behind fire, on any layout. The menus stay cool: a centred panel is a plate off the same
 forge - dark iron, a bevel lit from above, rivets, a rim that pulses like
 metal fresh out of the coals - over the drifting embers the backdrop has
 always had. The one flame outside a game is the mark beside FORCETRIS,

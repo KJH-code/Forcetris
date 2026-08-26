@@ -1019,8 +1019,8 @@ SDL_Texture* make_glow (SDL_Renderer* renderer) {
 // at it properly. So the sprite is tiny, the palette is banded on purpose,
 // and it is scaled up with nearest-neighbour to whole pixels.
 constexpr int kFlameFrames = 16;
-constexpr int kFlameW = 26;
-constexpr int kFlameH = 60;
+constexpr int kFlameW = 38;
+constexpr int kFlameH = 88;
 
 // The fire ramp, coldest first. Index 0 is the outside air.
 constexpr SDL_Color kFireRamp[6] = {
@@ -1148,7 +1148,7 @@ SDL_Texture* make_flames (SDL_Renderer* renderer) {
 // rows a pixel taller than others, which is exactly the tell that gives a
 // scaled-up sprite away.
 void draw_flame (App& app, float cx, float base, float w, float h,
-		SDL_Color tint, double alpha, int frame) {
+		SDL_Color tint, double alpha, int frame, bool mirror = false) {
 	if (app.flames == nullptr || alpha <= 0. || h <= 0.f) {
 		return;
 	}
@@ -1162,7 +1162,20 @@ void draw_flame (App& app, float cx, float base, float w, float h,
 	const SDL_Rect over{static_cast<int>(cx) - across * kFlameW / 2,
 		static_cast<int>(base) - up * kFlameH,
 		across * kFlameW, up * kFlameH};
-	SDL_RenderCopy(app.renderer, app.flames, &from, &over);
+	SDL_RenderCopyEx(app.renderer, app.flames, &from, &over, 0., nullptr,
+		mirror ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+}
+
+// A settled number between 0 and 1 for tongue `k`. The fire is placed from
+// these rather than from a sine over the index: an even row of evenly
+// spaced flames of evenly varying height is a gas hob, not a fire.
+float tongue_hash (int k, int salt) {
+	unsigned h = static_cast<unsigned>(k) * 2654435761u
+		+ static_cast<unsigned>(salt) * 40503u;
+	h ^= h >> 15;
+	h *= 2246822519u;
+	h ^= h >> 13;
+	return (h & 0xffffu) / 65535.f;
 }
 
 // Stamp the sprite over a rectangle, tinted and dimmed to taste.
@@ -1276,7 +1289,7 @@ void draw_overdrive_flames (App& app) {
 	const int guard_w = kBoardW + px(134) + px(128);
 	const SDL_Rect column{guard_x, 0, guard_w, kBoardY + kBoardH + px(10)};
 	const auto stand = [&] (float cx, float base, float wide, float tall,
-			double alpha, int frame) {
+			double alpha, int frame, bool mirror) {
 		if (wide <= 0.f || tall <= 0.f) {
 			return;
 		}
@@ -1287,32 +1300,40 @@ void draw_overdrive_flames (App& app) {
 		if (SDL_IntersectRect(&over, &column, &clash) == SDL_TRUE) {
 			return;
 		}
-		draw_flame(app, cx, base, wide, tall, {255, 255, 255, 255}, alpha, frame);
+		draw_flame(app, cx, base, wide, tall, {255, 255, 255, 255}, alpha,
+			frame, mirror);
 	};
 
-	// Tall columns off the floor. The ones behind the play column are
-	// dropped by the guard, so what survives is fire down both margins -
-	// which on a desk is most of them, and on a phone is none.
-	const int along = 11;
+	// The room's floor is alight from wall to wall. Every tongue picks its
+	// own place, width, height and pixel scale out of a hash, and half of
+	// them are mirrored, so no two stand the same - a row of evenly spaced
+	// flames of evenly varying height reads as a gas hob rather than a fire.
+	//
+	// How tall a tongue may stand depends on where it is: clear of the play
+	// column it can take most of the screen, behind it only the floor under
+	// the well. That is what gives the fire a silhouette - banked high down
+	// the sides, lower where the board stands in it.
+	const float below = screen_h - (kBoardY + kBoardH + px(10));
+	const int along = 17;
 	for (int k = 0; k < along; ++k) {
-		const float phase = k * 1.4f + tick * 0.055f;
-		stand(screen_w * (k + 0.5f) / along, static_cast<float>(screen_h),
-			px(150) + px(46) * std::sin(phase),
-			screen_h * lit * (0.52f + 0.22f * std::sin(phase * 1.7f)),
-			195. * lit, spout + k * 6 + 4);
-	}
-	// A second, shorter pass that fits under the well. On a portrait phone
-	// the column takes the whole width and this is the whole fire; on a
-	// desk it is the hearth the board stands on.
-	const float hearth = screen_h - (kBoardY + kBoardH + px(12));
-	if (hearth > px(30)) {
-		for (int k = 0; k < along; ++k) {
-			const float phase = k * 1.1f + 0.7f + tick * 0.048f;
-			stand(screen_w * (k + 0.5f) / along, static_cast<float>(screen_h),
-				px(128) + px(38) * std::sin(phase),
-				hearth * lit * (0.72f + 0.28f * std::sin(phase * 1.4f)),
-				175. * lit, spout + k * 7 + 9);
+		const float place = tongue_hash(k, 1);
+		const float bulk = tongue_hash(k, 2);
+		const float reach = tongue_hash(k, 3);
+		const float cx = screen_w * (k + 0.1f + 0.8f * place) / along;
+		const float wide = px(120) + px(150) * bulk;
+		const bool behind = cx + wide * 0.5f > guard_x
+			&& cx - wide * 0.5f < guard_x + guard_w;
+		const float room = behind ? below : screen_h * 0.92f;
+		if (room < px(30)) {
+			continue;
 		}
+		// A slow flicker on top of the settled height, so the silhouette
+		// breathes without every tongue breathing together.
+		const float flicker = 0.88f + 0.12f
+			* std::sin(tick * 0.07f + k * 2.4f);
+		stand(cx, screen_h + px(4) * tongue_hash(k, 4),
+			wide, room * lit * flicker * (0.34f + 0.66f * reach * reach),
+			160. + 55. * bulk, spout + k * 5, tongue_hash(k, 5) > 0.5f);
 	}
 }
 
