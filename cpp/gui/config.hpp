@@ -39,19 +39,45 @@ const std::vector<ActionDef>& all_actions ();
 // action, the way the Python game's controls do.
 std::map<std::string, std::vector<int>> default_keys ();
 
+// Bumped whenever the shipped handling changes. A config file written before
+// the bump is still carrying the old numbers, so it is brought forward once
+// and stamped - see load_config.
+constexpr int kHandlingRev = 1;
+
+// The three handling sets the settings screen offers. Named rather than typed
+// in twice, so the trainer's numbers are never lost and the fast ones are one
+// click away.
+enum class Handling {
+	Instant = 0,  // ARR 0, instant soft drop: what a stacker actually plays.
+	Fast = 1,     // A column per frame instead of a teleport.
+	Trainer = 2,  // The Python trainer's numbers, kept whole.
+};
+
 struct Config {
-	// The handling, in the same units the Python settings menu shows.
-	int das = 140;
-	int arr = 40;
+	// The handling, in the same units the Python settings menu shows. These
+	// are a stacker's numbers, not the trainer's: on the engine's 20ms grid
+	// the trainer's cost 500ms to cross the board and two full seconds to
+	// soft drop from spawn to the floor, which is most of what made the game
+	// feel slow next to a modern one. apply_handling holds all three sets.
+	int das = 100;
+	int arr = 0;
 	int dcd = 0;
-	int sdf = 6;
+	int sdf = 40;
 	int are = 0;
 	double forced_delay = 1.0;
 	bool kicks = true;
 	int finesse_rule = 1;   // 0 off, 1 count, 2 retry.
 	int spin_rule = 2;      // spins::Rule.
 	int cleartype = 0;      // 0 naive, 1 sticky cascade, 2 linked cascade.
-	bool clear_delay = true; // Animated clears, or resolved on the lock frame.
+	// Animated clears, or resolved on the lock frame. Animated costs six
+	// frames plus a resume per clearing pass, and a naive quad is four passes:
+	// 580ms with no piece to control. The burn the board draws over a cleared
+	// row is the GUI's own and outlives the sim either way, so off loses the
+	// wait rather than the moment.
+	bool clear_delay = false;
+	// Which shipped handling this file has seen, so a retune reaches a config
+	// that already exists instead of only a fresh one.
+	int handling_rev = kHandlingRev;
 	// The fuse ruleset - the variant's identity, on by default. Off plays
 	// the plain trainer rules with the flat forced-drop delay above.
 	bool fuse = true;
@@ -111,6 +137,13 @@ bool save_config (const Config& config, const std::string& path);
 // stat map wholesale; the player's own dragging then edits the copy.
 std::vector<std::string> preset_names ();
 void apply_preset (Config& config, const std::string& name);
+
+// One of the three handling sets, written over the config's handling fields -
+// clear delay included, because the freeze is felt as handling whatever the
+// settings screen files it under.
+void apply_handling (Config& config, Handling set);
+const char* handling_name (Handling set);
+const char* handling_note (Handling set);
 
 } // namespace gui
 } // namespace forcetris

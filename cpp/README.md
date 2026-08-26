@@ -67,13 +67,29 @@ and finesse rules, kicks, the volumes, the key bindings and the stat layout
 — sit in one tabbed screen and mirror the Python game's. Handling applies
 from the next game; keys, volumes and layout apply at once.
 
+The handling the game *ships* with is a stacker's rather than the trainer's:
+DAS 100, ARR 0, SDF 40, ARE 0, and the clear delay off. That is not taste,
+it is arithmetic — `feel_check` drives the shipped config through the sim
+and counts the frames the player spends with nothing to control. On the
+trainer's old numbers a held direction took 500ms to cross the board, a
+held soft drop took two full seconds to fall from spawn to the floor, and
+an animated quad froze the board for 29 frames — 580ms — because a naive
+quad is four clearing passes and each pass costs six sprite frames plus a
+resume. The shipped numbers make those 120ms, 20ms and 20ms. The Handling
+tab leads with three buttons — **Instant** (what ships), **Fast** (a column
+a frame instead of a jump to the wall) and **Trainer** (the old numbers,
+kept whole) — and prints what the current sliders cost underneath. A config
+file written before this retune is brought forward once and stamped
+`handlingrev`, so an existing install gets the fix rather than only a fresh
+one; picking Trainer afterwards sticks.
+
 All three of the Python game's modes are here - free, timed with its five
 minute clock and closing score multiplier, arcade with its level ramp and
 rising garbage - and so are all three clear styles, the two cascade ones
-included. The clear delay is a Rules setting of its own: animated - the
-reference timing, seven frames a cleared row - or off, where a clear
-resolves on the lock frame and the next piece follows immediately, the
-way TETR.IO plays it. Nothing about the outcome changes but the clock
+included. The clear delay sits in the Handling tab, where it is felt:
+animated - the reference timing, seven frames a clearing pass - or off,
+where a clear resolves on the lock frame and the next piece follows
+immediately, the way TETR.IO plays it. Nothing about the outcome changes but the clock
 (the `clear_check` ctest holds the two modes to identical scores,
 counters and boards), though a no-delay run naturally fits more pieces
 into the same minutes - worth remembering when reading the score table.
@@ -183,7 +199,12 @@ Python engine's one-event-per-frame poll spreads it: every press and
 release that arrived since the last 20ms frame lands on the next one, in
 order, so a quick tap-rotate-drop is on the board the frame after the
 fingers made it (the `input_check` ctest holds a burst frame to the same
-placement the spread-out frames reach). Two more modes are this side's own, with no Python counterpart:
+placement the spread-out frames reach). What is left after all of that is
+not the loop but the handling, so `feel_check` counts it: the frames
+between a hard drop and the next piece a hand can move, the frames a held
+soft drop takes to reach the floor, and the frames a held direction takes
+to reach the wall - measured on the config the game ships with, so
+"sluggish" is a number that either moved or did not. Two more modes are this side's own, with no Python counterpart:
 a cheese race - ten, eighteen or a hundred rows of holey garbage, dug as
 fast as you can, the clock stopping the moment the last of it is gone -
 and cheese survival, where the floor rises on a clock you pick (every

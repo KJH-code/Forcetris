@@ -2196,11 +2196,30 @@ void draw_settings (App& app) {
 	if (ImGui::BeginTabBar("settings", ImGuiTabBarFlags_None)) {
 		if (ImGui::BeginTabItem("Handling")) {
 			ImGui::Spacing();
+			// The three sets, first, because the numbers below only mean
+			// something to someone who already knows what they want.
+			for (const Handling set : {Handling::Instant, Handling::Fast,
+				Handling::Trainer}) {
+				if (set != Handling::Instant) {
+					ImGui::SameLine();
+				}
+				if (ImGui::Button(handling_name(set), ImVec2(ui(120), 0))) {
+					apply_handling(app.config, set);
+				}
+				if (ImGui::IsItemHovered()) {
+					ImGui::SetTooltip("%s", handling_note(set));
+				}
+			}
+			ImGui::Spacing();
+			// The sliders give up a third of their width to their labels:
+			// these are the longest in the settings screen, and a label that
+			// runs off the panel is worse than a shorter bar.
+			ImGui::PushItemWidth(ui(230));
 			// AlwaysClamp: ctrl-click turns a slider into a raw input box,
 			// and an unclamped sdf of 0 would divide the gravity by zero.
 			ImGui::SliderInt("DAS (ms)", &app.config.das, 0, 330,
 				"%d", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderInt("ARR (ms)", &app.config.arr, 0, 83,
+			ImGui::SliderInt("ARR (ms, 0 = instant)", &app.config.arr, 0, 83,
 				"%d", ImGuiSliderFlags_AlwaysClamp);
 			ImGui::SliderInt("DCD (ms)", &app.config.dcd, 0, 330,
 				"%d", ImGuiSliderFlags_AlwaysClamp);
@@ -2208,6 +2227,29 @@ void draw_settings (App& app) {
 				"%d", ImGuiSliderFlags_AlwaysClamp);
 			ImGui::SliderInt("ARE (ms)", &app.config.are, 0, 500,
 				"%d", ImGuiSliderFlags_AlwaysClamp);
+			ImGui::Checkbox("Clear delay", &app.config.clear_delay);
+			ImGui::SameLine();
+			ImGui::TextDisabled("%s", app.config.clear_delay
+				? "clears animate; the board is frozen while they do"
+				: "clears resolve on the lock frame");
+			ImGui::Spacing();
+			// What those numbers cost, in the units they are felt in. The
+			// engine's frame is 20ms, so every one of these is a whole
+			// number of frames whatever the sliders say.
+			{
+				const int das_f = py_round(app.config.das / 20.);
+				const int arr_f = py_round(app.config.arr / 20.);
+				// The press itself moves a column and arms DAS; the auto-shift
+				// lands on the frame DAS expires, and at ARR 0 that one frame
+				// covers the remaining eight columns rather than one of them.
+				const int cross = das_f + 1 + (arr_f < 1 ? 0 : arr_f * 8);
+				const int soft = app.config.sdf >= 40
+					? 1 : 20 * std::max(1, py_round(30. / app.config.sdf));
+				const int quad = app.config.clear_delay ? 29 : 1;
+				ImGui::TextDisabled(
+					"To the wall ~%dms - to the floor ~%dms - quad freeze %dms",
+					cross * 20, soft * 20, quad * 20);
+			}
 			ImGui::Spacing();
 			float forced = static_cast<float>(app.config.forced_delay);
 			if (ImGui::SliderFloat("Forced drop (s, 0 = off)", &forced,
@@ -2218,6 +2260,7 @@ void draw_settings (App& app) {
 				app.config.forced_delay
 					= std::round(forced * 100.f) / 100.;
 			}
+			ImGui::PopItemWidth();
 			ImGui::Spacing();
 			ImGui::TextDisabled("Handling applies from the next game.");
 			ImGui::TextDisabled(
@@ -2238,10 +2281,8 @@ void draw_settings (App& app) {
 			const char* clear_styles[] = {
 				"Naive", "Sticky cascade", "Linked cascade"};
 			ImGui::Combo("Line clears", &app.config.cleartype, clear_styles, 3);
-			ImGui::Checkbox("Clear delay", &app.config.clear_delay);
-			ImGui::SameLine();
-			ImGui::TextDisabled("%s", app.config.clear_delay
-				? "clears animate" : "clears resolve instantly");
+			// The clear *delay* moved to Handling: it is a rule on paper and
+			// half a second of frozen board in the hand.
 			const char* finesse_rules[] = {
 				"Off", "Count faults", "Retry on fault"};
 			ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);

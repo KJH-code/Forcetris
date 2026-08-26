@@ -186,6 +186,19 @@ if (SDL2_FOUND)
 	endif()
 	target_include_directories(audiocheck SYSTEM PRIVATE third_party/stb)
 	target_compile_options(audiocheck PRIVATE ${FORCETRIS_WARNINGS})
+
+	# The waiting, counted: the handling the game actually ships with, driven
+	# through the sim and measured in frames. Links gui/config.cpp so the pin
+	# is on the shipped defaults rather than on numbers typed out twice.
+	add_executable(feelcheck tests/feelcheck.cpp gui/config.cpp gui/stats.cpp)
+	target_link_libraries(feelcheck PRIVATE forcetris_core)
+	if (TARGET SDL2::SDL2)
+		target_link_libraries(feelcheck PRIVATE SDL2::SDL2)
+	else()
+		target_include_directories(feelcheck SYSTEM PRIVATE ${SDL2_INCLUDE_DIRS})
+		target_link_libraries(feelcheck PRIVATE ${SDL2_LIBRARIES})
+	endif()
+	target_compile_options(feelcheck PRIVATE ${FORCETRIS_WARNINGS})
 else()
 	message(STATUS "SDL2 not found - building the core and tests only")
 endif()
@@ -254,6 +267,11 @@ if (SDL2_FOUND)
 	add_test(NAME audio_check COMMAND audiocheck ${CMAKE_CURRENT_SOURCE_DIR}/..)
 	set_tests_properties(audio_check PROPERTIES ENVIRONMENT
 		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
+	# The dead time the shipped handling leaves the player sitting through,
+	# in frames: no clear freeze, an instant soft drop, the wall inside a
+	# third of a second - and the trainer's numbers still there for anyone
+	# who wants them back.
+	add_test(NAME feel_check COMMAND feelcheck)
 	# The whole window run headlessly under scripted-random input: proves the
 	# loop, the drawing and the shutdown hold together with no display.
 	add_test(NAME gui_smoke COMMAND forcetris)

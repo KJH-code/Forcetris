@@ -103,6 +103,11 @@ Config load_config (const std::string& path) {
 	if (!source) {
 		return config;
 	}
+	// A file written before the handling was retuned holds the trainer's
+	// numbers, and a player who never opened the settings screen would keep
+	// them forever. So a file starts at revision zero and is brought forward
+	// below unless it says otherwise.
+	config.handling_rev = 0;
 	// A file exists, so its stat lines are the whole layout: the preset's is
 	// only the starting point for a config that has never been saved.
 	bool saw_stat = false;
@@ -125,6 +130,7 @@ Config load_config (const std::string& path) {
 		else if (key == "spins") in >> config.spin_rule;
 		else if (key == "clears") in >> config.cleartype;
 		else if (key == "cleardelay") { int flag = 1; in >> flag; config.clear_delay = flag != 0; }
+		else if (key == "handlingrev") in >> config.handling_rev;
 		else if (key == "fuse") { int flag = 1; in >> flag; config.fuse = flag != 0; }
 		else if (key == "shake") { int flag = 1; in >> flag; config.shake = flag != 0; }
 		else if (key == "lowlatency") { int flag = 1; in >> flag; config.lowlatency = flag != 0; }
@@ -181,6 +187,13 @@ Config load_config (const std::string& path) {
 			config.unknown.push_back(line);
 		}
 	}
+	// The one-time bring-forward. Only the handling fields are touched, and
+	// only once: the stamp goes out with the next save, and the Trainer button
+	// puts the old numbers back for anyone who wanted them.
+	if (config.handling_rev < kHandlingRev) {
+		apply_handling(config, Handling::Instant);
+		config.handling_rev = kHandlingRev;
+	}
 	// A hand-edited or damaged file must not smuggle values the sliders
 	// cannot reach - the sim divides gravity by sdf, and the Python side
 	// clamps its own file the same way on load.
@@ -219,6 +232,7 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "spins " << config.spin_rule << "\n";
 	out << "clears " << config.cleartype << "\n";
 	out << "cleardelay " << (config.clear_delay ? 1 : 0) << "\n";
+	out << "handlingrev " << config.handling_rev << "\n";
 	out << "fuse " << (config.fuse ? 1 : 0) << "\n";
 	out << "shake " << (config.shake ? 1 : 0) << "\n";
 	out << "lowlatency " << (config.lowlatency ? 1 : 0) << "\n";
@@ -282,6 +296,59 @@ void apply_preset (Config& config, const std::string& name) {
 		y += 78.f;
 	}
 	config.preset = name;
+}
+
+void apply_handling (Config& config, Handling set) {
+	// DCD and ARE are left at zero in all three: neither buys anything on a
+	// 20ms grid, and a delayed spawn is the one thing nobody has ever asked
+	// a stacker for.
+	config.dcd = 0;
+	config.are = 0;
+	switch (set) {
+	case Handling::Trainer:
+		// The Python trainer's numbers, kept whole so nothing is taken away.
+		config.das = 140;
+		config.arr = 40;
+		config.sdf = 6;
+		config.clear_delay = true;
+		break;
+	case Handling::Fast:
+		// One column per frame rather than a jump to the wall, and the same
+		// instant soft drop. For anyone who wants to see the piece travel.
+		config.das = 100;
+		config.arr = 20;
+		config.sdf = 40;
+		config.clear_delay = false;
+		break;
+	case Handling::Instant:
+	default:
+		config.das = 100;
+		config.arr = 0;
+		config.sdf = 40;
+		config.clear_delay = false;
+		break;
+	}
+}
+
+const char* handling_name (Handling set) {
+	switch (set) {
+	case Handling::Trainer: return "Trainer";
+	case Handling::Fast: return "Fast";
+	case Handling::Instant:
+	default: return "Instant";
+	}
+}
+
+const char* handling_note (Handling set) {
+	switch (set) {
+	case Handling::Trainer:
+		return "the old numbers: 500ms across the board, clears animate";
+	case Handling::Fast:
+		return "a column a frame, instant soft drop, no clear freeze";
+	case Handling::Instant:
+	default:
+		return "straight to the wall, straight to the floor, no clear freeze";
+	}
 }
 
 } // namespace gui
