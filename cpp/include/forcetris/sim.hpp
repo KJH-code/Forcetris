@@ -277,6 +277,9 @@ public:
 	double fuse_bank () const { return fuse_bank_; }
 	double flow () const { return flow_; }
 	bool overdrive () const { return overdrive_frames_ > 0; }
+	// Frames of Overdrive left, 0 outside it. Read-only, and read only by
+	// the screen: the flames outside the well bank down as it runs out.
+	long overdrive_left () const { return overdrive_frames_; }
 	// The other board's Overdrive bearing down on this one: the versus
 	// wiring flips it each frame, and the fuse burns faster while it is up.
 	void set_pressure (bool on);

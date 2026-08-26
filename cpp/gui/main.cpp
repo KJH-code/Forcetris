@@ -426,6 +426,21 @@ struct App {
 	// texture stretched and tinted. Stacked translucent rectangles band
 	// into visible bricks; a falloff sprite simply does not.
 	SDL_Texture* glow = nullptr;
+	// The other built-by-hand sprite: a strip of flame frames, cycled so
+	// the fire actually moves. Overdrive stands them outside the well and
+	// every menu plate has them licking up from behind it.
+	SDL_Texture* flames = nullptr;
+	// Where the centred panels stood. ImGui lays out after the SDL drawing
+	// for a frame is already done, so the flames that lick up behind a
+	// panel are placed from where it was last frame - which for an
+	// auto-resizing window is exactly where it is about to be again.
+	struct Plate {
+		float x = 0.f, y = 0.f, w = 0.f, h = 0.f;
+	};
+	std::array<Plate, 4> plates{};
+	size_t plate_count = 0;      // Filled this frame...
+	std::array<Plate, 4> plates_last{};
+	size_t plate_last_count = 0; // ...and what the flames may use.
 	int last_pending = 0;
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
@@ -990,6 +1005,155 @@ SDL_Texture* make_glow (SDL_Renderer* renderer) {
 	return made;
 }
 
+// A tongue of fire, as a strip of frames it can be animated through.
+//
+// Same idea as the glow above with one dimension of time on the end: value
+// noise, warped by an envelope that is wide at the foot and narrow at the
+// tip, run through a heat ramp. The noise lattice wraps in y over exactly
+// the distance the frames scroll, so the last frame runs back into the
+// first and the flame never jumps. Nothing here is loaded from disk.
+constexpr int kFlameFrames = 16;
+constexpr int kFlameW = 64;
+constexpr int kFlameH = 160;
+
+namespace {
+
+// A hash on the lattice, wrapped in y so the strip loops.
+double flame_lattice (int x, int y, int period, int seed) {
+	y = ((y % period) + period) % period;
+	unsigned h = static_cast<unsigned>(x) * 374761393u
+		+ static_cast<unsigned>(y) * 668265263u
+		+ static_cast<unsigned>(seed) * 2246822519u;
+	h = (h ^ (h >> 13)) * 1274126177u;
+	return ((h ^ (h >> 16)) & 0xffffu) / 65535.;
+}
+
+// Bilinear value noise off that lattice.
+double flame_noise (double x, double y, int period, int seed) {
+	const int x0 = static_cast<int>(std::floor(x));
+	const int y0 = static_cast<int>(std::floor(y));
+	const double fx = x - x0;
+	const double fy = y - y0;
+	// Smoothstep the interpolation or the lattice shows as diamonds.
+	const double sx = fx * fx * (3. - 2. * fx);
+	const double sy = fy * fy * (3. - 2. * fy);
+	const double top = flame_lattice(x0, y0, period, seed) * (1. - sx)
+		+ flame_lattice(x0 + 1, y0, period, seed) * sx;
+	const double bottom = flame_lattice(x0, y0 + 1, period, seed) * (1. - sx)
+		+ flame_lattice(x0 + 1, y0 + 1, period, seed) * sx;
+	return top * (1. - sy) + bottom * sy;
+}
+
+} // namespace
+
+SDL_Texture* make_flames (SDL_Renderer* renderer) {
+	SDL_Surface* face = SDL_CreateRGBSurfaceWithFormat(0,
+		kFlameW * kFlameFrames, kFlameH, 32, SDL_PIXELFORMAT_RGBA32);
+	if (face == nullptr) {
+		return nullptr;
+	}
+	Uint32* pixels = static_cast<Uint32*>(face->pixels);
+	const int pitch = face->pitch / 4;
+	// The lattice is coarse across and fine up, because fire stretches as
+	// it rises. Four octaves gets the edges properly torn, which matters:
+	// a single tongue is stretched the height of a phone during Overdrive.
+	constexpr double kAcross = 3.6;
+	constexpr double kUp = 6.5;
+	constexpr int kPeriod = 32;
+	for (int frame = 0; frame < kFlameFrames; ++frame) {
+		// One full lattice period over the whole strip: frame 15 hands back
+		// to frame 0 with nothing to see at the seam.
+		const double scroll = kPeriod * frame / static_cast<double>(kFlameFrames);
+		for (int y = 0; y < kFlameH; ++y) {
+			// foot is 1 along the bottom row, where the flame stands, and 0
+			// at the tip. The surface's first row is the tip.
+			const double foot = static_cast<double>(y) / (kFlameH - 1);
+			// The whole tongue leans, and leans further the further it gets
+			// from its base - which is what makes it lick rather than sit.
+			const double sway = (flame_noise(foot * 3.,
+				scroll + foot * 2., kPeriod, 91) - 0.5) * 1.1 * (1. - foot);
+			for (int x = 0; x < kFlameW; ++x) {
+				const double u = (x - (kFlameW - 1) / 2.) / ((kFlameW - 1) / 2.)
+					- sway;
+				// Wide at the foot, pinched at the tip.
+				const double width = 0.26 + 0.74 * std::pow(foot, 0.7);
+				const double across = 1. - (u / width) * (u / width);
+				if (across <= 0.) {
+					pixels[y * pitch + frame * kFlameW + x] = 0;
+					continue;
+				}
+				// Nothing at all at the tip, full strength at the base.
+				const double up = std::pow(foot, 0.5);
+				double turbulence = 0.;
+				double weight = 0.;
+				double scale = 1.;
+				for (int octave = 0; octave < 4; ++octave) {
+					turbulence += flame_noise(
+						(x / static_cast<double>(kFlameW)) * kAcross * scale,
+						(y / static_cast<double>(kFlameH)) * kUp * scale + scroll * scale,
+						kPeriod, 17 + octave) / scale;
+					weight += 1. / scale;
+					scale *= 2.;
+				}
+				turbulence /= weight;
+				const double heat = std::clamp(
+					across * up * (0.42 + 0.95 * turbulence) - 0.14, 0., 1.);
+				if (heat <= 0.) {
+					pixels[y * pitch + frame * kFlameW + x] = 0;
+					continue;
+				}
+				// Deep red at the edges, white at the core, the way a flame
+				// is hottest where there is most of it.
+				double r = 0.;
+				double g = 0.;
+				double b = 0.;
+				if (heat < 0.35) {
+					const double t = heat / 0.35;
+					r = 120. + 135. * t;
+					g = 18. + 62. * t;
+					b = 6. + 12. * t;
+				} else if (heat < 0.7) {
+					const double t = (heat - 0.35) / 0.35;
+					r = 255.;
+					g = 80. + 130. * t;
+					b = 18. + 92. * t;
+				} else {
+					const double t = (heat - 0.7) / 0.3;
+					r = 255.;
+					g = 210. + 40. * t;
+					b = 110. + 120. * t;
+				}
+				pixels[y * pitch + frame * kFlameW + x] = SDL_MapRGBA(
+					face->format, static_cast<Uint8>(r), static_cast<Uint8>(g),
+					static_cast<Uint8>(b),
+					static_cast<Uint8>(std::min(255., heat * 340.)));
+			}
+		}
+	}
+	SDL_Texture* made = SDL_CreateTextureFromSurface(renderer, face);
+	SDL_FreeSurface(face);
+	if (made != nullptr) {
+		SDL_SetTextureBlendMode(made, SDL_BLENDMODE_ADD);
+	}
+	return made;
+}
+
+// Stand one flame on `base`, `frame` picking which of the strip to show.
+void draw_flame (App& app, float cx, float base, float w, float h,
+		SDL_Color tint, double alpha, int frame) {
+	if (app.flames == nullptr || alpha <= 0. || h <= 0.f) {
+		return;
+	}
+	SDL_SetTextureColorMod(app.flames, tint.r, tint.g, tint.b);
+	SDL_SetTextureAlphaMod(app.flames,
+		static_cast<Uint8>(std::clamp(alpha, 0., 255.)));
+	const SDL_Rect from{((frame % kFlameFrames) + kFlameFrames) % kFlameFrames
+		* kFlameW, 0, kFlameW, kFlameH};
+	const SDL_Rect over{static_cast<int>(cx - w / 2), static_cast<int>(base - h),
+		static_cast<int>(w), static_cast<int>(h)};
+	SDL_RenderCopy(app.renderer, app.flames, &from, &over);
+}
+
 // Stamp the sprite over a rectangle, tinted and dimmed to taste.
 void draw_glow (App& app, float x, float y, float w, float h,
 		SDL_Color tint, double alpha) {
@@ -1002,6 +1166,196 @@ void draw_glow (App& app, float x, float y, float w, float h,
 	const SDL_Rect over{static_cast<int>(x - w / 2), static_cast<int>(y - h / 2),
 		static_cast<int>(w), static_cast<int>(h)};
 	SDL_RenderCopy(app.renderer, app.glow, nullptr, &over);
+}
+
+// Every centred panel is a plate off the same forge: dark iron, a bevel lit
+// from above, rivets at the corners, a heat gradient banked up its lower
+// half, and a rim that glows the way metal does when it has just come out
+// of the fire. Called once, immediately after ImGui::Begin, so it lands
+// under the window's own widgets - and it writes the rectangle down, so the
+// next frame's flames know where to lick.
+void forge_panel (App& app) {
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	const ImVec2 at = ImGui::GetWindowPos();
+	const ImVec2 size = ImGui::GetWindowSize();
+	if (size.x <= 0.f || size.y <= 0.f) {
+		return;
+	}
+	const ImVec2 low(at.x + size.x, at.y + size.y);
+	const float round = ImGui::GetStyle().WindowRounding;
+	const float inset = round;
+
+	// The plate, over ImGui's flat window colour.
+	draw->AddRectFilled(at, low, IM_COL32(24, 18, 13, 252), round);
+	// Heat banked up from below - the plate sits over the fire, so its
+	// lower half is the part that has been in it. Inset by the corner
+	// radius because a gradient cannot follow the rounding.
+	draw->AddRectFilledMultiColor(
+		ImVec2(at.x + inset, at.y + size.y * 0.55f),
+		ImVec2(low.x - inset, low.y - inset * 0.5f),
+		IM_COL32(92, 38, 12, 0), IM_COL32(92, 38, 12, 0),
+		IM_COL32(108, 44, 14, 150), IM_COL32(108, 44, 14, 150));
+
+	// The bevel: lit along the top and the left, shadowed opposite.
+	draw->AddLine(ImVec2(at.x + inset, at.y + 1.5f),
+		ImVec2(low.x - inset, at.y + 1.5f), IM_COL32(96, 71, 52, 150), 1.5f);
+	draw->AddLine(ImVec2(at.x + 1.5f, at.y + inset),
+		ImVec2(at.x + 1.5f, low.y - inset), IM_COL32(84, 61, 44, 120), 1.5f);
+	draw->AddLine(ImVec2(low.x - 1.5f, at.y + inset),
+		ImVec2(low.x - 1.5f, low.y - inset), IM_COL32(8, 5, 3, 170), 1.5f);
+
+	// The rim, pulsing between ember and gold, and hottest along the foot.
+	const float beat = 0.5f + 0.5f * std::sin(app.backdrop_tick * 0.035f);
+	const ImU32 rim = IM_COL32(255, static_cast<int>(118 + 56 * beat),
+		static_cast<int>(44 + 32 * beat), 225);
+	draw->AddRect(at, low, rim, round, 0, ui(2));
+	// A softer second pass just outside it, so the rim reads as glowing
+	// rather than as a border someone drew.
+	draw->AddRect(ImVec2(at.x - ui(2), at.y - ui(2)),
+		ImVec2(low.x + ui(2), low.y + ui(2)),
+		IM_COL32(214, 92, 30, static_cast<int>(60 + 40 * beat)),
+		round + ui(2), 0, ui(3));
+	draw->AddLine(ImVec2(at.x + inset, low.y - 1.f),
+		ImVec2(low.x - inset, low.y - 1.f),
+		IM_COL32(255, 196, 96, static_cast<int>(170 + 60 * beat)), ui(2.5f));
+
+	// Rivets, one at each corner, each a dark hole with a lit lip.
+	const float dot = ui(3.2f);
+	const float pad = round * 0.9f + ui(1);
+	const ImVec2 studs[4] = {
+		ImVec2(at.x + pad, at.y + pad), ImVec2(low.x - pad, at.y + pad),
+		ImVec2(at.x + pad, low.y - pad), ImVec2(low.x - pad, low.y - pad)};
+	for (const ImVec2& stud : studs) {
+		draw->AddCircleFilled(stud, dot, IM_COL32(14, 10, 7, 255), 10);
+		draw->AddCircleFilled(ImVec2(stud.x - dot * 0.28f, stud.y - dot * 0.28f),
+			dot * 0.44f, IM_COL32(122, 92, 66, 220), 8);
+	}
+
+	if (app.plate_count < app.plates.size()) {
+		app.plates[app.plate_count++] = {at.x, at.y, size.x, size.y};
+	}
+}
+
+// Fire licking up from behind the plates. Drawn before ImGui renders, so
+// only what escapes past a plate's edges shows - which is the whole idea:
+// the box is not painted like flame, it is standing in it. The tongues are
+// therefore massed on the flanks and along the foot, where there is
+// something to escape past, rather than spread evenly behind the iron.
+void draw_plate_flames (App& app) {
+	int screen_w = 0;
+	int screen_h = 0;
+	SDL_GetRendererOutputSize(app.renderer, &screen_w, &screen_h);
+	for (size_t i = 0; i < app.plate_last_count; ++i) {
+		const App::Plate& plate = app.plates_last[i];
+		if (plate.w <= 0.f || plate.h <= 0.f) {
+			continue;
+		}
+		const float tick = static_cast<float>(app.backdrop_tick);
+		const int spout = static_cast<int>(app.backdrop_tick / 3);
+		const float foot = plate.y + plate.h + px(8);
+		// A panel taller than the screen would otherwise throw flames the
+		// height of a building; the fire is scaled to the room, not to it.
+		const float rise = std::min(plate.h, screen_h * 0.55f);
+
+		// The flanks: centred on the plate's own edges, so half of every
+		// tongue stands clear of the iron and licks up past it.
+		for (int side = 0; side < 2; ++side) {
+			const float edge = side == 0 ? plate.x : plate.x + plate.w;
+			for (int k = 0; k < 3; ++k) {
+				const float phase = k * 2.3f + side * 1.1f + tick * 0.045f;
+				const float tall = rise * (0.62f + 0.26f * std::sin(phase));
+				draw_flame(app, edge + (side == 0 ? -px(6) : px(6)),
+					foot - rise * 0.06f * k, px(84) + px(26) * std::sin(phase * 0.7f),
+					tall, {255, 142, 52, 255}, 185.,
+					spout + k * 5 + side * 8);
+			}
+		}
+		// The foot: a row reaching a little wider than the plate, so the
+		// fire is plainly under it and not just beside it.
+		const int along = 6;
+		const float spread = plate.w + px(80);
+		for (int k = 0; k < along; ++k) {
+			const float part = (k + 0.5f) / along;
+			const float phase = k * 1.7f + tick * 0.038f;
+			draw_flame(app, plate.x - px(40) + spread * part, foot + px(6),
+				px(78) + px(24) * std::sin(phase), rise * (0.30f + 0.16f * std::sin(phase * 1.3f)),
+				{255, 158, 62, 255}, 170., spout + k * 7 + 3);
+		}
+	}
+}
+
+// While Overdrive burns, the room does not merely glow - it catches. Fire
+// stands up out of the margins either side of the play column and off the
+// floor of the room, banking down as the ignition runs out.
+//
+// Every tongue is checked against the play column - the well and the
+// furniture around it, hold box, queue and Flow rail included - and dropped
+// if it would touch. The stack, the ghost and the previews are the things a
+// fire is not allowed to hide, so that is a guarantee rather than careful
+// placement: where there is no room, no flame is drawn at all.
+void draw_overdrive_flames (App& app) {
+	if (!app.session.has_value()) {
+		return;
+	}
+	const Sim& sim = app.session->sim();
+	if (!sim.overdrive()) {
+		return;
+	}
+	int screen_w = 0;
+	int screen_h = 0;
+	SDL_GetRendererOutputSize(app.renderer, &screen_w, &screen_h);
+	// 1 at ignition, 0 as it gutters out. The sim runs 20ms frames.
+	const double span = std::max(1., sim.config().overdrive_secs * 50.);
+	const float left = static_cast<float>(
+		std::clamp(sim.overdrive_left() / span, 0., 1.));
+	const float lit = 0.35f + 0.65f * left;
+	const float tick = static_cast<float>(app.backdrop_tick);
+	const int spout = static_cast<int>(app.backdrop_tick / 2);
+
+	// The column everything the player reads lives in. It stops at the foot
+	// of the well, so the floor below stays open to the fire.
+	const int guard_x = kBoardX - px(134);
+	const int guard_w = kBoardW + px(134) + px(128);
+	const SDL_Rect column{guard_x, 0, guard_w, kBoardY + kBoardH + px(10)};
+	const auto stand = [&] (float cx, float base, float wide, float tall,
+			double alpha, int frame) {
+		if (wide <= 0.f || tall <= 0.f) {
+			return;
+		}
+		const SDL_Rect over{static_cast<int>(cx - wide / 2),
+			static_cast<int>(base - tall), static_cast<int>(wide),
+			static_cast<int>(tall)};
+		SDL_Rect clash{0, 0, 0, 0};
+		if (SDL_IntersectRect(&over, &column, &clash) == SDL_TRUE) {
+			return;
+		}
+		draw_flame(app, cx, base, wide, tall, {255, 176, 74, 255}, alpha, frame);
+	};
+
+	// Tall columns off the floor. The ones behind the play column are
+	// dropped by the guard, so what survives is fire down both margins -
+	// which on a desk is most of them, and on a phone is none.
+	const int along = 11;
+	for (int k = 0; k < along; ++k) {
+		const float phase = k * 1.4f + tick * 0.055f;
+		stand(screen_w * (k + 0.5f) / along, static_cast<float>(screen_h),
+			px(150) + px(46) * std::sin(phase),
+			screen_h * lit * (0.52f + 0.22f * std::sin(phase * 1.7f)),
+			195. * lit, spout + k * 6 + 4);
+	}
+	// A second, shorter pass that fits under the well. On a portrait phone
+	// the column takes the whole width and this is the whole fire; on a
+	// desk it is the hearth the board stands on.
+	const float hearth = screen_h - (kBoardY + kBoardH + px(12));
+	if (hearth > px(30)) {
+		for (int k = 0; k < along; ++k) {
+			const float phase = k * 1.1f + 0.7f + tick * 0.048f;
+			stand(screen_w * (k + 0.5f) / along, static_cast<float>(screen_h),
+				px(128) + px(38) * std::sin(phase),
+				hearth * lit * (0.72f + 0.28f * std::sin(phase * 1.4f)),
+				175. * lit, spout + k * 7 + 9);
+		}
+	}
 }
 
 // How much trouble this board is in, 0 to 1: a fuse nearly spent, garbage
@@ -1872,6 +2226,7 @@ void draw_settings (App& app) {
 	ImGui::Begin("Settings", &app.show_settings,
 		ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
+	forge_panel(app);
 	if (ImGui::BeginTabBar("settings", ImGuiTabBarFlags_None)) {
 		if (ImGui::BeginTabItem("Handling")) {
 			ImGui::Spacing();
@@ -2321,6 +2676,7 @@ void draw_analysis (App& app) {
 	ImGui::Begin("Analysis", nullptr, ImGuiWindowFlags_AlwaysAutoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
+	forge_panel(app);
 	if (app.studying.has_value()) {
 		ImGui::TextDisabled("%s", app.studying->title().c_str());
 		if (ImGui::BeginTabBar("analysis_tabs")) {
@@ -2375,6 +2731,7 @@ void draw_help (App& app) {
 	ImGui::Begin("How to Play", nullptr, ImGuiWindowFlags_AlwaysAutoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
+	forge_panel(app);
 	if (ImGui::BeginTable("keys", 2)) {
 		for (const ActionDef& action : all_actions()) {
 			// Every key bound to the action, or the word for none - the same
@@ -2660,6 +3017,7 @@ void draw_replays (App& app) {
 	ImGui::Begin("Replays", nullptr, ImGuiWindowFlags_AlwaysAutoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
+	forge_panel(app);
 	if (app.shelf.empty()) {
 		ImGui::TextDisabled("No replays yet. Finish a game first.");
 	}
@@ -2692,6 +3050,7 @@ void draw_scores (App& app) {
 	ImGui::Begin("High scores", nullptr, ImGuiWindowFlags_AlwaysAutoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
+	forge_panel(app);
 	// The variant's six tables first, the trainer's three behind them -
 	// different files, different games, one screen.
 	static const char* kPages[] = {"Ignition", "Blaze", "Inferno", "Meltdown",
@@ -2827,6 +3186,7 @@ void draw_profile (App& app) {
 	ImGui::Begin("Profile", nullptr, ImGuiWindowFlags_AlwaysAutoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
+	forge_panel(app);
 
 	// The mode filter every tab reads.
 	// Each filter matches its mode family under either ruleset's key - the
@@ -3159,6 +3519,7 @@ void draw_career (App& app) {
 	ImGui::Begin("Career", nullptr, ImGuiWindowFlags_AlwaysAutoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
+	forge_panel(app);
 	ImGui::PushFont(app.fonts.head);
 	ImGui::TextUnformatted("The Ladder");
 	ImGui::PopFont();
@@ -3330,8 +3691,9 @@ void draw_menus (App& app) {
 	if (app.screen == Screen::Menu) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 		ImGui::Begin("main menu", nullptr, box);
-		// The wordmark: a small drawn flame, then the letters cooling from
-		// gold at the fire's edge to ember at the far end.
+		forge_panel(app);
+		// The wordmark: a tongue of real fire, then the letters cooling
+		// from gold at the flame's edge to ember at the far end.
 		ImGui::PushFont(app.fonts.title);
 		ImFont* mark = app.fonts.title;
 		ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -3339,18 +3701,20 @@ void draw_menus (App& app) {
 		const float tall = mark->FontSize;
 		const float fx = at.x + tall * 0.28f;
 		const float fy = at.y + tall * 0.52f;
-		dl->AddTriangleFilled(ImVec2(fx, fy - tall * 0.42f),
-			ImVec2(fx - tall * 0.20f, fy + tall * 0.30f),
-			ImVec2(fx + tall * 0.20f, fy + tall * 0.30f),
-			IM_COL32(255, 138, 58, 255));
-		dl->AddCircleFilled(ImVec2(fx, fy + tall * 0.18f), tall * 0.21f,
-			IM_COL32(255, 138, 58, 255));
-		dl->AddTriangleFilled(ImVec2(fx, fy - tall * 0.16f),
-			ImVec2(fx - tall * 0.10f, fy + tall * 0.26f),
-			ImVec2(fx + tall * 0.10f, fy + tall * 0.26f),
-			IM_COL32(255, 214, 96, 255));
-		dl->AddCircleFilled(ImVec2(fx, fy + tall * 0.16f), tall * 0.11f,
-			IM_COL32(255, 214, 96, 255));
+		if (app.flames != nullptr) {
+			// The mark burns for real: one tongue off the same strip the
+			// room uses, cycling beside the letters. Through ImGui rather
+			// than SDL, because the plate is drawn over the SDL pass and a
+			// logo behind its own panel would be a strange thing to ship.
+			const int frame = static_cast<int>(app.backdrop_tick / 3) % kFlameFrames;
+			const float edge = static_cast<float>(frame) / kFlameFrames;
+			const float wide = tall * 0.66f;
+			dl->AddImage(reinterpret_cast<ImTextureID>(app.flames),
+				ImVec2(fx - wide / 2, fy - tall * 0.52f),
+				ImVec2(fx + wide / 2, fy + tall * 0.48f),
+				ImVec2(edge, 0.f),
+				ImVec2(edge + 1.f / kFlameFrames, 1.f));
+		}
 		float pen = at.x + tall * 0.66f;
 		const char* word = "FORCETRIS";
 		const int letters = 9;
@@ -3411,6 +3775,7 @@ void draw_menus (App& app) {
 			// The cheese family's own window: both modes and how the cheese
 			// is cut, out of the picker's way.
 			ImGui::Begin("cheese setup", nullptr, box);
+			forge_panel(app);
 			ImGui::PushFont(app.fonts.head);
 			ImGui::TextUnformatted("Meltdown / Bunker");
 			ImGui::PopFont();
@@ -3476,6 +3841,7 @@ void draw_menus (App& app) {
 		} else if (app.mode_popup == 2) {
 			// The bot fight's window: rank, match length, go.
 			ImGui::Begin("versus setup", nullptr, box);
+			forge_panel(app);
 			ImGui::PushFont(app.fonts.head);
 			ImGui::TextUnformatted("Duel");
 			ImGui::PopFont();
@@ -3514,6 +3880,7 @@ void draw_menus (App& app) {
 			ImGui::End();
 		} else {
 			ImGui::Begin("mode select", nullptr, box);
+			forge_panel(app);
 			ImGui::PushFont(app.fonts.head);
 			ImGui::TextUnformatted("Choose a mode");
 			ImGui::PopFont();
@@ -3556,6 +3923,7 @@ void draw_menus (App& app) {
 	} else if (app.screen == Screen::Game && app.paused) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 		ImGui::Begin("paused", nullptr, box);
+		forge_panel(app);
 		ImGui::TextUnformatted("Paused");
 		ImGui::Spacing();
 		if (ImGui::Button("Resume", ImVec2(ui(240), 0))) {
@@ -3585,6 +3953,7 @@ void draw_menus (App& app) {
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(6)));
 		ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui(8), ui(3)));
 		ImGui::Begin("game over", nullptr, box);
+		forge_panel(app);
 		const bool won = app.session.has_value() && app.session->sim().won();
 		{
 			// Struck into the plate: a cast shadow under letters that cool
@@ -3989,6 +4358,7 @@ int run (bool smoke, long smoke_frames) {
 		return 1;
 	}
 	app.glow = make_glow(app.renderer);
+	app.flames = make_flames(app.renderer);
 	if (kMobile) {
 		int w = 0;
 		int h = 0;
@@ -4157,10 +4527,16 @@ int run (bool smoke, long smoke_frames) {
 		ImGui_ImplSDLRenderer2_NewFrame();
 		ImGui_ImplSDL2_NewFrame();
 		ImGui::NewFrame();
+		// The panels are laid out further down this frame; the flames that
+		// stand behind them were placed from where they stood last frame.
+		app.plates_last = app.plates;
+		app.plate_last_count = app.plate_count;
+		app.plate_count = 0;
 
 		SDL_SetRenderDrawColor(app.renderer, 14, 11, 9, 255);
 		SDL_RenderClear(app.renderer);
 		draw_backdrop(app);
+		draw_plate_flames(app);
 		{
 			// The room, handed to the mixer from the same reading the
 			// backdrop just painted with: the furnace bed and the score's
@@ -4190,6 +4566,7 @@ int run (bool smoke, long smoke_frames) {
 			draw_burn_rows(app);
 			draw_sparks(app);
 			draw_streaks(app);
+			draw_overdrive_flames(app);
 			draw_heat(app);
 			if (quaking) {
 				SDL_RenderSetViewport(app.renderer, nullptr);
@@ -4402,6 +4779,10 @@ int run (bool smoke, long smoke_frames) {
 	ImGui_ImplSDLRenderer2_Shutdown();
 	ImGui_ImplSDL2_Shutdown();
 	ImGui::DestroyContext();
+	if (app.flames != nullptr) {
+		SDL_DestroyTexture(app.flames);
+		app.flames = nullptr;
+	}
 	if (app.glow != nullptr) {
 		SDL_DestroyTexture(app.glow);
 	}
