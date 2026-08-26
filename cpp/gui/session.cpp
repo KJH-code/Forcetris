@@ -31,6 +31,11 @@ Session::Session (const SimConfig& config, unsigned seed, const replay::Meta& me
 	refill();
 }
 
+void Session::draft (const SimConfig& rules, const std::string& id) {
+	sim_.retune(rules);
+	recorder_.drafted(id);
+}
+
 std::vector<std::string> Session::take_cues () {
 	std::vector<std::string> drained;
 	drained.swap(cue_box_);

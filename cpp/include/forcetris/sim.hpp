@@ -69,6 +69,11 @@ struct SimConfig {
 	// Lines already on the counter when the game starts: zero in play, set by
 	// a trace that needs arcade's high levels within a trace's reach.
 	int start_lines = 0;
+	// A finish line, in cleared lines: the game is won when the counter
+	// reaches it. Zero for the modes that simply go until they are lost.
+	// Tempering's run is twelve heats of ten lines and ends when they are
+	// forged; nothing else sets this.
+	int line_quota = 0;
 	// The cheese race's quota of garbage rows, and survival's frames between
 	// one row rising and the next.
 	int cheese_total = 18;
@@ -182,6 +187,14 @@ public:
 	// Start from a board other than an empty one. Only sensible before the
 	// first step, which is when a seeded trace or a practice setup wants it.
 	void seed (const Board& board) { board_ = board; }
+
+	// The fuse, Flow and clearing rules replaced mid-run, which is what a
+	// Tempering draft does to a game already in progress. Only those fields
+	// are taken: handling, the gametype and the mode dials are deliberately
+	// left alone, because a draft must never change how the pad feels or
+	// which game is being played - and the handling frame counts are derived
+	// once in the constructor, so re-deriving them here would be the bug.
+	void retune (const SimConfig& rules);
 
 	// Append to the piece queue. The game proper feeds its bag through this as
 	// the queue runs down; a trace deals everything up front instead.

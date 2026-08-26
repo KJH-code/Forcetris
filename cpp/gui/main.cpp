@@ -42,6 +42,7 @@
 #include "forcetris/profile.hpp"
 #include "forcetris/rating.hpp"
 #include "forcetris/replay.hpp"
+#include "forcetris/temper.hpp"
 #include "session.hpp"
 #include "stats.hpp"
 #include "versus.hpp"
@@ -378,6 +379,17 @@ struct App {
 	int career_stage = -1;
 	bool career_od = false;
 	bool daily_run = false;
+	// Tempering: the rules the run started from, the tempers drafted since,
+	// how many heats have been forged, and the three cards on the table
+	// right now - which is also the flag for "the board is waiting".
+	SimConfig temper_start;
+	std::vector<std::string> tempers;
+	unsigned temper_seed = 0;
+	int heat = 0;
+	std::vector<std::string> offers;
+	int offer_at = 0;
+	int offer_shown = 0;         // Frames the cards have been on the table.
+	bool forged = false;         // The run reached its twelfth heat.
 	// The juice: a fixed pool of clear sparks (a hard cap, not a queue -
 	// an overflowing celebration recycles its oldest embers), and the
 	// frame the board stops shuddering.
@@ -456,6 +468,7 @@ const char* gametype_name (int mode, bool fused) {
 			case 3: return "meltdown";
 			case 4: return "bunker";
 			case 5: return "duel";
+			case 6: return "temper";
 			default: return "ignition";
 		}
 	}
@@ -465,6 +478,10 @@ const char* gametype_name (int mode, bool fused) {
 		case 3: return "cheese_race";
 		case 4: return "cheese_survival";
 		case 5: return "versus";
+		// Tempering is a fuse mode and nothing else: its drafts are the
+		// fuse's own numbers, so there is no trainer-rules version of it to
+		// name. A run started here is forced onto the variant's rules.
+		case 6: return "temper";
 		default: return "free";
 	}
 }
@@ -484,6 +501,33 @@ std::string place_string (int at) {
 	if (at == 1) return "2nd";
 	if (at == 2) return "3rd";
 	return std::to_string(at + 1) + "th";
+}
+
+// The fuse block on a recording: which ruleset, and every number it was
+// played under. One writer, because a file that says fuse-rules without
+// saying under which numbers cannot be read back honestly - and Tempering
+// starts from rules the settings screen never saw.
+void stamp_fuse (replay::Meta& meta, const SimConfig& rules) {
+	meta.fuse = rules.fuse;
+	if (!rules.fuse) {
+		return;
+	}
+	meta.fuse_base = rules.fuse_base;
+	meta.fuse_min = rules.fuse_min;
+	meta.fuse_decay = rules.fuse_decay;
+	meta.fuse_bank_cap = rules.fuse_bank_cap;
+	meta.fuse_draw_cap = rules.fuse_draw_cap;
+	meta.fuse_refuel_line = rules.fuse_refuel_line;
+	meta.fuse_refuel_attack = rules.fuse_refuel_attack;
+	meta.flash_frac = rules.flash_frac;
+	meta.flash_floor = rules.flash_floor;
+	meta.flow_gain_line = rules.flow_gain_line;
+	meta.flow_gain_attack = rules.flow_gain_attack;
+	meta.flow_lock_gain = rules.flow_lock_gain;
+	meta.flow_flash_gain = rules.flow_flash_gain;
+	meta.flow_burn_loss = rules.flow_burn_loss;
+	meta.overdrive_secs = rules.overdrive_secs;
+	meta.overdrive_mult = rules.overdrive_mult;
 }
 
 replay::Meta meta_for (const Config& config, int mode) {
@@ -506,26 +550,8 @@ replay::Meta meta_for (const Config& config, int mode) {
 	// The fuse ruleset, tunables and all - a file must say which game its
 	// score belongs to. Duel fights under it too, both sides alike.
 	const SimConfig rules = config.sim();
-	meta.fuse = rules.fuse;
-	meta.gametype = gametype_name(mode, meta.fuse);
-	if (meta.fuse) {
-		meta.fuse_base = rules.fuse_base;
-		meta.fuse_min = rules.fuse_min;
-		meta.fuse_decay = rules.fuse_decay;
-		meta.fuse_bank_cap = rules.fuse_bank_cap;
-		meta.fuse_draw_cap = rules.fuse_draw_cap;
-		meta.fuse_refuel_line = rules.fuse_refuel_line;
-		meta.fuse_refuel_attack = rules.fuse_refuel_attack;
-		meta.flash_frac = rules.flash_frac;
-		meta.flash_floor = rules.flash_floor;
-		meta.flow_gain_line = rules.flow_gain_line;
-		meta.flow_gain_attack = rules.flow_gain_attack;
-		meta.flow_lock_gain = rules.flow_lock_gain;
-		meta.flow_flash_gain = rules.flow_flash_gain;
-		meta.flow_burn_loss = rules.flow_burn_loss;
-		meta.overdrive_secs = rules.overdrive_secs;
-		meta.overdrive_mult = rules.overdrive_mult;
-	}
+	meta.gametype = gametype_name(mode, rules.fuse);
+	stamp_fuse(meta, rules);
 	return meta;
 }
 
@@ -563,11 +589,26 @@ void start_game (App& app, int mode,
 	app.career_stage = -1;
 	app.daily_run = false;
 	app.mode = mode;
+	app.tempers.clear();
+	app.offers.clear();
+	app.offer_at = 0;
+	app.heat = 0;
+	app.forged = false;
 	// The dials just used are worth keeping even if the app never gets a
 	// clean exit - phones rarely grant one.
 	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = mode;
+	if (mode == 6) {
+		// Tempering is an endless game with a finish line and a draft. The
+		// fuse is not optional here: every temper in the pool is one of the
+		// fuse's own numbers, so a trainer-rules run would have nothing to
+		// draft. The sim is told it is game zero; the mode lives in the
+		// quota, the draft, and the table the score goes to.
+		config.gametype = 0;
+		config.fuse = true;
+		config.line_quota = temper::kQuota;
+	}
 	if (config.fuse && mode == 1) {
 		// Blaze burns three minutes, not the trainer's five. Its own table
 		// keeps its scores, so the shorter clock competes only with itself.
@@ -577,9 +618,17 @@ void start_game (App& app, int mode,
 	config.cheese_period = app.config.cheese_period;
 	config.cheese_holes = app.config.cheese_holes;
 	config.cheese_messiness = app.config.cheese_messiness;
-	app.session.emplace(config,
-		fixed_seed.has_value() ? *fixed_seed : app.seeds(),
-		meta_for(app.config, mode));
+	const unsigned seed = fixed_seed.has_value() ? *fixed_seed : app.seeds();
+	app.temper_seed = seed;
+	app.temper_start = config;
+	replay::Meta meta = meta_for(app.config, mode);
+	if (mode == 6) {
+		// meta_for reads the Rules tab; Tempering overrides it, so the file
+		// records the rules the run is actually starting from.
+		stamp_fuse(meta, config);
+		meta.gametype = gametype_name(mode, true);
+	}
+	app.session.emplace(config, seed, meta);
 	app.screen = Screen::Game;
 	app.paused = false;
 	app.editing = false;
@@ -699,6 +748,93 @@ void next_versus_round (App& app) {
 	app.versus->begin_round(config, app.seeds(), meta);
 	app.countdown = app.start_delay;
 	reset_effects(app);
+}
+
+// What each family of temper is painted in: fuel the iron's own orange,
+// Flow the gold Overdrive already uses, risk the danger red the board's
+// edges close in with, and the two rule cards a pale hot white so they read
+// as the rare ones they are.
+ImU32 family_ink (temper::Family family) {
+	switch (family) {
+		case temper::Family::Flow: return IM_COL32(255, 206, 96, 255);
+		case temper::Family::Risk: return IM_COL32(226, 92, 62, 255);
+		case temper::Family::Rule: return IM_COL32(240, 234, 220, 255);
+		case temper::Family::Fuel:
+		default: return IM_COL32(214, 128, 62, 255);
+	}
+}
+
+// A run's build on one line: "Quench x2, Bellows, Overheat".
+std::string temper_line (const std::vector<std::string>& taken) {
+	std::vector<std::pair<std::string, int>> counted;
+	for (const std::string& id : taken) {
+		const temper::Temper* card = temper::find(id);
+		// An id from a newer build has no name here; it is still part of
+		// the run, so it is counted under its own key rather than dropped.
+		const std::string name = card != nullptr ? card->name : id;
+		bool seen = false;
+		for (auto& entry : counted) {
+			if (entry.first == name) {
+				++entry.second;
+				seen = true;
+				break;
+			}
+		}
+		if (!seen) {
+			counted.emplace_back(name, 1);
+		}
+	}
+	std::string line;
+	for (const auto& [name, times] : counted) {
+		if (!line.empty()) {
+			line += ", ";
+		}
+		line += name;
+		if (times > 1) {
+			line += " x" + std::to_string(times);
+		}
+	}
+	return line;
+}
+
+// A heat has been forged if the line counter has crossed another ten. Put
+// three cards on the table when it has; the loop stops stepping the sim
+// while they are there, so the fuse waits with the player.
+void offer_tempers (App& app) {
+	if (!app.session.has_value() || app.heat >= temper::kHeats) {
+		return;
+	}
+	const int forged = app.session->sim().lines_cleared() / temper::kLinesPerHeat;
+	if (forged <= app.heat) {
+		return;
+	}
+	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers);
+	app.offer_at = 0;
+	app.offer_shown = 0;
+	if (app.offers.empty()) {
+		// The pool ran dry, which it cannot with the numbers as they are -
+		// but a draft with nothing to draft must not stop the game.
+		app.heat = forged;
+		return;
+	}
+	app.audio.play("overdrive");
+}
+
+// One card taken: the run's rules are rebuilt from the start plus every
+// temper in order, which is what makes a stack of the same card add up
+// rather than each one overwrite the last.
+void take_temper (App& app, int at) {
+	if (!app.session.has_value() || at < 0
+		|| at >= static_cast<int>(app.offers.size())) {
+		return;
+	}
+	app.tempers.push_back(app.offers[at]);
+	app.session->draft(temper::tempered(app.temper_start, app.tempers),
+		app.tempers.back());
+	app.offers.clear();
+	app.offer_shown = 0;
+	++app.heat;
+	app.audio.play("b2b");
 }
 
 void end_game (App& app) {
@@ -951,6 +1087,26 @@ void handle_event (App& app, const SDL_Event& event) {
 			start_versus(app, app.career_stage);
 		} else {
 			start_game(app, app.mode);
+		}
+		return;
+	}
+	// The draft has the keyboard while it is up: 1/2/3 takes a card
+	// outright, the arrows walk the row and Enter or space takes the one
+	// under the cursor. No confirm step - a pick every ten lines that costs
+	// two presses would be two presses too many.
+	if (down && app.screen == Screen::Game && !app.offers.empty()
+		&& !app.editing && !ImGui::GetIO().WantCaptureKeyboard) {
+		const int cards = static_cast<int>(app.offers.size());
+		const SDL_Scancode code = event.key.keysym.scancode;
+		if (code >= SDL_SCANCODE_1 && code < SDL_SCANCODE_1 + cards) {
+			take_temper(app, code - SDL_SCANCODE_1);
+		} else if (code == SDL_SCANCODE_LEFT) {
+			app.offer_at = (app.offer_at + cards - 1) % cards;
+		} else if (code == SDL_SCANCODE_RIGHT) {
+			app.offer_at = (app.offer_at + 1) % cards;
+		} else if (code == SDL_SCANCODE_RETURN
+			|| code == SDL_SCANCODE_KP_ENTER || code == SDL_SCANCODE_SPACE) {
+			take_temper(app, app.offer_at);
 		}
 		return;
 	}
@@ -3035,12 +3191,16 @@ void draw_scores (App& app) {
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
-	// The variant's six tables first, the trainer's three behind them -
-	// different files, different games, one screen.
+	// The variant's tables first, the trainer's three behind them -
+	// different files, different games, one screen. The variant's count is
+	// the header's, so adding a mode adds a page here without a second
+	// number to keep in step.
 	static const char* kPages[] = {"Ignition", "Blaze", "Inferno", "Meltdown",
-		"Bunker", "Duel", "Arcade", "Timed", "Free"};
-	for (int page = 0; page < 9; ++page) {
-		if (page > 0 && page != 6) {
+		"Bunker", "Duel", "Tempering", "Arcade", "Timed", "Free"};
+	constexpr int kPageCount
+		= static_cast<int>(sizeof kPages / sizeof kPages[0]);
+	for (int page = 0; page < kPageCount; ++page) {
+		if (page > 0 && page != hiscore::kFuseTables) {
 			ImGui::SameLine();
 		}
 		if (ImGui::RadioButton(kPages[page], app.score_page == page)) {
@@ -3051,8 +3211,9 @@ void draw_scores (App& app) {
 	const hiscore::Tables plain = hiscore::load(hiscore::folder(app.root));
 	const hiscore::FuseTables fuse
 		= hiscore::load_fuse(hiscore::folder(app.root));
-	const hiscore::Table& table = app.score_page < 6
-		? fuse[app.score_page] : plain[app.score_page - 6];
+	const hiscore::Table& table = app.score_page < hiscore::kFuseTables
+		? fuse[app.score_page]
+		: plain[app.score_page - hiscore::kFuseTables];
 	if (ImGui::BeginTable("scores", 4)) {
 		ImGui::TableSetupColumn("Name");
 		ImGui::TableSetupColumn("Score");
@@ -3176,14 +3337,17 @@ void draw_profile (App& app) {
 	// Each filter matches its mode family under either ruleset's key - the
 	// variant name and the trainer name are the same family of game.
 	static const char* kFilters[] = {"All", "Ignition", "Blaze", "Inferno",
-		"Meltdown", "Bunker", "Duel"};
+		"Meltdown", "Bunker", "Duel", "Tempering"};
+	// Both spellings of each mode: a history file may hold games recorded
+	// before the modes were renamed. Tempering has only ever had one name.
 	static const char* kOld[] = {"", "free", "timed", "arcade", "cheese_race",
-		"cheese_survival", "versus"};
+		"cheese_survival", "versus", "temper"};
 	static const char* kNew[] = {"", "ignition", "blaze", "inferno",
-		"meltdown", "bunker", "duel"};
+		"meltdown", "bunker", "duel", "temper"};
 	static int filter = 0;
 	ImGui::SetNextItemWidth(ui(160));
-	ImGui::Combo("Mode", &filter, kFilters, 7);
+	ImGui::Combo("Mode", &filter, kFilters,
+		static_cast<int>(sizeof kFilters / sizeof kFilters[0]));
 	std::vector<const profile::GameRecord*> games;
 	for (const profile::GameRecord& record : app.history) {
 		if (filter == 0 || record.gametype == kOld[filter]
@@ -3645,6 +3809,15 @@ bool mode_button (const char* label, int mark, ImU32 tint, float width,
 				}
 			}
 			break;
+		case 5: {  // A hammer over an anvil: the blade being worked.
+			draw->AddRectFilled(ImVec2(cx - r, mid + r * 0.35f),
+				ImVec2(cx + r, mid + r * 0.8f), tint, ui(1));
+			draw->AddRectFilled(ImVec2(cx - r * 0.5f, mid - r),
+				ImVec2(cx + r * 0.95f, mid - r * 0.5f), tint, ui(1));
+			draw->AddLine(ImVec2(cx - r * 0.25f, mid - r * 0.5f),
+				ImVec2(cx - r * 0.6f, mid + r * 0.3f), tint, ui(3));
+			break;
+		}
 		default:  // Crossed blades.
 			draw->AddLine(ImVec2(cx - r, mid - r), ImVec2(cx + r, mid + r),
 				tint, ui(3));
@@ -3902,6 +4075,12 @@ void draw_menus (App& app) {
 				app.mode_popup = 2;
 			}
 			ImGui::TextDisabled("Fight the bot, rank D through X.");
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			if (mode_button("Tempering", 5, IM_COL32(214, 128, 62, 255), ui(280), ui(44))) {
+				start_game(app, 6);
+			}
+			ImGui::TextDisabled("Twelve heats of ten lines. Every heat the");
+			ImGui::TextDisabled("forge tightens and offers you a temper.");
 			ImGui::Dummy(ImVec2(0.f, ui(6)));
 			if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
 				app.screen = Screen::Menu;
@@ -3909,11 +4088,73 @@ void draw_menus (App& app) {
 			ImGui::End();
 		}
 		ImGui::PopStyleVar();
+	} else if (app.screen == Screen::Game && !app.offers.empty()) {
+		// The draft. The board is frozen behind it and the fuse with it, so
+		// this is the one screen in the game that is allowed to take its
+		// time - but the pick itself is one press, because ten lines from
+		// now there will be another one.
+		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+		ImGui::Begin("temper", nullptr, box);
+		forge_panel(app);
+		ImGui::PushFont(app.fonts.head);
+		ImGui::Text("HEAT %d of %d", app.heat + 1, temper::kHeats);
+		ImGui::PopFont();
+		ImGui::TextDisabled("The forge tightens. Take something with you.");
+		ImGui::Dummy(ImVec2(0.f, ui(6)));
+		const float card_w = kMobile ? ui(300) : ui(220);
+		for (size_t at = 0; at < app.offers.size(); ++at) {
+			const temper::Temper* card = temper::find(app.offers[at]);
+			if (card == nullptr) {
+				continue;
+			}
+			// Side by side on a desk, stacked on a phone, where three
+			// columns of readable text will not fit across the screen.
+			if (!kMobile && at > 0) {
+				ImGui::SameLine();
+			}
+			ImGui::PushID(static_cast<int>(at));
+			ImGui::BeginGroup();
+			ImGui::PushStyleColor(ImGuiCol_Button, family_ink(card->family));
+			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(24, 16, 12, 255));
+			// The cursor the arrow keys move sits on one card; a mouse can
+			// ignore it entirely and click any of them.
+			if (static_cast<int>(at) == app.offer_at) {
+				ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(255, 236, 190, 255));
+				ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, ui(2));
+			}
+			char label[96];
+			std::snprintf(label, sizeof label, "%d  %s",
+				static_cast<int>(at) + 1, card->name);
+			if (ImGui::Button(label, ImVec2(card_w, ui(40)))) {
+				take_temper(app, static_cast<int>(at));
+			}
+			if (static_cast<int>(at) == app.offer_at) {
+				ImGui::PopStyleVar();
+				ImGui::PopStyleColor();
+			}
+			ImGui::PopStyleColor(2);
+			ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + card_w);
+			ImGui::TextDisabled("%s", card->text);
+			ImGui::PopTextWrapPos();
+			ImGui::EndGroup();
+			ImGui::PopID();
+		}
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		ImGui::TextDisabled("%s", kMobile
+			? "Tap one." : "1 2 3, or the arrows and Enter.");
+		if (!app.tempers.empty()) {
+			ImGui::Separator();
+			ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
+		}
+		ImGui::End();
 	} else if (app.screen == Screen::Game && app.paused) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 		ImGui::Begin("paused", nullptr, box);
 		forge_panel(app);
 		ImGui::TextUnformatted("Paused");
+		if (app.mode == 6 && !app.tempers.empty()) {
+			ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
+		}
 		ImGui::Spacing();
 		if (ImGui::Button("Resume", ImVec2(ui(240), 0))) {
 			app.paused = false;
@@ -3956,7 +4197,8 @@ void draw_menus (App& app) {
 			const char* verdict = app.versus.has_value()
 				? (app.versus->player_wins > app.versus->bot_wins
 					? "You win the match!" : "You lose the match")
-				: (won ? "Finished!" : "Game over");
+				: (app.mode == 6 ? (won ? "Forged!" : "Went cold")
+					: (won ? "Finished!" : "Game over"));
 			ImFont* font = app.fonts.head;
 			ImDrawList* draw = ImGui::GetWindowDrawList();
 			const ImVec2 at = ImGui::GetCursorScreenPos();
@@ -3982,11 +4224,23 @@ void draw_menus (App& app) {
 				bot::ranks()[app.versus->rank_index].name,
 				app.versus->first_to);
 		}
-		if (won) {
+		if (won && app.mode == 3) {
 			const double seconds = app.session->sim().frame() * 0.02;
 			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
 				"All the cheese in %d:%05.2f",
 				static_cast<int>(seconds) / 60, std::fmod(seconds, 60.));
+		}
+		if (app.mode == 6) {
+			// How far the run got, and what it was carrying when it did -
+			// two runs of the same score are not the same run.
+			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
+				won ? "All twelve heats" : "Heat %d of %d",
+				std::min(app.heat + 1, temper::kHeats), temper::kHeats);
+			if (!app.tempers.empty()) {
+				ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui(300));
+				ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
+				ImGui::PopTextWrapPos();
+			}
 		}
 		ImGui::Spacing();
 		// The two numbers a finished run is about. Everything else it
@@ -4134,7 +4388,8 @@ std::string screen_shot_key (const App& app) {
 			return app.mode_popup == 1 ? "modes_cheese"
 				: app.mode_popup == 2 ? "modes_versus" : "modes";
 		case Screen::Game:
-			return app.paused ? "pause"
+			return !app.offers.empty() ? "temper"
+				: app.paused ? "pause"
 				: app.versus.has_value() ? "versus" : "game";
 		case Screen::Over: return "over";
 		case Screen::Replays: return "replays";
@@ -4149,7 +4404,7 @@ std::string screen_shot_key (const App& app) {
 	return "screen";
 }
 
-constexpr int kTour = 16;
+constexpr int kTour = 17;
 
 void tour_screen (App& app, int stop) {
 	switch (stop) {
@@ -4163,7 +4418,7 @@ void tour_screen (App& app, int stop) {
 			break;
 		case 2:
 			// The trainer file's side of the screen, so both loaders draw.
-			app.score_page = 8;
+			app.score_page = hiscore::kFuseTables + 1;
 			app.screen = Screen::Scores;
 			break;
 		case 3:
@@ -4229,6 +4484,16 @@ void tour_screen (App& app, int stop) {
 		case 14:
 			app.career = career::load(career::path(app.root));
 			app.screen = Screen::Career;
+			break;
+		case 15:
+			// The draft, over a real game. The masher cannot reach this one
+			// on its own - random presses do not clear ten lines - so the
+			// tour starts a Tempering run and puts its first heat's cards
+			// on the table.
+			start_game(app, 6);
+			app.offers = temper::offer(app.temper_seed, 0, {});
+			app.offer_at = 0;
+			app.offer_shown = 0;
 			break;
 		default:
 			app.screen = Screen::Menu;
@@ -4408,7 +4673,7 @@ int run (bool smoke, long smoke_frames) {
 		// proven headlessly, not only free's.
 		int mode = 0;
 		if (const char* forced = std::getenv("FORCETRIS_SMOKE_MODE")) {
-			mode = std::clamp(std::atoi(forced), 0, 5);
+			mode = std::clamp(std::atoi(forced), 0, 6);
 		}
 		if (mode == 4) {
 			app.config.cheese_period = 150;
@@ -4449,6 +4714,18 @@ int run (bool smoke, long smoke_frames) {
 			// the run goes through the binding lookup and not around it. The
 			// point is that the whole loop runs, draws and shuts down without
 			// a display or a player.
+			// The draft answers to keys the masher does not have, so a
+			// scripted Tempering run would sit on the first card forever.
+			// It waits a dozen frames before choosing, which is also long
+			// enough for the screenshot tour to catch the screen.
+			if (!app.offers.empty()) {
+				if (++app.offer_shown > 10) {
+					take_temper(app,
+						static_cast<int>(mash() % app.offers.size()));
+				}
+				behind = 0.02;
+				++frames;
+			}
 			if (frames % 3 == 0) {
 				const auto& actions = all_actions();
 				const auto& codes = app.config.keys[actions[mash() % actions.size()].id];
@@ -4479,7 +4756,8 @@ int run (bool smoke, long smoke_frames) {
 		while (behind >= 0.02 || (app.input_nudge && behind >= 0.0)) {
 			behind -= 0.02;
 			app.input_nudge = false;
-			if (app.screen == Screen::Game && !app.paused && !app.editing) {
+			if (app.screen == Screen::Game && !app.paused && !app.editing
+				&& app.offers.empty()) {
 				if (app.countdown > 0) {
 					// The pre-game breath: both boards stand frozen - the
 					// versus step is skipped too, so the bot waits with you.
@@ -4508,6 +4786,11 @@ int run (bool smoke, long smoke_frames) {
 					}
 				} else if (!live) {
 					end_game(app);
+				} else if (app.mode == 6) {
+					// A heat is ten lines. Crossing one is where the forge
+					// tightens the fuse, so it is also where it hands over a
+					// tool: the board waits until a card is taken.
+					offer_tempers(app);
 				}
 				++frames;
 			} else if (app.screen == Screen::Viewer && app.viewing.has_value()) {
@@ -4678,6 +4961,15 @@ int run (bool smoke, long smoke_frames) {
 						IM_COL32(255, 214, 96, 255));
 				}
 			}
+			if (app.mode == 6) {
+				// How far through the twelve, over the well, where the
+				// clock would be in a mode that had one.
+				char heat[32];
+				std::snprintf(heat, sizeof heat, "HEAT %d / %d",
+					std::min(app.heat + 1, temper::kHeats), temper::kHeats);
+				draw_label(heat, kBoardX + ui(4), kBoardY - ui(24),
+					IM_COL32(255, 196, 120, 255));
+			}
 			if (!kPortrait) {
 				// A phone held upright has no margin for the stat panels;
 				// the board and the fight are the screen.
@@ -4774,7 +5066,8 @@ int run (bool smoke, long smoke_frames) {
 				}
 			} else if (toured > 0 && toured <= kTour
 				&& app.screen != Screen::Viewer
-				&& (app.screen != Screen::Game || app.paused || app.editing)) {
+				&& (app.screen != Screen::Game || app.paused || app.editing
+					|| !app.offers.empty())) {
 				if (++tour_frames >= 6) {
 					tour_frames = 0;
 					app.screen = Screen::Over;
@@ -4782,6 +5075,9 @@ int run (bool smoke, long smoke_frames) {
 					app.show_settings = false;
 					app.editing = false;
 					app.paused = false;
+					// A draft left on the table would freeze every game
+					// after this stop.
+					app.offers.clear();
 				}
 			}
 			if (frames >= smoke_frames) {

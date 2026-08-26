@@ -76,6 +76,33 @@ Sim::Sim (const SimConfig& config, std::vector<int> pieces)
 	piece_.form = GARBAGE;
 }
 
+void Sim::retune (const SimConfig& rules) {
+	// Field by field rather than a whole-struct copy: the point of this
+	// function is what it does *not* take, and a copy would silently start
+	// taking new fields the day one is added.
+	config_.spin_rule = rules.spin_rule;
+	config_.cleartype = rules.cleartype;
+	config_.fuse_base = rules.fuse_base;
+	config_.fuse_min = rules.fuse_min;
+	config_.fuse_decay = rules.fuse_decay;
+	config_.fuse_bank_cap = rules.fuse_bank_cap;
+	config_.fuse_draw_cap = rules.fuse_draw_cap;
+	config_.fuse_refuel_line = rules.fuse_refuel_line;
+	config_.fuse_refuel_attack = rules.fuse_refuel_attack;
+	config_.flash_frac = rules.flash_frac;
+	config_.flash_floor = rules.flash_floor;
+	config_.flow_gain_line = rules.flow_gain_line;
+	config_.flow_gain_attack = rules.flow_gain_attack;
+	config_.flow_flash_gain = rules.flow_flash_gain;
+	config_.flow_burn_loss = rules.flow_burn_loss;
+	config_.overdrive_secs = rules.overdrive_secs;
+	config_.overdrive_mult = rules.overdrive_mult;
+	// The bank may now hold less than it is holding; a temper that shrinks
+	// the reservoir takes the overflow with it rather than leaving a value
+	// the sim's own ceiling says is impossible.
+	fuse_bank_ = std::min(fuse_bank_, config_.fuse_bank_cap);
+}
+
 void Sim::cut_das () {
 	if (dcd_frames_ > 0 && das_charged_) {
 		shift_frame_ = dcd_frames_ + 1;
@@ -977,6 +1004,15 @@ bool Sim::step_frame (const Event* events, size_t count) {
 		ramp_arcade();
 	} else if (config_.gametype == 3 || config_.gametype == 4) {
 		eval_cheese();
+	}
+	// A finish line, if this game has one: crossed once the clearer has
+	// settled, the way the cheese race waits for the last cascade to fall
+	// before calling itself finished.
+	if (config_.line_quota > 0 && !won_ && !lost_ && !clearing_
+		&& lines_cleared_ >= config_.line_quota) {
+		won_ = true;
+		loss_frame_ = frame_;
+		piece_elapsed_.reset();
 	}
 	// Overdrive burns down in real frames, clearing or not; when it gutters
 	// out the gauge starts over from empty.

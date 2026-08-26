@@ -60,6 +60,11 @@ struct Meta {
 	double flow_gain_line = 0., flow_gain_attack = 0.;
 	double flow_lock_gain = 0., flow_flash_gain = 0., flow_burn_loss = 0.;
 	double overdrive_secs = 0., overdrive_mult = 0.;
+	// The tempers the run drafted, in the order they were taken. Written
+	// only by Tempering, where the numbers above are the run's *starting*
+	// rules and this is what happened to them; every other file leaves the
+	// key out entirely.
+	std::vector<std::string> tempers;
 };
 
 struct Placement {
@@ -167,6 +172,10 @@ class Recorder {
 public:
 	void begin (const Meta& meta);
 	void add (Placement place) { placements_.push_back(std::move(place)); }
+	// One temper, as a Tempering run drafts it. The meta is stamped at the
+	// start of a game, but a draft happens in the middle of one, so this is
+	// the one thing about the run's rules the recorder learns as it goes.
+	void drafted (const std::string& id) { meta_.tempers.push_back(id); }
 	size_t count () const { return placements_.size(); }
 	// Stamp the totals and hand back the replay, or nothing if the game was
 	// too short to keep. `keep_short` waives the length gate - for a side

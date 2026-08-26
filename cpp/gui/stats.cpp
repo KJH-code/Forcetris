@@ -1,5 +1,6 @@
 #include "stats.hpp"
 
+#include <algorithm>
 #include <cstdio>
 
 #include "forcetris/attack.hpp"
@@ -58,6 +59,17 @@ const std::vector<StatDef>& all_stats () {
 				return count(s.sim().board().garbage_rows());
 			}
 			return std::string("-");
+		}},
+		{"heat", "Heat", [] (const Session& s) {
+			// Tempering counts its run in heats of ten lines; every other
+			// mode has no finish line to count towards.
+			const int quota = s.sim().config().line_quota;
+			if (quota <= 0) {
+				return std::string("-");
+			}
+			const int per = std::max(1, quota / 12);
+			const int done = std::min(12, s.sim().lines_cleared() / per + 1);
+			return std::to_string(done) + " / 12";
 		}},
 		{"pieces", "Pieces", [] (const Session& s) { return count(s.pieces()); }},
 		{"pps", "PPS", [] (const Session& s) {

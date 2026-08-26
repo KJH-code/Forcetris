@@ -43,6 +43,34 @@ std::string packed (const std::array<Table, N>& tables) {
 	return out;
 }
 
+// The variant file's reader, which is not the SFH one's. The SFH file is
+// byte-compatible with the Python game and its length is part of that
+// contract, so unpack below stays strict. This one only has to be
+// compatible with our own older selves: a build that adds a table writes a
+// longer file than the one already on disk, and refusing the short file
+// would silently reset every variant score there is. So it reads as many
+// whole tables as the file actually holds and leaves the rest as the
+// caller seeded them.
+template <size_t N>
+bool unpack_upto (const std::string& data, std::array<Table, N>& tables) {
+	const size_t bytes = kPerTable * kRecordBytes;
+	const size_t held = data.size() / bytes;
+	if (held == 0 || held > N || data.size() % bytes != 0) {
+		return false;
+	}
+	size_t at = 0;
+	for (size_t index = 0; index < held; ++index) {
+		for (Entry& entry : tables[index]) {
+			std::copy(data.begin() + at, data.begin() + at + 8, entry.name.begin());
+			entry.score = get_be(data, at + 8, 8);
+			entry.lines = static_cast<std::uint32_t>(get_be(data, at + 16, 4));
+			entry.timer = static_cast<std::uint32_t>(get_be(data, at + 20, 4));
+			at += kRecordBytes;
+		}
+	}
+	return true;
+}
+
 template <size_t N>
 bool unpack (const std::string& data, std::array<Table, N>& tables) {
 	if (data.size() != N * kPerTable * kRecordBytes) {
@@ -190,7 +218,8 @@ int place (const Tables& tables, const std::string& gametype, const Entry& probe
 
 int fuse_table_for (const std::string& gametype) {
 	static const char* kNames[kFuseTables]
-		= {"ignition", "blaze", "inferno", "meltdown", "bunker", "duel"};
+		= {"ignition", "blaze", "inferno", "meltdown", "bunker", "duel",
+			"temper"};
 	for (int at = 0; at < kFuseTables; ++at) {
 		if (gametype == kNames[at]) {
 			return at;
@@ -208,13 +237,14 @@ FuseTables fresh_fuse () {
 FuseTables load_fuse (const std::string& folder) {
 	FuseTables tables = fresh_fuse();
 	std::string data;
-	if (read_file(fuse_data_path(folder), data) && unpack(data, tables)) {
+	if (read_file(fuse_data_path(folder), data) && unpack_upto(data, tables)) {
 		return tables;
 	}
-	if (read_file(fuse_back_path(folder), data) && unpack(data, tables)) {
+	tables = fresh_fuse();
+	if (read_file(fuse_back_path(folder), data) && unpack_upto(data, tables)) {
 		return tables;
 	}
-	return tables;
+	return fresh_fuse();
 }
 
 bool submit_fuse (const std::string& folder, const std::string& gametype,

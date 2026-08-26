@@ -201,6 +201,16 @@ Meta read_meta (const json& data) {
 		meta.flow_burn_loss = num_or(data, "flow_burn_loss", 0.);
 		meta.overdrive_secs = num_or(data, "overdrive_secs", 0.);
 		meta.overdrive_mult = num_or(data, "overdrive_mult", 0.);
+		// The draft, if this was one. Read tolerantly: an id a future build
+		// adds is kept as text, and the screens that cannot name it simply
+		// do not draw it.
+		if (data.contains("tempers") && data["tempers"].is_array()) {
+			for (const json& card : data["tempers"]) {
+				if (card.is_string()) {
+					meta.tempers.push_back(card.get<std::string>());
+				}
+			}
+		}
 	}
 	return meta;
 }
@@ -242,6 +252,9 @@ json write_meta (const Meta& meta) {
 		out["flow_burn_loss"] = meta.flow_burn_loss;
 		out["overdrive_secs"] = meta.overdrive_secs;
 		out["overdrive_mult"] = meta.overdrive_mult;
+		if (!meta.tempers.empty()) {
+			out["tempers"] = meta.tempers;
+		}
 	}
 	return out;
 }

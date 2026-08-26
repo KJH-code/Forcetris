@@ -58,11 +58,17 @@ bool submit (const std::string& folder, const std::string& gametype, Entry entry
 int place (const Tables& tables, const std::string& gametype, const Entry& probe);
 
 // The variant's own tables: the same record codec in its own file
-// (fusescore.dat, mirrored like the SFH one), six tables in file order -
-// ignition, blaze, inferno, meltdown, bunker, duel. A fuse-rules score
-// never touches the trainer's byte-compatible file, and the trainer's
-// never touches this one.
-constexpr int kFuseTables = 6;
+// (fusescore.dat, mirrored like the SFH one), in file order - ignition,
+// blaze, inferno, meltdown, bunker, duel, temper. A fuse-rules score never
+// touches the trainer's byte-compatible file, and the trainer's never
+// touches this one.
+//
+// This count may grow, and a file written before it grew is shorter than
+// the one this build writes. Unlike the SFH file - whose length is part of
+// its compatibility with the Python game - the variant file is read as far
+// as it goes and the tables past its end start empty, so adding a mode
+// never costs anyone the scores they already had.
+constexpr int kFuseTables = 7;
 using FuseTables = std::array<Table, kFuseTables>;
 
 // The table index for a variant gametype name, or -1 for anything else -

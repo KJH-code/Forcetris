@@ -38,6 +38,7 @@ add_library(forcetris_core
 	src/profile.cpp
 	src/career.cpp
 	src/munch.cpp
+	src/temper.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
 # nlohmann/json.hpp, vendored, for the replay files.
@@ -137,6 +138,10 @@ target_compile_options(munchcheck PRIVATE ${FORCETRIS_WARNINGS})
 add_executable(profilecheck tests/profilecheck.cpp)
 target_link_libraries(profilecheck PRIVATE forcetris_core)
 target_compile_options(profilecheck PRIVATE ${FORCETRIS_WARNINGS})
+
+add_executable(tempercheck tests/tempercheck.cpp)
+target_link_libraries(tempercheck PRIVATE forcetris_core)
+target_compile_options(tempercheck PRIVATE ${FORCETRIS_WARNINGS})
 
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
@@ -260,6 +265,10 @@ add_test(NAME munch_check COMMAND munchcheck)
 # The profile history: append, load, order, and the tolerance that lets
 # newer builds add keys.
 add_test(NAME profile_check COMMAND profilecheck)
+# The draft: every temper moves the numbers it claims and no others, the
+# roll repeats under a seed and respects the caps, a retune lands on the
+# next piece without touching the handling, and a run stops on its quota.
+add_test(NAME temper_check COMMAND tempercheck)
 if (SDL2_FOUND)
 	# The generated half of the audio, rendered and graded: silence on
 	# request, a room that tracks the board, no clipping, a cue pool that

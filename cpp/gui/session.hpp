@@ -42,6 +42,11 @@ public:
 	// The sound cues fired since the last drain, in firing order.
 	std::vector<std::string> take_cues ();
 
+	// A temper the run just drafted: retunes the sim from the next piece on,
+	// and writes the pick into the recording so the file says what the run
+	// was actually played under.
+	void draft (const SimConfig& rules, const std::string& id);
+
 	// The finished recording, or nothing for a game too short to keep -
 	// unless `keep_short` waives the gate, for a side embedded in another
 	// file rather than saved as one.

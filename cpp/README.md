@@ -21,6 +21,7 @@ What is here:
 | `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
 | `rating` | An estimated Tetra League standing - Glicko, TR by the official conversion formula, rank - interpolated from TETR.IO's own reported per-rank averages, and labelled the estimate it is |
+| `temper` | The draft mode's pool: fifteen tempers, what each one does to the rules, and the weighted roll that offers three of them a heat |
 | `munch` | MinoMuncher's statistics re-derived over this game's own records (formulas from the MIT-licensed minomuncher-core): the nine clear buckets, spin efficiencies, the three-way attack-per-line split, burst and plonk PPS by Gaussian mixture, the four-deep well rule, the surge accounting and the cheesiness sigmoid - scored over raw attack, a trainer having no multiplayer wire |
 | `profile` | The history: one tolerant key=value line per finished game, appended forever, read back for the profile screen's aggregates and growth charts |
 | `bot` | The versus opponent: a full-reachability search over the real kick tables - so its tucks and spins are exactly the game's - an attack-and-shape evaluation, a rank ladder paced to TETR.IO's own per-rank speeds, and the driver that types the plan into a sim one key at a time |
@@ -204,7 +205,34 @@ not the loop but the handling, so `feel_check` counts it: the frames
 between a hard drop and the next piece a hand can move, the frames a held
 soft drop takes to reach the floor, and the frames a held direction takes
 to reach the wall - measured on the config the game ships with, so
-"sluggish" is a number that either moved or did not. Two more modes are this side's own, with no Python counterpart:
+"sluggish" is a number that either moved or did not.
+
+**Tempering** is the variant's own run mode, and the one place the rules
+are not fixed. A run is twelve heats of ten lines. Every heat the forge
+tightens the fuse - which it already did - and offers three tempers, of
+which one is taken: a longer wick, a deeper refuel bank, two more seconds
+of Overdrive, doubled Flow bought with a shorter fuse, or one of the two
+rare cards that change what a clear or a spin *is*. The board waits while
+the cards are up, so the fuse waits too; the pick itself is one press
+(`1` `2` `3`, or the arrows and Enter). Clear the twelfth heat and the run
+is **Forged**; top out before it and the run is what it got to.
+
+Every temper is one or two numbers out of `SimConfig`, which is what makes
+the mode cheap and honest: the sim reads its fuse and Flow values live at
+every use rather than deriving anything from them at construction, so
+`Sim::retune` replaces them mid-run and the next piece is dealt the new
+schedule. Handling is deliberately not among the fields it copies - a
+draft may change the game, never the pad. The pool, the weighted roll and
+the arithmetic live in the core (`temper`), so a replay records the build
+a run was played with. A run's score goes to Tempering's own high score
+table. `temper_check` grades the whole of it: every card against the
+numbers it claims *and* against the ones it must leave alone (the whole `SimConfig` is compared field by field, so a
+card that quietly moves something it never declared is a failure), the
+roll's repeatability and its caps, a retune landing on the next piece
+without disturbing the handling, and a run driven all the way to its
+twelfth heat.
+
+Two more modes are this side's own, with no Python counterpart:
 a cheese race - ten, eighteen or a hundred rows of holey garbage, dug as
 fast as you can, the clock stopping the moment the last of it is gone -
 and cheese survival, where the floor rises on a clock you pick (every
