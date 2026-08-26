@@ -1333,6 +1333,31 @@ void draw_label (const char* text, float x, float y, ImU32 color = IM_COL32(176,
 	ImGui::GetBackgroundDrawList()->AddText(ImVec2(x, y), color, text);
 }
 
+// How hot the room is: the Flow gauge, the trouble the board is in, and
+// whether Overdrive is lit. The backdrop paints from it and the mixer plays
+// from it, so what is on the screen and what is in the speakers can never
+// drift apart - they read the same board at the same moment.
+struct Room {
+	double heat = 0.;      // Flow, 0 to 1.
+	double danger = 0.;    // Fuse spent, garbage massing, stack near the sky.
+	double glare = 0.;     // heat with Overdrive banked on top, 0 to 1.4.
+	bool burning = false;  // Overdrive.
+	bool playing = false;  // A live board, as opposed to a menu.
+};
+
+Room room_of (App& app) {
+	Room room;
+	room.playing = app.screen == Screen::Game && app.session.has_value();
+	if (room.playing) {
+		const Sim& sim = app.session->sim();
+		room.heat = sim.config().fuse ? sim.flow() / 100. : 0.;
+		room.danger = danger_of(sim);
+		room.burning = sim.overdrive();
+	}
+	room.glare = std::clamp(room.heat + (room.burning ? 0.6 : 0.), 0., 1.4);
+	return room;
+}
+
 // The backdrop: a warm vertical gradient - lit faintly from above, the
 // way a room lit by a fire is - with slow embers drifting up behind the
 // menu screens. The game screens keep the gradient and skip the embers;
@@ -1353,17 +1378,12 @@ void draw_backdrop (App& app) {
 	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
 
 	// What the room is doing depends on what the board is doing.
-	const bool playing = app.screen == Screen::Game && app.session.has_value();
-	double heat = 0.;
-	double danger = 0.;
-	bool burning = false;
-	if (playing) {
-		const Sim& sim = app.session->sim();
-		heat = sim.config().fuse ? sim.flow() / 100. : 0.;
-		danger = danger_of(sim);
-		burning = sim.overdrive();
-	}
-	const double glare = std::clamp(heat + (burning ? 0.6 : 0.), 0., 1.4);
+	const Room room = room_of(app);
+	const bool playing = room.playing;
+	const double heat = room.heat;
+	const double danger = room.danger;
+	const bool burning = room.burning;
+	const double glare = room.glare;
 
 	// The fire the whole room stands over: a molten horizon along the
 	// bottom, banked up brighter as the board gets into trouble.
@@ -1928,6 +1948,17 @@ void draw_settings (App& app) {
 				app.config.music_volume = music / 100.f;
 				app.audio.set_music_volume(app.config.music_volume);
 			}
+			const char* const tracks[] = {"Forge", "Classic", "Off"};
+			if (ImGui::Combo("Track", &app.config.music_mode, tracks, 3)) {
+				app.audio.set_music_mode(
+					static_cast<Audio::Music>(app.config.music_mode));
+			}
+			ImGui::TextDisabled("%s", "Forge is generated as you play");
+			ImGui::Spacing();
+			if (ImGui::Checkbox("Furnace ambience", &app.config.ambience)) {
+				app.audio.set_ambience(app.config.ambience);
+			}
+			ImGui::TextDisabled("%s", "the room's roar, under Music");
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Keys")) {
@@ -3897,6 +3928,8 @@ int run (bool smoke, long smoke_frames) {
 		app.audio.open(app.root);
 		app.audio.set_sfx_volume(app.config.sfx_volume);
 		app.audio.set_music_volume(app.config.music_volume);
+		app.audio.set_music_mode(static_cast<Audio::Music>(app.config.music_mode));
+		app.audio.set_ambience(app.config.ambience);
 	}
 	float scale = 1.f;
 	float dpi = 0.f;
@@ -4128,6 +4161,14 @@ int run (bool smoke, long smoke_frames) {
 		SDL_SetRenderDrawColor(app.renderer, 14, 11, 9, 255);
 		SDL_RenderClear(app.renderer);
 		draw_backdrop(app);
+		{
+			// The room, handed to the mixer from the same reading the
+			// backdrop just painted with: the furnace bed and the score's
+			// layers rise and fall with the picture, not beside it.
+			const Room room = room_of(app);
+			app.audio.set_room(static_cast<float>(room.heat),
+				static_cast<float>(room.danger), room.burning, room.playing);
+		}
 		if (app.session.has_value()
 			&& (app.screen == Screen::Game || app.screen == Screen::Over)) {
 			// The shudder: the whole board pane jolts a few pixels while a

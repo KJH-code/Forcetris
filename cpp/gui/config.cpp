@@ -136,6 +136,8 @@ Config load_config (const std::string& path) {
 		else if (key == "firstto") in >> config.first_to;
 		else if (key == "sfx_volume") in >> config.sfx_volume;
 		else if (key == "music_volume") in >> config.music_volume;
+		else if (key == "music_mode") in >> config.music_mode;
+		else if (key == "ambience") { int flag = 1; in >> flag; config.ambience = flag != 0; }
 		else if (key == "preset") in >> config.preset;
 		else if (key == "key") {
 			// The whole line is that action's binding: an action listed with
@@ -196,6 +198,7 @@ Config load_config (const std::string& path) {
 	config.bot_rank = std::clamp<int>(config.bot_rank, 0,
 		static_cast<int>(bot::ranks().size()) - 1);
 	config.first_to = std::clamp(config.first_to, 1, 3);
+	config.music_mode = std::clamp(config.music_mode, 0, 2);
 	return config;
 }
 
@@ -227,6 +230,8 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "firstto " << config.first_to << "\n";
 	out << "sfx_volume " << config.sfx_volume << "\n";
 	out << "music_volume " << config.music_volume << "\n";
+	out << "music_mode " << config.music_mode << "\n";
+	out << "ambience " << (config.ambience ? 1 : 0) << "\n";
 	out << "preset " << config.preset << "\n";
 	for (const ActionDef& action : all_actions()) {
 		out << "key " << action.id;

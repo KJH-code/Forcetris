@@ -73,6 +73,11 @@ struct Config {
 	// Volumes, as fractions, matching the Python game's defaults.
 	float sfx_volume = 1.f;
 	float music_volume = 1.f;
+	// What plays behind the game: 0 the generated Forge score, 1 the classic
+	// chiptune track, 2 nothing. Matches Audio::Music.
+	int music_mode = 0;
+	// The furnace bed under everything, scaled by the music volume.
+	bool ambience = true;
 
 	// The stat panels, keyed by the stat ids stats.cpp registers.
 	std::map<std::string, StatSpot> stats;

@@ -398,17 +398,28 @@ hundred — the number still moves the way it would, it just has no digging in i
 | perfect | The placement emptied the board |
 | gameover | The stack topped out |
 
-`drop` and `forced` are deliberately unalike — a low sawtooth buzz against the hard
-drop's thud — because the whole point is hearing, without looking, that you ran out of
-time rather than chose to place.
+`drop` and `forced` are deliberately unalike — a struck bar against the hard drop's
+thud — because the whole point is hearing, without looking, that you ran out of time
+rather than chose to place.
 
 The combo ladder is why there are ten of one cue: pitch is the only channel that says
 *how long* the run is without asking you to look away from the stack. It stops climbing
-at the tenth rung.
+at the tenth rung, and each rung is normalised to a target loudness before the ramp is
+applied, so the chain sounds like it is winning rather than like the partials happened
+to line up.
+
+Everything is struck metal in a stone room, in three tiers. `move`, `rotate`, `hold`,
+`lock`, `finesse` and `fusewarn` fire several times a second, so they keep exactly the
+lengths and volumes they always had and are written mono — only the tone is warmed.
+`drop`, `hit`, `burn` and `forced` get a sub layer and a small room. The clears, the
+spins, Overdrive, the combo ladder and game over get inharmonic bell partials, a sub,
+stereo width and a tail that rings out.
 
 The effects are synthesised, not sampled, so the repository carries no third-party
 audio. `tools/make_sounds.py` regenerates every file from the parameters at the bottom
-of that script, so retuning a cue means changing a number and re-running it:
+of that script — the synthesiser above them is one-pole filters, Schroeder combs and
+Chowning's bell ratios, standard library only — so retuning a cue means changing a
+number and re-running it:
 
 ```bash
 python tools/make_sounds.py

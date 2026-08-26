@@ -4,6 +4,18 @@ The effects are generated rather than sampled so that the repository carries no
 third-party audio and every cue can be retuned by editing a number here and
 re-running. Standard library only.
 
+The voice is a forge: struck metal, a room with stone walls, and weight
+underneath. Three tiers, and the tier decides how much of that a cue gets.
+
+  tight   move, rotate, hold, lock, finesse, fusewarn
+          These fire several times a second. They stay as short and as quiet
+          as they always were - only the tone is warmed, never the length.
+          Written mono, because width on a 35ms tick is smear, not space.
+  weight  drop, hit, burn, forced
+          A body underneath and a small room around it. Something landed.
+  grand   the clears, the spins, Overdrive, the combo ladder, game over
+          Bell partials, sub, and a tail that rings out into the room.
+
 Run with: python tools/make_sounds.py
 """
 import os
@@ -46,6 +58,9 @@ def tone (freq, dur, vol=0.4, shape='square', freq_end=None, attack=0.01, releas
             sample = 1. if math.sin(phase) >= 0. else -1.
         elif shape == 'saw':
             sample = 2. * ((phase / (2. * math.pi)) % 1.) - 1.
+        elif shape == 'tri':
+            ramp = (phase / (2. * math.pi)) % 1.
+            sample = 4. * abs(ramp - 0.5) - 1.
         elif shape == 'noise':
             sample = rng.uniform(-1., 1.)
         else:
@@ -74,18 +89,193 @@ def chain (*parts):
     return out
 
 
+def after (dur, samples):
+    """The same track, starting `dur` seconds in."""
+    return silence(dur) + list(samples)
+
+
+# --- The room ---------------------------------------------------------------
+# Everything below is one-pole filters and delay lines, which is all a forge
+# needs: something to eat the chip-era top end, and something to give the
+# strike a wall to come back off.
+
+def lowpass (samples, cutoff, poles=1):
+    """A one-pole low pass, run `poles` times. Takes the glare off a square."""
+    coeff = math.exp(-2. * math.pi * cutoff / RATE)
+    out = list(samples)
+    for _ in range(poles):
+        held = 0.
+        for i, sample in enumerate(out):
+            held = sample * (1. - coeff) + held * coeff
+            out[i] = held
+    return out
+
+
+def highpass (samples, cutoff):
+    """A one-pole high pass. Keeps sub layers from muddying each other."""
+    coeff = math.exp(-2. * math.pi * cutoff / RATE)
+    out = [0.] * len(samples)
+    last_in = 0.
+    last_out = 0.
+    for i, sample in enumerate(samples):
+        last_out = coeff * (last_out + sample - last_in)
+        last_in = sample
+        out[i] = last_out
+    return out
+
+
+def comb (samples, delay, feedback):
+    """A feedback comb: the same sound arriving again, quieter, forever."""
+    out = list(samples)
+    buffer = [0.] * delay
+    at = 0
+    for i, sample in enumerate(out):
+        echo = buffer[at]
+        buffer[at] = sample + echo * feedback
+        at = (at + 1) % delay
+        out[i] = echo
+    return out
+
+
+def allpass (samples, delay, feedback):
+    """Smears the comb echoes so they read as a room and not as a slapback."""
+    out = list(samples)
+    buffer = [0.] * delay
+    at = 0
+    for i, sample in enumerate(out):
+        held = buffer[at]
+        buffer[at] = sample + held * feedback
+        at = (at + 1) % delay
+        out[i] = held - sample * feedback
+    return out
+
+
+# Schroeder's delay lengths, mutually prime so the echoes never line up.
+COMB_DELAYS = (1116, 1188, 1277, 1356)
+ALLPASS_DELAYS = (556, 441)
+
+
+def room (samples, size=1., decay=0.72, wet=0.34, tail=0.55, damp=5200.):
+    """The forge hall around a sound: four combs, two allpasses, a stone roof.
+
+    `tail` is how much silence to hang off the end for the room to ring into;
+    trim() shaves off whatever of it turns out to be inaudible.
+    """
+    work = list(samples) + silence(tail)
+    wash = [0.] * len(work)
+    for delay in COMB_DELAYS:
+        part = comb(work, max(8, int(delay * size)), decay)
+        for i, sample in enumerate(part):
+            wash[i] += sample * 0.25
+    for delay in ALLPASS_DELAYS:
+        wash = allpass(wash, max(8, int(delay * size)), 0.5)
+    wash = lowpass(wash, damp)
+    return [work[i] + wash[i] * wet for i in range(len(work))]
+
+
+def normalise (samples, level, window=0.1, ceiling=0.86):
+    """Scale a track so the first `window` seconds average out to `level`.
+
+    Inharmonic partials sum differently at every fundamental, so a ladder
+    built by raising the pitch and the gain together still comes out lumpy -
+    one rung nearly twice as loud as the next by accident. Matching the
+    strike's own loudness means the ramp a rung is *given* is the ramp you
+    hear. Accepts a mono track or a (left, right) pair, which it scales
+    together so the stereo image survives. `ceiling` keeps the peak off the
+    clamp no matter what the strike measures.
+    """
+    pair = samples if isinstance(samples, tuple) else (samples,)
+    count = min(min(len(track) for track in pair), max(1, int(RATE * window)))
+    energy = sum(sample * sample for track in pair for sample in track[:count])
+    strike = math.sqrt(energy / (count * len(pair)))
+    if strike <= 0.:
+        return samples
+    scale = level / strike
+    loudest = max((abs(sample) for track in pair for sample in track), default=0.)
+    if loudest * scale > ceiling:
+        scale = ceiling / loudest
+    scaled = tuple([sample * scale for sample in track] for track in pair)
+    return scaled if isinstance(samples, tuple) else scaled[0]
+
+
+def trim (samples, floor=0.0016):
+    """Cut the dead tail. Reverb pads generously; the file need not."""
+    last = 0
+    for i, sample in enumerate(samples):
+        if abs(sample) > floor:
+            last = i
+    return samples[:last + 1] if last else samples
+
+
+# --- Voices -----------------------------------------------------------------
+
+# Chowning's bell ratios: inharmonic, which is exactly why struck metal reads
+# as metal and a stack of harmonics reads as an organ.
+BELL = (1., 2.76, 5.40, 8.93, 13.34)
+# Shorter, denser, more like a bar being hit than a bell being rung.
+ANVIL = (1., 2.32, 3.83, 6.21, 9.10)
+
+
+def metal (freq, dur, vol=0.34, ratios=BELL, release=0.45, strike=0.35):
+    """Struck metal: partials that decay faster the higher they sit, over a
+    noise strike short enough to read as the hammer rather than as hiss."""
+    layers = []
+    for step, ratio in enumerate(ratios):
+        layers.append(tone(
+            freq * ratio, dur * (1. - 0.11 * step), vol / (1.5 + 1.15 * step),
+            'sine', attack=0.002, release=release + 0.3 * step))
+    if strike > 0.:
+        layers.append(lowpass(
+            tone(freq * 4., 0.018, vol * strike, 'noise', release=1.4), 6500.))
+    return mix(*layers)
+
+
+def sub (freq, dur, vol=0.3, freq_end=None, release=0.5):
+    """The weight under a hit. Sine, low, and filtered so it stays felt."""
+    return lowpass(
+        tone(freq, dur, vol, 'sine', freq_end=freq_end, attack=0.004, release=release),
+        340.)
+
+
+def widen (samples, ms=9., spread=0.55):
+    """Haas width: the same sound reaching one ear a hair later than the other."""
+    delay = max(1, int(RATE * ms / 1000.))
+    left = list(samples) + [0.] * delay
+    right = [0.] * delay + list(samples)
+    keep = 1. - 0.5 * spread
+    bleed = 0.5 * spread
+    return (
+        [left[i] * keep + right[i] * bleed for i in range(len(left))],
+        [right[i] * keep + left[i] * bleed for i in range(len(left))],
+    )
+
+
 def write (name, samples):
+    """Write one effect. A plain list is mono; a (left, right) pair is stereo."""
+    if isinstance(samples, tuple):
+        left, right = samples
+        channels = 2
+    else:
+        left = right = samples
+        channels = 1
+    count = max(len(left), len(right))
     data = array.array('h')
-    for sample in samples:
-        # Clamp rather than wrap, so an over-enthusiastic mix distorts instead of tearing.
-        data.append(int(max(-1., min(1., sample)) * 32767))
+    for i in range(count):
+        pair = (left[i] if i < len(left) else 0.,) if channels == 1 else (
+            left[i] if i < len(left) else 0., right[i] if i < len(right) else 0.)
+        for sample in pair:
+            # Clamp rather than wrap, so an over-enthusiastic mix distorts
+            # instead of tearing.
+            data.append(int(max(-1., min(1., sample)) * 32767))
     path = os.path.join(OUT, name + '.wav')
     with wave.open(path, 'wb') as wav:
-        wav.setnchannels(1)
+        wav.setnchannels(channels)
         wav.setsampwidth(2)
         wav.setframerate(RATE)
         wav.writeframes(data.tobytes())
-    print('{:>10}.wav  {:>6} frames  {:.0f}ms'.format(name, len(data), 1000. * len(data) / RATE))
+    peak = max((abs(sample) for sample in data), default=0) / 32767.
+    print('{:>14}.wav  {:>6} frames  {:>6.0f}ms  {}  peak {:.2f}'.format(
+        name, count, 1000. * count / RATE, 'stereo' if channels == 2 else '  mono', peak))
 
 
 # How many rungs the combo ladder has before it stops climbing. Mirrored by
@@ -94,135 +284,177 @@ COMBO_STEPS = 10
 
 
 def combo_step (step):
-    """One rung of the combo ladder, a semitone higher than the last."""
-    freq = 523.25 * (2. ** (step / 12.))
-    return mix(
-        tone(freq, 0.09, 0.3, 'sine', release=0.4),
-        tone(freq * 2, 0.06, 0.1, 'sine', release=0.5),
-    )
+    """One rung of the ladder: the anvil struck a semitone higher than the
+    last, ringing a little longer each time the chain survives."""
+    freq = 261.63 * (2. ** (step / 12.))
+    grow = step / (COMBO_STEPS - 1.)
+    return normalise(widen(trim(room(
+        mix(
+            # The rung gets louder as well as higher: a chain that keeps
+            # going should sound like it is winning, not just climbing.
+            metal(freq, 0.30 + 0.34 * grow, 0.26 + 0.17 * grow, ANVIL, release=0.5),
+            sub(freq * 0.5, 0.13 + 0.06 * grow, 0.16 + 0.12 * grow, release=0.7),
+        ),
+        size=0.85, decay=0.68 + 0.14 * grow, wet=0.26 + 0.16 * grow,
+        tail=0.35 + 0.5 * grow)),
+        ms=7. + 4. * grow, spread=0.35 + 0.3 * grow), 0.075 + 0.075 * grow)
 
 
 SOUNDS = {'combo{}'.format(step + 1): (lambda s=step: combo_step(s)) for step in range(COMBO_STEPS)}
 SOUNDS.update({
-    # Shifting and rotating fire constantly, so they stay short and quiet.
-    'move': lambda: tone(180, 0.035, 0.22, 'square', release=0.6),
-    'rotate': lambda: tone(300, 0.045, 0.24, 'square', freq_end=340, release=0.5),
-    'hold': lambda: tone(260, 0.09, 0.26, 'square', freq_end=390, release=0.4),
-    # Landing under gravity is a soft click; a hard drop is a thud with some body.
+    # --- tight ---------------------------------------------------------------
+    # Shifting and rotating fire constantly, so they stay short and quiet -
+    # the same lengths and volumes they have always had. All that changed is
+    # that the square is filtered, so it reads as a tap on metal rather than
+    # as a beep.
+    'move': lambda: lowpass(tone(180, 0.035, 0.22, 'square', release=0.6), 2100., 2),
+    'rotate': lambda: lowpass(
+        tone(300, 0.045, 0.24, 'square', freq_end=340, release=0.5), 2600., 2),
+    'hold': lambda: lowpass(
+        tone(260, 0.09, 0.26, 'square', freq_end=390, release=0.4), 2400., 2),
+    # Landing under gravity is a soft click with the smallest thump under it.
     'lock': lambda: mix(
-        tone(130, 0.07, 0.28, 'square', release=0.7),
-        tone(90, 0.05, 0.12, 'noise', release=0.9),
-    ),
-    'drop': lambda: mix(
-        tone(400, 0.13, 0.38, 'square', freq_end=90, release=0.5),
-        tone(120, 0.08, 0.18, 'noise', release=0.8),
-    ),
-    # The timer firing has to be unmistakably not a hard drop you chose to make:
-    # a harsh two-tone buzz, pitched below every other cue.
-    'forced': lambda: chain(
-        tone(330, 0.085, 0.5, 'saw', release=0.15, vibrato=0.05),
-        tone(165, 0.13, 0.5, 'saw', release=0.4, vibrato=0.07),
+        lowpass(tone(130, 0.07, 0.26, 'square', release=0.7), 1800., 2),
+        lowpass(tone(90, 0.05, 0.12, 'noise', release=0.9), 3000.),
+        sub(62, 0.06, 0.16, release=0.8),
     ),
     # A wasted press. Deliberately small and dry - a fault is information, not a
     # punishment, and something triumphant here would be unbearable by the tenth
     # one. Two descending clicks, well under the clear cues so it never competes
     # with the placement that fired at the same moment.
-    'finesse': lambda: chain(
+    'finesse': lambda: lowpass(chain(
         tone(370, 0.05, 0.2, 'square', release=0.35),
         tone(247, 0.09, 0.2, 'square', release=0.45),
-    ),
-    # Clears climb; a tetris climbs further and rings out.
-    'clear': lambda: chain(
-        tone(523, 0.06, 0.34, 'sine', release=0.5),
-        tone(659, 0.06, 0.34, 'sine', release=0.5),
-        tone(784, 0.10, 0.34, 'sine', release=0.4),
-    ),
-    'tetris': lambda: chain(
-        tone(523, 0.07, 0.4, 'sine', release=0.4),
-        tone(659, 0.07, 0.4, 'sine', release=0.4),
-        tone(784, 0.07, 0.4, 'sine', release=0.4),
-        mix(
-            tone(1047, 0.22, 0.4, 'sine', release=0.3),
-            tone(1568, 0.22, 0.16, 'sine', release=0.3),
-        ),
-    ),
-    # Rarer and better than a tetris, so it rings higher and longer.
-    'perfect': lambda: chain(
-        tone(659, 0.07, 0.4, 'sine', release=0.4),
-        tone(880, 0.07, 0.4, 'sine', release=0.4),
-        tone(1047, 0.07, 0.4, 'sine', release=0.4),
-        tone(1319, 0.07, 0.4, 'sine', release=0.4),
-        mix(
-            tone(1760, 0.30, 0.36, 'sine', release=0.25),
-            tone(2637, 0.30, 0.14, 'sine', release=0.25),
-            tone(1319, 0.30, 0.22, 'sine', release=0.25),
-        ),
-    ),
-    'tspin': lambda: mix(
-        tone(784, 0.28, 0.3, 'sine', release=0.25),
-        tone(1175, 0.28, 0.2, 'sine', release=0.2),
-        tone(1568, 0.20, 0.12, 'sine', release=0.2),
-    ),
-    # Keeping a back to back going: a fifth, with a little weight under it, so it
-    # reads as separate from the clear it arrives with.
-    'b2b': lambda: chain(
-        tone(392, 0.06, 0.28, 'square', release=0.5),
-        mix(
-            tone(587, 0.20, 0.28, 'sine', release=0.3),
-            tone(294, 0.20, 0.14, 'square', release=0.4),
-        ),
-    ),
-    'gameover': lambda: chain(
-        tone(392, 0.16, 0.4, 'square', release=0.3),
-        tone(330, 0.16, 0.4, 'square', release=0.3),
-        tone(262, 0.16, 0.4, 'square', release=0.3),
-        tone(196, 0.40, 0.4, 'square', release=0.25, vibrato=0.02),
-    ),
-    # The fuse ruleset's own cues. The warning is an urgent double tick,
-    # quiet enough to fire on most pieces without wearing the ear down.
+    ), 2200., 2),
+    # The fuse running short: an urgent double tick, quiet enough to fire on
+    # most pieces without wearing the ear down. Metal, so it belongs to the
+    # forge, but tiny.
     'fusewarn': lambda: chain(
-        tone(1175, 0.030, 0.18, 'square', release=0.6),
+        metal(1175, 0.030, 0.15, ANVIL, release=1.1, strike=0.),
         silence(0.035),
-        tone(1175, 0.030, 0.18, 'square', release=0.6),
+        metal(1175, 0.030, 0.15, ANVIL, release=1.1, strike=0.),
     ),
-    # A lock inside the Flash window: one bright sparkle, over in a blink.
-    'flash': lambda: mix(
-        tone(1568, 0.07, 0.22, 'sine', release=0.4),
-        tone(2349, 0.05, 0.10, 'sine', release=0.5),
-    ),
-    # Overdrive igniting: a rising sweep that lands on a ringing fifth.
-    'overdrive': lambda: chain(
-        tone(392, 0.16, 0.34, 'saw', freq_end=784, release=0.2),
-        mix(
-            tone(784, 0.26, 0.30, 'sine', release=0.25),
-            tone(1175, 0.26, 0.18, 'sine', release=0.25),
-        ),
-    ),
-    # The backdraft eating a garbage row: a short crackle, low and dry.
-    'burn': lambda: mix(
-        tone(140, 0.12, 0.30, 'noise', release=0.6),
-        tone(196, 0.10, 0.18, 'saw', freq_end=98, release=0.5),
-    ),
-    # The other board's Overdrive bearing down: a low swelling rumble.
-    'pressure': lambda: mix(
-        tone(72, 0.5, 0.32, 'noise', attack=0.25, release=0.2),
-        tone(98, 0.5, 0.26, 'saw', freq_end=147, attack=0.2, release=0.25, vibrato=0.06),
-    ),
-    # Garbage landing on your floor: a blunt thud with grit in it.
-    'hit': lambda: mix(
-        tone(80, 0.14, 0.42, 'square', freq_end=55, release=0.5),
-        tone(120, 0.10, 0.22, 'noise', release=0.7),
-    ),
-    # ...and guttering out: the same fifth folding back down.
-    'overdrive_end': lambda: chain(
-        tone(784, 0.10, 0.26, 'saw', freq_end=392, release=0.3),
-        tone(392, 0.18, 0.22, 'sine', release=0.35),
-    ),
+
+    # --- weight --------------------------------------------------------------
+    # A hard drop is a thud with body: the old click, a sub under it, and just
+    # enough room that the floor sounds like it is made of something.
+    'drop': lambda: trim(room(mix(
+        tone(400, 0.13, 0.34, 'square', freq_end=90, release=0.5),
+        lowpass(tone(120, 0.08, 0.18, 'noise', release=0.8), 3800.),
+        sub(74, 0.17, 0.30, freq_end=52, release=0.55),
+    ), size=0.7, decay=0.6, wet=0.18, tail=0.3)),
+    # Garbage landing on your floor: blunt, gritty, and clearly not yours.
+    'hit': lambda: widen(trim(room(mix(
+        tone(80, 0.14, 0.34, 'square', freq_end=55, release=0.5),
+        lowpass(tone(150, 0.12, 0.24, 'noise', release=0.7), 2600.),
+        sub(46, 0.24, 0.34, freq_end=38, release=0.45),
+    ), size=1.1, decay=0.7, wet=0.24, tail=0.4)), ms=11., spread=0.4),
+    # The backdraft eating a garbage row: a crackle that collapses inward.
+    'burn': lambda: widen(trim(room(mix(
+        lowpass(tone(140, 0.20, 0.30, 'noise', release=0.55), 2200.),
+        highpass(tone(900, 0.10, 0.09, 'noise', release=1.0), 2000.),
+        tone(196, 0.14, 0.16, 'saw', freq_end=88, release=0.5),
+        sub(58, 0.16, 0.22, release=0.6),
+    ), size=0.95, decay=0.72, wet=0.3, tail=0.45)), ms=13., spread=0.5),
+    # The timer firing has to be unmistakably not a hard drop you chose to
+    # make. It is the one accident in the game, so it is the one clang: a bar
+    # struck hard, low, with the room behind it.
+    'forced': lambda: widen(trim(room(mix(
+        metal(196, 0.34, 0.42, ANVIL, release=0.34, strike=0.7),
+        tone(165, 0.13, 0.22, 'saw', freq_end=98, release=0.45, vibrato=0.05),
+        sub(65, 0.22, 0.32, freq_end=49, release=0.5),
+    ), size=1.15, decay=0.76, wet=0.34, tail=0.6)), ms=10., spread=0.5),
+
+    # --- grand ---------------------------------------------------------------
+    # Clears climb; a tetris climbs further and rings out; a perfect clear
+    # rings longest of all. All three are struck metal now, over a sub, in a
+    # room big enough to hear.
+    'clear': lambda: widen(trim(room(mix(
+        metal(523.25, 0.26, 0.30, BELL, release=0.5),
+        after(0.055, metal(659.25, 0.26, 0.26, BELL, release=0.5)),
+        after(0.110, metal(783.99, 0.34, 0.28, BELL, release=0.42)),
+        sub(130.8, 0.22, 0.22, release=0.6),
+    ), size=1., decay=0.76, wet=0.32, tail=0.7)), ms=9., spread=0.45),
+    'tetris': lambda: widen(trim(room(mix(
+        metal(523.25, 0.22, 0.30, ANVIL, release=0.55),
+        after(0.055, metal(659.25, 0.22, 0.28, ANVIL, release=0.55)),
+        after(0.110, metal(783.99, 0.22, 0.28, ANVIL, release=0.55)),
+        after(0.165, metal(1046.5, 0.60, 0.34, BELL, release=0.3)),
+        after(0.165, tone(1568., 0.44, 0.10, 'sine', attack=0.01, release=0.35)),
+        sub(65.4, 0.42, 0.32, release=0.4),
+    ), size=1.2, decay=0.82, wet=0.36, tail=0.9)), ms=12., spread=0.6),
+    # Rarer and better than a tetris, so it rings higher and longer.
+    'perfect': lambda: widen(trim(room(mix(
+        metal(659.25, 0.20, 0.28, ANVIL, release=0.6),
+        after(0.055, metal(880.00, 0.20, 0.28, ANVIL, release=0.6)),
+        after(0.110, metal(1046.5, 0.20, 0.28, ANVIL, release=0.6)),
+        after(0.165, metal(1318.5, 0.80, 0.34, BELL, release=0.24)),
+        after(0.165, metal(1760.0, 0.70, 0.16, BELL, release=0.26, strike=0.)),
+        after(0.165, tone(2637., 0.40, 0.07, 'sine', attack=0.02, release=0.4)),
+        sub(82.4, 0.55, 0.32, release=0.3),
+    ), size=1.35, decay=0.86, wet=0.40, tail=1.2)), ms=14., spread=0.7),
+    # A spin: the same metal, but rung rather than struck - it should feel
+    # like the piece slid into somewhere it had no business fitting.
+    'tspin': lambda: widen(trim(room(mix(
+        metal(784., 0.55, 0.26, BELL, release=0.3, strike=0.15),
+        tone(1175., 0.40, 0.10, 'sine', attack=0.03, release=0.3, vibrato=0.012),
+        after(0.09, metal(1568., 0.34, 0.10, BELL, release=0.4, strike=0.)),
+        sub(98., 0.30, 0.22, release=0.5),
+    ), size=1.15, decay=0.8, wet=0.36, tail=0.8)), ms=13., spread=0.6),
+    # Keeping a back to back going: a fifth, with weight under it, so it reads
+    # as separate from the clear it arrives with.
+    'b2b': lambda: widen(trim(room(mix(
+        tone(392., 0.06, 0.24, 'tri', release=0.5),
+        after(0.06, metal(587.33, 0.34, 0.24, BELL, release=0.4)),
+        after(0.06, tone(293.66, 0.26, 0.12, 'tri', release=0.45)),
+        sub(73.4, 0.28, 0.24, release=0.5),
+    ), size=1.05, decay=0.78, wet=0.3, tail=0.65)), ms=10., spread=0.5),
+    # A lock inside the Flash window. This one fires often, so it stays a
+    # spark: bright, small, and gone - just with a room behind it now.
+    'flash': lambda: widen(trim(room(mix(
+        metal(1568., 0.12, 0.30, BELL, release=0.7, strike=0.3),
+        tone(2349., 0.06, 0.12, 'sine', release=0.6),
+        sub(196., 0.09, 0.14, release=0.7),
+    ), size=0.8, decay=0.7, wet=0.3, tail=0.35)), ms=8., spread=0.5),
+    # Overdrive igniting: air dragged in, then the whole hall lit at once.
+    'overdrive': lambda: widen(trim(room(mix(
+        lowpass(tone(200, 0.30, 0.22, 'noise', attack=0.6, release=0.15), 2400.),
+        tone(196, 0.30, 0.24, 'saw', freq_end=784, attack=0.05, release=0.2),
+        after(0.28, metal(392., 0.85, 0.32, ANVIL, release=0.3, strike=0.6)),
+        after(0.28, metal(587.33, 0.75, 0.20, BELL, release=0.34, strike=0.)),
+        after(0.28, metal(783.99, 0.70, 0.16, BELL, release=0.36, strike=0.)),
+        after(0.26, sub(49., 0.75, 0.36, release=0.25)),
+    ), size=1.4, decay=0.87, wet=0.42, tail=1.3)), ms=15., spread=0.75),
+    # ...and guttering out: the same chord folding back down into the floor.
+    'overdrive_end': lambda: widen(trim(room(mix(
+        tone(784., 0.16, 0.20, 'saw', freq_end=392, release=0.3),
+        after(0.12, metal(392., 0.50, 0.20, BELL, release=0.4, strike=0.15)),
+        after(0.12, sub(65.4, 0.45, 0.26, freq_end=49, release=0.4)),
+    ), size=1.2, decay=0.8, wet=0.34, tail=0.8)), ms=12., spread=0.55),
+    # The other board's Overdrive bearing down: a swell with no strike in it
+    # at all, so it arrives as pressure rather than as an event you caused.
+    'pressure': lambda: widen(trim(room(mix(
+        lowpass(tone(72, 0.75, 0.34, 'noise', attack=0.4, release=0.2), 900., 2),
+        tone(98, 0.75, 0.22, 'saw', freq_end=147, attack=0.35, release=0.25, vibrato=0.05),
+        sub(49, 0.8, 0.26, freq_end=62, release=0.22),
+    ), size=1.5, decay=0.85, wet=0.38, tail=1.)), ms=17., spread=0.8),
+    # Game over: the fire going out. Four steps down, the last one held.
+    'gameover': lambda: widen(trim(room(mix(
+        metal(392., 0.20, 0.26, ANVIL, release=0.6),
+        after(0.16, metal(329.63, 0.20, 0.26, ANVIL, release=0.6)),
+        after(0.32, metal(261.63, 0.20, 0.26, ANVIL, release=0.6)),
+        after(0.48, metal(196., 0.90, 0.30, BELL, release=0.26)),
+        after(0.48, tone(196., 0.60, 0.12, 'saw', release=0.3, vibrato=0.02)),
+        after(0.46, sub(49., 0.85, 0.30, release=0.25)),
+    ), size=1.45, decay=0.86, wet=0.40, tail=1.2)), ms=14., spread=0.65),
 })
 
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
+    total = 0
     for name in sorted(SOUNDS):
         rng.seed('forcetris-' + name)
         write(name, SOUNDS[name]())
-    print('\nWrote {} effects to {}'.format(len(SOUNDS), OUT))
+        total += os.path.getsize(os.path.join(OUT, name + '.wav'))
+    print('\nWrote {} effects to {}  ({:.1f} MB)'.format(
+        len(SOUNDS), OUT, total / (1024. * 1024.)))

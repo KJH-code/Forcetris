@@ -24,7 +24,7 @@ What is here:
 | `munch` | MinoMuncher's statistics re-derived over this game's own records (formulas from the MIT-licensed minomuncher-core): the nine clear buckets, spin efficiencies, the three-way attack-per-line split, burst and plonk PPS by Gaussian mixture, the four-deep well rule, the surge accounting and the cheesiness sigmoid - scored over raw attack, a trainer having no multiplayer wire |
 | `profile` | The history: one tolerant key=value line per finished game, appended forever, read back for the profile screen's aggregates and growth charts |
 | `bot` | The versus opponent: a full-reachability search over the real kick tables - so its tucks and spins are exactly the game's - an attack-and-shape evaluation, a rank ladder paced to TETR.IO's own per-rank speeds, and the driver that types the plan into a sim one key at a time |
-| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, music, menus, settings, the stat layout editor, the replay browser and viewer, the game modes - versus included, with the bot's board beside yours - the high score screens, the how-to-play screen and the analysis of a finished run |
+| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, the generated furnace bed and Forge score, menus, settings, the stat layout editor, the replay browser and viewer, the game modes - versus included, with the bot's board beside yours - the high score screens, the how-to-play screen and the analysis of a finished run |
 
 ## The GUI
 
@@ -264,10 +264,30 @@ the layout editor, a finished game's screen. How to Play lists every
 action against the keys bound to it right now, and explains the forced
 drop, in the Python screen's words.
 
-The sound is the Python game's sound: the same synthesised WAVs out of
-sound/, the same music out of music/, fired by the cues the sim itself
-raises - which the trace harness grades, so what you hear is what the
-engine decided, frame for frame. Finished games are saved to data/replays
+The room is heard as well as seen. The cues are the synthesised WAVs out
+of sound/, fired by the cues the sim itself raises - which the trace
+harness grades, so what you hear is what the engine decided, frame for
+frame - and they are struck metal now, in three tiers: the ticks that
+fire several times a second keep their old lengths and stay dry, the
+landings get a sub under them, and the clears, the spins and Overdrive
+ring out into a hall.
+
+The other half is generated in the mixer, sample by sample, from the same
+four numbers the backdrop paints with. A furnace bed roars under
+everything, quiet in a menu and open when the board is in trouble. Over
+it runs the Forge score: eight bars in D minor whose layers *arrive with
+the heat* - a drone and the bellows while you are safe, the anvil once
+the Flow gauge has something in it, a bell line over a hot board, a sub
+swell and a faster tempo in Overdrive. It is a readout, not a backing
+track, and there is nothing on disk for it: no loop seam, and the
+intensity is a parameter. The classic chiptune is still one setting away
+under *Sound -> Track -> Classic*, and the bed has its own switch.
+
+Because half the audio is now generated rather than loaded, `audio_check`
+renders buffers straight out of the mixer and measures them: silence when
+silence was asked for, a room whose level rises with the board, nothing
+that clips or goes non-finite, a cue pool that steals a voice rather than
+dropping a keypress, and byte-identical output from a fixed start. Finished games are saved to data/replays
 in the same JSON the Python game writes; either game can browse and watch
 the other's recordings, re-enacted stop by stop with the piece walking its
 recorded trail, or the finesse-corrected route with *Perfect finesse* on.

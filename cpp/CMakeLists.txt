@@ -174,6 +174,18 @@ if (SDL2_FOUND)
 	if (TARGET SDL2::SDL2main)
 		target_link_libraries(forcetris PRIVATE SDL2::SDL2main)
 	endif()
+
+	# The mixer on its own, so the generated room and score can be rendered
+	# and measured without a window. Links the same audio.cpp the game does.
+	add_executable(audiocheck tests/audiocheck.cpp gui/audio.cpp)
+	if (TARGET SDL2::SDL2)
+		target_link_libraries(audiocheck PRIVATE SDL2::SDL2)
+	else()
+		target_include_directories(audiocheck SYSTEM PRIVATE ${SDL2_INCLUDE_DIRS})
+		target_link_libraries(audiocheck PRIVATE ${SDL2_LIBRARIES})
+	endif()
+	target_include_directories(audiocheck SYSTEM PRIVATE third_party/stb)
+	target_compile_options(audiocheck PRIVATE ${FORCETRIS_WARNINGS})
 else()
 	message(STATUS "SDL2 not found - building the core and tests only")
 endif()
@@ -236,6 +248,12 @@ add_test(NAME munch_check COMMAND munchcheck)
 # newer builds add keys.
 add_test(NAME profile_check COMMAND profilecheck)
 if (SDL2_FOUND)
+	# The generated half of the audio, rendered and graded: silence on
+	# request, a room that tracks the board, no clipping, a cue pool that
+	# steals rather than drops, and byte-identical runs from a fixed start.
+	add_test(NAME audio_check COMMAND audiocheck ${CMAKE_CURRENT_SOURCE_DIR}/..)
+	set_tests_properties(audio_check PROPERTIES ENVIRONMENT
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy")
 	# The whole window run headlessly under scripted-random input: proves the
 	# loop, the drawing and the shutdown hold together with no display.
 	add_test(NAME gui_smoke COMMAND forcetris)
