@@ -108,7 +108,13 @@ whole crucible haloes as the Flow gauge fills, and a cleared row goes
 white-hot and throws embers off both ends before it goes. Garbage wears
 burnt slag rather than your own colours, the ghost is an outline that
 never hides in the stack, and the hold box hatches over when it has
-already been spent. The
+already been spent. Behind all of it the room itself burns: a molten
+horizon along the floor that banks up with the danger, heat shafts
+leaning as they climb the margins either side of the board, smoke
+drifting through them, and embers rising past - all of it brightening
+as the Flow gauge fills and blazing in Overdrive. Every glow in the
+game is one procedurally built falloff sprite, stamped and tinted, so
+the light is smooth instead of banding into rectangles. The
 ladder still means what it says under the fuse: attack and pace climb it
 monotonically, D through X.
 

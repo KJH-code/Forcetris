@@ -421,6 +421,11 @@ struct App {
 	std::array<BurnRow, 8> burn_rows{};
 	size_t burn_at = 0;
 	long burn_seen_lock = -1;   // The lock whose rows were already lit.
+	long backdrop_tick = 0;     // A clock for the backdrop, alive everywhere.
+	// One soft radial sprite, built once: every glow in the game is this
+	// texture stretched and tinted. Stacked translucent rectangles band
+	// into visible bricks; a falloff sprite simply does not.
+	SDL_Texture* glow = nullptr;
 	int last_pending = 0;
 	std::map<SDL_FingerID, size_t> touch_held;
 	bool touch_shown = true;
@@ -955,6 +960,50 @@ void handle_event (App& app, const SDL_Event& event) {
 void spawn_sparks_at (App& app, float x, float y, SDL_Color color, int count,
 	float kick);
 
+// The soft sprite: white, fading to nothing at the rim, built by hand so
+// the repository carries no image files.
+SDL_Texture* make_glow (SDL_Renderer* renderer) {
+	const int size = 128;
+	SDL_Surface* face = SDL_CreateRGBSurfaceWithFormat(0, size, size, 32,
+		SDL_PIXELFORMAT_RGBA32);
+	if (face == nullptr) {
+		return nullptr;
+	}
+	Uint32* pixels = static_cast<Uint32*>(face->pixels);
+	const double middle = (size - 1) / 2.;
+	for (int y = 0; y < size; ++y) {
+		for (int x = 0; x < size; ++x) {
+			const double dx = (x - middle) / middle;
+			const double dy = (y - middle) / middle;
+			const double r = std::sqrt(dx * dx + dy * dy);
+			const double fade = r >= 1. ? 0. : (1. - r) * (1. - r);
+			pixels[y * (face->pitch / 4) + x] = SDL_MapRGBA(face->format,
+				255, 255, 255, static_cast<Uint8>(fade * 255.));
+		}
+	}
+	SDL_Texture* made = SDL_CreateTextureFromSurface(renderer, face);
+	SDL_FreeSurface(face);
+	if (made != nullptr) {
+		// Added rather than blended: light piles up the way light does.
+		SDL_SetTextureBlendMode(made, SDL_BLENDMODE_ADD);
+	}
+	return made;
+}
+
+// Stamp the sprite over a rectangle, tinted and dimmed to taste.
+void draw_glow (App& app, float x, float y, float w, float h,
+		SDL_Color tint, double alpha) {
+	if (app.glow == nullptr || alpha <= 0.) {
+		return;
+	}
+	SDL_SetTextureColorMod(app.glow, tint.r, tint.g, tint.b);
+	SDL_SetTextureAlphaMod(app.glow,
+		static_cast<Uint8>(std::clamp(alpha, 0., 255.)));
+	const SDL_Rect over{static_cast<int>(x - w / 2), static_cast<int>(y - h / 2),
+		static_cast<int>(w), static_cast<int>(h)};
+	SDL_RenderCopy(app.renderer, app.glow, nullptr, &over);
+}
+
 // How much trouble this board is in, 0 to 1: a fuse nearly spent, garbage
 // massing, a stack near the sky, the other board's Overdrive bearing down.
 // The well's glow and the screen's vignette both read from it.
@@ -1049,13 +1098,9 @@ void draw_board (App& app) {
 	const double charge = sim.config().fuse ? sim.flow() / 100. : 0.;
 	if (charge > 0.02) {
 		const float beat = 0.85f + 0.15f * std::sin(sim.frame() * 0.12f);
-		for (int ring = 5; ring >= 1; --ring) {
-			const int spread = px(9) * ring;
-			fill(renderer, kBoardX - spread, kBoardY - spread,
-				kBoardW + 2 * spread, kBoardH + 2 * spread,
-				{255, 122, 44, static_cast<Uint8>(
-					charge * beat * (7 - ring) * 3.4)});
-		}
+		draw_glow(app, kBoardX + kBoardW / 2.f, kBoardY + kBoardH / 2.f,
+			kBoardW * 2.4f, kBoardH * 1.5f, {255, 122, 44, 255},
+			charge * beat * 150.);
 	}
 	fill(renderer, kBoardX - px(3), kBoardY - px(3), kBoardW + px(6), kBoardH + px(6), {58, 42, 30, 255});
 	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {17, 12, 9, 255});
@@ -1296,6 +1341,7 @@ void draw_backdrop (App& app) {
 	int w = 0;
 	int h = 0;
 	SDL_GetRendererOutputSize(app.renderer, &w, &h);
+	const float t = ++app.backdrop_tick * 0.01f;
 	const int bands = 12;
 	for (int i = 0; i < bands; ++i) {
 		const double part = static_cast<double>(i) / (bands - 1);
@@ -1304,22 +1350,97 @@ void draw_backdrop (App& app) {
 			 static_cast<Uint8>(18 - 9 * part),
 			 static_cast<Uint8>(13 - 6 * part), 255});
 	}
-	if (app.screen == Screen::Game || app.screen == Screen::Viewer) {
-		return;
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+
+	// What the room is doing depends on what the board is doing.
+	const bool playing = app.screen == Screen::Game && app.session.has_value();
+	double heat = 0.;
+	double danger = 0.;
+	bool burning = false;
+	if (playing) {
+		const Sim& sim = app.session->sim();
+		heat = sim.config().fuse ? sim.flow() / 100. : 0.;
+		danger = danger_of(sim);
+		burning = sim.overdrive();
 	}
-	// One ember born every few frames, dying out near the top.
-	if (app.seeds() % 5 == 0) {
+	const double glare = std::clamp(heat + (burning ? 0.6 : 0.), 0., 1.4);
+
+	// The fire the whole room stands over: a molten horizon along the
+	// bottom, banked up brighter as the board gets into trouble.
+	{
+		const double lit = 34. + 96. * danger + 70. * glare;
+		draw_glow(app, w / 2.f, static_cast<float>(h),
+			w * 1.6f, std::max(static_cast<float>(px(150)), h / 2.4f),
+			{206, 74, 26, 255}, lit);
+		draw_glow(app, w / 2.f, h + px(6), w * 1.1f, px(120),
+			{255, 150, 66, 255}, 30. + 70. * danger + 46. * glare);
+	}
+
+	// Heat shafts rising off it: soft columns that lean as they climb and
+	// brighten as the Flow gauge fills. They stand behind the board, so
+	// what shows is the room around it - and in a game they are aimed at
+	// the margins either side, where there is room to be seen.
+	if (playing || app.screen == Screen::Menu) {
+		const int shafts = 6;
+		for (int s = 0; s < shafts; ++s) {
+			const float phase = t * (0.55f + 0.11f * s) + s * 1.7f;
+			float base = w * (0.08f + 0.185f * s);
+			if (playing && kBoardX > px(120)) {
+				// Three down each margin rather than six across the board.
+				const float left = kBoardX * (0.18f + 0.28f * (s % 3));
+				const float right = kBoardX + kBoardW
+					+ (w - kBoardX - kBoardW) * (0.30f + 0.26f * (s % 3));
+				base = s < 3 ? left : right;
+			}
+			const float wide = px(150) + px(52) * std::sin(phase * 0.7f);
+			const float tall = h * (0.72f + 0.10f * std::sin(phase));
+			const float lean = std::sin(phase) * px(30);
+			draw_glow(app, base + lean, h - tall * 0.34f, wide, tall,
+				{255, 132, 54, 255}, 20. + 46. * glare + 14. * danger);
+		}
+	}
+
+	// Smoke, catching the light on its way past.
+	if (playing) {
+		for (int band = 0; band < 3; ++band) {
+			const float span = static_cast<float>(w + px(700));
+			const float drift = std::fmod(
+				t * (7.f + 3.f * band) + band * 260.f, span) - px(350);
+			draw_glow(app, drift, h / 6.f + band * h / 6.5f,
+				px(520), px(150), {166, 92, 52, 255}, 9. + 16. * glare);
+		}
+	}
+
+	// The embers. On the menus they drift up the whole screen; in a game
+	// they keep to the margins either side of the board, so nothing ever
+	// crosses the piece you are placing.
+	const int margin = kBoardX - px(46);
+	const bool roomy = margin > px(70);
+	const int rate = playing ? (burning ? 3 : (heat > 0.4 ? 6 : 11)) : 5;
+	if ((!playing || roomy) && app.seeds() % rate == 0) {
 		App::Spark& born = app.embers[app.ember_at];
 		app.ember_at = (app.ember_at + 1) % app.embers.size();
-		born.x = static_cast<float>(app.seeds() % std::max(1, w));
+		if (playing) {
+			const int right = kBoardX + kBoardW + px(46);
+			born.x = app.seeds() % 2 == 0
+				? static_cast<float>(app.seeds() % std::max(1, margin))
+				: static_cast<float>(right + app.seeds()
+					% std::max(1, w - right));
+		} else {
+			born.x = static_cast<float>(app.seeds() % std::max(1, w));
+		}
 		born.y = static_cast<float>(h + px(4));
 		born.vx = ((app.seeds() % 100) - 50) / 220.f;
-		born.vy = -0.4f - (app.seeds() % 100) / 130.f;
+		born.vy = (burning ? -0.7f : -0.4f)
+			- (app.seeds() % 100) / (burning ? 90.f : 130.f);
 		born.life = 240 + static_cast<int>(app.seeds() % 240);
-		born.color = {255, static_cast<Uint8>(120 + app.seeds() % 80),
-			50, 255};
+		born.color = burning
+			? SDL_Color{255, static_cast<Uint8>(180 + app.seeds() % 60),
+				90, 255}
+			: SDL_Color{255, static_cast<Uint8>(120 + app.seeds() % 80),
+				50, 255};
 	}
-	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+	const int cap = playing ? 70 : 90;
 	for (App::Spark& ember : app.embers) {
 		if (ember.life <= 0) {
 			continue;
@@ -1327,10 +1448,8 @@ void draw_backdrop (App& app) {
 		--ember.life;
 		ember.x += ember.vx + std::sin(ember.life * 0.05f) * 0.3f;
 		ember.y += ember.vy;
-		SDL_Color faded = ember.color;
-		faded.a = static_cast<Uint8>(std::min(90, ember.life / 3));
-		fill(app.renderer, static_cast<int>(ember.x),
-			static_cast<int>(ember.y), px(3), px(3), faded);
+		draw_glow(app, ember.x, ember.y, px(14), px(14), ember.color,
+			std::min(cap, ember.life / 3));
 	}
 }
 
@@ -1395,12 +1514,8 @@ void draw_sparks (App& app) {
 		spark.x += spark.vx;
 		spark.y += spark.vy;
 		spark.vy += 0.18f;
-		SDL_Color faded = spark.color;
-		faded.a = static_cast<Uint8>(
-			std::min(255, spark.life * 16));
-		SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
-		fill(app.renderer, static_cast<int>(spark.x),
-			static_cast<int>(spark.y), px(4), px(4), faded);
+		draw_glow(app, spark.x, spark.y, px(16), px(16), spark.color,
+			std::min(230, spark.life * 15));
 	}
 }
 
@@ -3840,6 +3955,7 @@ int run (bool smoke, long smoke_frames) {
 		SDL_Log("SDL_CreateRenderer: %s", SDL_GetError());
 		return 1;
 	}
+	app.glow = make_glow(app.renderer);
 	if (kMobile) {
 		int w = 0;
 		int h = 0;
@@ -4245,6 +4361,9 @@ int run (bool smoke, long smoke_frames) {
 	ImGui_ImplSDLRenderer2_Shutdown();
 	ImGui_ImplSDL2_Shutdown();
 	ImGui::DestroyContext();
+	if (app.glow != nullptr) {
+		SDL_DestroyTexture(app.glow);
+	}
 	SDL_DestroyRenderer(app.renderer);
 	SDL_DestroyWindow(app.window);
 	SDL_Quit();
