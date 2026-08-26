@@ -11,6 +11,10 @@
 #include <string>
 #include <vector>
 
+// This is a console program with its own main, not a windowed one: without
+// this SDL.h renames main to SDL_main and the Windows cross-build looks for
+// a WinMain that was never written.
+#define SDL_MAIN_HANDLED
 #include <SDL.h>
 
 #include "../gui/audio.hpp"
