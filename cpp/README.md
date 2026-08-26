@@ -130,18 +130,11 @@ off the forge, dark iron with a bevel lit from above, rivets and a rim
 that pulses like metal fresh out of the coals, over the drifting embers
 the backdrop has always had.
 
-Overdrive is not a bonfire but a charge. The well tears forward and the
-room streaks past it: a ring leaves the board on ignition, and for as
-long as the ignition burns, speed lines break out from behind the board
-and fly to the edges of the screen, thinning as it runs down. Each line
-keeps its own angle and rate out of a hash - even angles turning at an
-even rate would be a wheel, not a charge - and its travel is squared, so
-it leaves slowly and is gone in a blink. The whole thing is drawn
-between the backdrop and the board, so the lines genuinely come out from
-*behind* the well: the board covers their inner ends and what shows is
-the part that has already got past it. That is also why there is nothing
-to guard against - the stack, the ghost and the previews are painted
-over the top of it, every frame, on every layout.
+Overdrive has no effect of its own beyond what it always had: the screen
+flashes gold, OVERDRIVE is cried across the board, sparks come off the
+Flow rail, the heat vignette closes in and the music runs hot until it
+gutters out. Flames and speed lines were both tried on top of that and
+both were worse than nothing, so neither is here.
 
 A finished game says three things and stops: the verdict, the score, and
 the estimated rank, out of the same call the analysis window's Rating tab

@@ -1142,19 +1142,6 @@ SDL_Texture* make_flames (SDL_Renderer* renderer) {
 	return made;
 }
 
-// A settled number between 0 and 1 for item `k`. The Overdrive streaks are
-// placed from these rather than from a sine over the index, which would put
-// them at even angles turning at an even rate - a spinning wheel, not a
-// charge.
-float tongue_hash (int k, int salt) {
-	unsigned h = static_cast<unsigned>(k) * 2654435761u
-		+ static_cast<unsigned>(salt) * 40503u;
-	h ^= h >> 15;
-	h *= 2246822519u;
-	h ^= h >> 13;
-	return (h & 0xffffu) / 65535.f;
-}
-
 // Stamp the sprite over a rectangle, tinted and dimmed to taste.
 void draw_glow (App& app, float x, float y, float w, float h,
 		SDL_Color tint, double alpha) {
@@ -1229,113 +1216,6 @@ void forge_panel (App& app) {
 		draw->AddCircleFilled(stud, dot, IM_COL32(14, 10, 7, 255), 10);
 		draw->AddCircleFilled(ImVec2(stud.x - dot * 0.28f, stud.y - dot * 0.28f),
 			dot * 0.44f, IM_COL32(122, 92, 66, 220), 8);
-	}
-}
-
-// Overdrive as a charge rather than a bonfire.
-//
-// The well tears forward and the room streaks past it: a shockwave leaves
-// the board on ignition, and for as long as the ignition burns, speed lines
-// break out from behind the board and fly to the edges of the screen,
-// thinning as it runs down.
-//
-// It is drawn between the backdrop and the board, so the lines genuinely
-// come out from *behind* the well - the board covers their inner ends, and
-// what shows is the part that has already got past it. That also means
-// there is nothing to guard against: the stack, the ghost and the previews
-// are painted over the top of this, every frame, on every layout.
-void draw_charge (App& app) {
-	if (!app.session.has_value()) {
-		return;
-	}
-	const Sim& sim = app.session->sim();
-	if (!sim.overdrive() && app.od_flash <= 0) {
-		return;
-	}
-	int screen_w = 0;
-	int screen_h = 0;
-	SDL_GetRendererOutputSize(app.renderer, &screen_w, &screen_h);
-	const float cx = kBoardX + kBoardW * 0.5f;
-	const float cy = kBoardY + kBoardH * 0.5f;
-	// Out to the far corner, and starting from just inside the board so a
-	// line is already moving by the time it clears the edge.
-	const float reach = std::sqrt(static_cast<float>(screen_w) * screen_w
-		+ static_cast<float>(screen_h) * screen_h) * 0.62f;
-	const float inner = std::sqrt(static_cast<float>(kBoardW) * kBoardW
-		+ static_cast<float>(kBoardH) * kBoardH) * 0.26f;
-	const double span = std::max(1., sim.config().overdrive_secs * 50.);
-	const float left = static_cast<float>(
-		std::clamp(sim.overdrive_left() / span, 0., 1.));
-	const float lit = sim.overdrive() ? 0.4f + 0.6f * left : 0.f;
-	const float tick = static_cast<float>(app.backdrop_tick);
-	// One measure for how long and how thick a sliver is, so the effect
-	// scales with the window rather than with a pile of pixel constants.
-	const float span_px = std::max(1.f, reach * 0.22f);
-	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
-
-	// One streak: a tapered sliver from `head` back along the ray, white hot
-	// at the point and fading to nothing at the tail. Drawn as geometry
-	// rather than a run of squares, because a bar built out of axis-aligned
-	// blocks cannot be thick across a diagonal and comes out a hairline.
-	const auto streak = [&] (float ax, float ay, float head, float len,
-			float wide, float alpha) {
-		if (alpha <= 2.f || len <= 1.f) {
-			return;
-		}
-		const float nx = -ay * wide;
-		const float ny = ax * wide;
-		const float hx = cx + ax * head;
-		const float hy = cy + ay * head;
-		const float tx = cx + ax * (head - len);
-		const float ty = cy + ay * (head - len);
-		const SDL_Color hot{255, 218, 126,
-			static_cast<Uint8>(std::clamp(alpha, 0.f, 255.f))};
-		const SDL_Color cold{255, 118, 40, 0};
-		const SDL_Vertex quad[4] = {
-			{{hx + nx * 0.5f, hy + ny * 0.5f}, hot, {0.f, 0.f}},
-			{{hx - nx * 0.5f, hy - ny * 0.5f}, hot, {0.f, 0.f}},
-			{{tx + nx * 0.34f, ty + ny * 0.34f}, cold, {0.f, 0.f}},
-			{{tx - nx * 0.34f, ty - ny * 0.34f}, cold, {0.f, 0.f}},
-		};
-		const int order[6] = {0, 1, 2, 1, 3, 2};
-		SDL_RenderGeometry(app.renderer, nullptr, quad, 4, order, 6);
-	};
-
-	// The lines. Each keeps its own angle and rate, and its travel is
-	// squared, so it leaves slowly and is gone in a blink - which is what
-	// reads as speed rather than as a wheel turning.
-	const int lines = 110;
-	for (int k = 0; k < lines && lit > 0.f; ++k) {
-		const float angle = tongue_hash(k, 11) * 6.2831853f;
-		const float rate = 0.0085f + 0.0115f * tongue_hash(k, 12);
-		const float phase = std::fmod(tick * rate + tongue_hash(k, 13), 1.f);
-		const float travel = phase * phase;
-		const float ax = std::cos(angle);
-		const float ay = std::sin(angle);
-		const float head = inner + travel * reach;
-		// In as it leaves the board, out as it reaches the rim.
-		const float fade = std::min(1.f, phase * 8.f)
-			* std::min(1.f, (1.f - phase) * 4.f);
-		// Stubby as it clears the board, drawn out into a bar by the time it
-		// reaches the rim.
-		const float len = span_px * (0.28f + 1.5f * travel)
-			* (0.6f + 0.8f * tongue_hash(k, 14));
-		streak(ax, ay, head, len, span_px * 0.036f * (0.6f + 0.7f * travel),
-			245.f * fade * lit);
-	}
-
-	// Ignition: every ray fires at once and the ring leaves the board, gone
-	// in a dozen frames.
-	if (app.od_flash > 0) {
-		const float grow = 1.f - app.od_flash / 12.f;
-		const float ring = inner + grow * reach * 0.95f;
-		const int steps = 64;
-		for (int i = 0; i < steps; ++i) {
-			const float angle = i * 6.2831853f / steps;
-			streak(std::cos(angle), std::sin(angle), ring,
-				span_px * (0.14f + 0.8f * grow), span_px * 0.055f,
-				255.f * (1.f - grow) * (1.f - grow));
-		}
 	}
 }
 
@@ -4525,7 +4405,6 @@ int run (bool smoke, long smoke_frames) {
 		SDL_SetRenderDrawColor(app.renderer, 14, 11, 9, 255);
 		SDL_RenderClear(app.renderer);
 		draw_backdrop(app);
-		draw_charge(app);
 		{
 			// The room, handed to the mixer from the same reading the
 			// backdrop just painted with: the furnace bed and the score's
