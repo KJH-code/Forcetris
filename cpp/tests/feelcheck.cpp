@@ -4,10 +4,15 @@
 // frames: the stretch after a hard drop with no piece to control, how long a
 // held soft drop takes to reach the floor, and how long a held direction takes
 // to reach the wall. Every one of them is a whole number of the engine's 20ms
-// frames, and every one of them is decided by the handling the game ships
-// with - which is what this pins. If a future change puts the trainer's
-// numbers back, or lets the clear animation freeze the board again, the
-// numbers below move and this fails.
+// frames.
+//
+// What ships is TETR.IO's own default handling - 167/33/17/6 - because a
+// beginner's first minutes should feel like the game everyone learns on, and
+// lowering the numbers is what improving looks like. That choice is pinned
+// here digit for digit, along with the two things that must never come back
+// whatever the handling says: the clear-animation freeze, and a spawn delay.
+// The stacker's Instant set and the trainer's old numbers are pinned too, so
+// the buttons keep meaning what they say.
 #include <algorithm>
 #include <cstdio>
 #include <string>
@@ -155,44 +160,52 @@ int main () {
 	// --- What the game ships with. ------------------------------------------
 	{
 		Config config;
+		check("the shipped handling is TETR.IO's defaults, digit for digit",
+			config.das == 167 && config.arr == 33 && config.dcd == 17
+				&& config.sdf == 6 && config.are == 0 && !config.clear_delay);
 		check("the shipped handling has no clear freeze",
 			freeze(config, 4) == 1, number(freeze(config, 4)) + " frames");
-		check("the shipped soft drop reaches the floor at once",
-			softdrop(config) == 1, number(softdrop(config)) + " frames");
-		check("the shipped handling reaches the wall inside a third of a second",
-			traverse(config) <= 8, number(traverse(config)) + " frames");
+		// A held direction: the press moves a column and arms eight frames
+		// of DAS, then two frames of ARR per column - on the 20ms grid
+		// that is 167 -> 8 and 33 -> 2, so three columns land on frame 11.
+		check("a held direction repeats on TETR.IO's cadence",
+			traverse(config) == 11, number(traverse(config)) + " frames");
+		// SDF 6 against the fuse modes' gravity is five frames a row: a
+		// deliberate, visible soft drop, not the stacker's teleport.
+		check("the shipped soft drop walks the well at SDF 6",
+			softdrop(config) == 100, number(softdrop(config)) + " frames");
 		check("a quiet lock costs one frame either way",
 			freeze(config, 0) == 1, number(freeze(config, 0)) + " frames");
 	}
 
 	// --- The three sets, and what each of them costs. ------------------------
 	{
+		Config standard;
+		apply_handling(standard, Handling::Standard);
 		Config instant;
 		apply_handling(instant, Handling::Instant);
-		Config fast;
-		apply_handling(fast, Handling::Fast);
 		Config trainer;
 		apply_handling(trainer, Handling::Trainer);
 
-		check("Instant is what the game ships with",
-			instant.das == Config{}.das && instant.arr == Config{}.arr
-				&& instant.sdf == Config{}.sdf
-				&& instant.clear_delay == Config{}.clear_delay);
+		check("Standard is what the game ships with",
+			standard.das == Config{}.das && standard.arr == Config{}.arr
+				&& standard.dcd == Config{}.dcd && standard.sdf == Config{}.sdf
+				&& standard.are == Config{}.are
+				&& standard.clear_delay == Config{}.clear_delay);
+
+		// The stacker's set, one click away and kept exact.
+		check("Instant keeps the stacker's numbers",
+			instant.das == 100 && instant.arr == 0 && instant.sdf == 40
+				&& !instant.clear_delay);
 		// One auto-shift frame covers the whole distance at ARR 0, so the wall
 		// arrives the moment DAS expires: the press itself moves a column and
 		// arms five frames of DAS, and the jump lands on the last of them.
 		check("Instant reaches the wall the frame DAS expires",
 			traverse(instant) == 6, number(traverse(instant)) + " frames");
-		check("Fast walks the piece a column a frame",
-			traverse(fast) > traverse(instant),
-			number(traverse(fast)) + " vs " + number(traverse(instant)));
-		check("Fast and Instant both drop instantly",
-			softdrop(fast) == 1 && softdrop(instant) == 1);
-		check("neither Fast nor Instant freezes the board on a quad",
-			freeze(fast, 4) == 1 && freeze(instant, 4) == 1);
+		check("Instant drops instantly and never freezes",
+			softdrop(instant) == 1 && freeze(instant, 4) == 1);
 
-		// The trainer's numbers, kept whole - and the reason the game used to
-		// feel slow, spelled out in frames rather than adjectives.
+		// The trainer's numbers, kept whole - clear-animation freeze and all.
 		check("Trainer restores the trainer's numbers",
 			trainer.das == 140 && trainer.arr == 40 && trainer.sdf == 6
 				&& trainer.clear_delay);

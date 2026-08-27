@@ -27,6 +27,15 @@ void VersusMatch::begin_round (const SimConfig& player_config, unsigned seed,
 	meta.sdf = config.sdf;
 	bot.emplace(config, seed, meta);
 	driver.emplace(seed, bot::ranks()[rank_index]);
+	// The bot's draft starts over with the board: its build is captured
+	// from the config it *actually* plays under - overrides included - so
+	// a rebuilt rule set can never hand the planner a clearing style it
+	// was not searching with.
+	bot_start = config;
+	bot_tempers.clear();
+	bot_heat = 0;
+	bot_seed = seed;
+	bot_rng.seed(seed ^ 0x74656d70u);
 	phase = Phase::Playing;
 	phase_frames = 0;
 	round_player_won = false;
@@ -43,6 +52,26 @@ bool VersusMatch::step (Session& player) {
 	}
 	const bool bot_alive = bot->step();
 	bot->take_cues();   // The bot's sounds stay on its side of the table.
+	// The bot's side of the forge: when its counter crosses a heat it is
+	// dealt the same three cards a player would see and takes one at once -
+	// no freeze on its side, because the freeze exists for a hand, not a
+	// planner. The pick itself is the core's, rank-tempered, and it never
+	// takes Collapse; a heat with nothing acceptable passes by bare.
+	if (bot->sim().config().fuse) {
+		const int forged = temper::heats_done(bot->sim().lines_cleared(),
+			bot->sim().downstack(), false);
+		if (forged > bot_heat) {
+			const std::vector<std::string> cards
+				= temper::offer(bot_seed, bot_heat, bot_tempers);
+			const int at = temper::bot_pick(cards, rank_index, bot_rng);
+			if (at >= 0) {
+				bot_tempers.push_back(cards[static_cast<size_t>(at)]);
+				bot->draft(temper::tempered(bot_start, bot_tempers),
+					bot_tempers.back());
+			}
+			++bot_heat;
+		}
+	}
 	// Heat pressure, both ways: an Overdrive burning on one board makes
 	// the other board's fuse burn faster. Igniting is an attack.
 	player.sim_mutable().set_pressure(bot->sim().overdrive());

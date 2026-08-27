@@ -110,22 +110,17 @@ std::vector<Reading> reading_of (const SimConfig& c) {
 // Which fields one temper is declared to move. Written out here rather than
 // derived from apply(), so the test is a second opinion and not an echo.
 std::vector<std::string> claimed (const std::string& id) {
-	if (id == "quench") return {"fuse_refuel_line"};
-	if (id == "cistern") return {"fuse_bank_cap"};
-	if (id == "ladle") return {"fuse_draw_cap"};
-	if (id == "slow_burn") return {"fuse_decay"};
 	if (id == "thick_wick") return {"fuse_base"};
+	if (id == "quench") return {"fuse_refuel_line"};
+	if (id == "slow_burn") return {"fuse_decay"};
 	if (id == "bellows") return {"overdrive_secs"};
 	if (id == "white_heat") return {"overdrive_mult"};
-	if (id == "spark") return {"flow_gain_line"};
-	if (id == "clean_strike") return {"flow_flash_gain"};
-	if (id == "wide_window") return {"flash_frac"};
+	if (id == "spark") return {"flow_gain_line", "flow_gain_attack"};
 	if (id == "overheat") {
 		return {"flow_gain_line", "flow_gain_attack", "flow_flash_gain",
 			"fuse_base"};
 	}
 	if (id == "gamble") return {"overdrive_mult", "flow_burn_loss"};
-	if (id == "thin_walls") return {"fuse_refuel_attack", "fuse_bank_cap"};
 	if (id == "collapse") return {"cleartype"};
 	if (id == "every_twist") return {"spin_rule"};
 	return {};
@@ -227,7 +222,7 @@ int main () {
 		const double base = config.fuse_base;
 		temper::apply(config, "thick_wick");
 		temper::apply(config, "thick_wick");
-		check("Thick Wick stacks", std::abs(config.fuse_base - (base + 0.7)) < 1e-9,
+		check("Thick Wick stacks", std::abs(config.fuse_base - (base + 1.0)) < 1e-9,
 			number(config.fuse_base));
 
 		SimConfig risky = rules();
@@ -237,6 +232,21 @@ int main () {
 			std::abs(risky.flow_gain_line - flow * 2.) < 1e-9
 				&& risky.fuse_base < rules().fuse_base);
 
+		SimConfig quick = rules();
+		const double line = quick.flow_gain_line;
+		const double attack = quick.flow_gain_attack;
+		temper::apply(quick, "spark");
+		check("Spark charges both halves of the gauge",
+			std::abs(quick.flow_gain_line - (line + 2.)) < 1e-9
+				&& std::abs(quick.flow_gain_attack - (attack + 2.)) < 1e-9);
+
+		SimConfig bold = rules();
+		temper::apply(bold, "gamble");
+		check("Gamble pays its multiplier and charges its price",
+			std::abs(bold.overdrive_mult - (rules().overdrive_mult + 1.)) < 1e-9
+				&& std::abs(bold.flow_burn_loss
+					- (rules().flow_burn_loss + 15.)) < 1e-9);
+
 		// The two guards: neither may put the rules somewhere the sim's own
 		// arithmetic says is impossible.
 		SimConfig slow = rules();
@@ -245,13 +255,12 @@ int main () {
 		}
 		check("Slow Burn never stops the schedule tightening",
 			slow.fuse_decay >= 0.03 - 1e-9, number(slow.fuse_decay));
-		SimConfig thin = rules();
+		SimConfig hot = rules();
 		for (int i = 0; i < 6; ++i) {
-			temper::apply(thin, "thin_walls");
+			temper::apply(hot, "overheat");
 		}
-		check("Thin Walls never shrinks the bank past a single draw",
-			thin.fuse_bank_cap >= thin.fuse_draw_cap - 1e-9,
-			number(thin.fuse_bank_cap));
+		check("Overheat never burns the wick below the schedule's own floor",
+			hot.fuse_base >= hot.fuse_min - 1e-9, number(hot.fuse_base));
 	}
 
 	// --- The roll. ----------------------------------------------------------
@@ -296,9 +305,9 @@ int main () {
 		const SimConfig built = temper::tempered(start,
 			{"quench", "bellows", "quench", "white_heat"});
 		check("a run's tempers compound in order",
-			std::abs(built.fuse_refuel_line - (start.fuse_refuel_line + 0.3)) < 1e-9
-				&& std::abs(built.overdrive_secs - (start.overdrive_secs + 2.)) < 1e-9
-				&& std::abs(built.overdrive_mult - (start.overdrive_mult + 0.25)) < 1e-9);
+			std::abs(built.fuse_refuel_line - (start.fuse_refuel_line + 0.6)) < 1e-9
+				&& std::abs(built.overdrive_secs - (start.overdrive_secs + 3.)) < 1e-9
+				&& std::abs(built.overdrive_mult - (start.overdrive_mult + 0.5)) < 1e-9);
 		check("an id this build does not know is read rather than refused",
 			temper::find("no_such_temper") == nullptr
 				&& temper::tempered(start, {"no_such_temper"}).fuse_base
@@ -312,7 +321,7 @@ int main () {
 		SimConfig longer = config;
 		temper::apply(longer, "thick_wick");
 		check("a temper taken before the game changes the first fuse",
-			std::abs(first_fuse(longer) - (plain + 0.35)) < 1e-9,
+			std::abs(first_fuse(longer) - (plain + 0.5)) < 1e-9,
 			number(first_fuse(longer)) + " vs " + number(plain));
 
 		// The same, mid-run: the piece in play keeps the fuse it was dealt,
@@ -330,7 +339,7 @@ int main () {
 			sim.step(std::optional<Event>{});
 		}
 		check("the next piece is dealt the tempered fuse",
-			std::abs(sim.fuse_total() - (before + 0.35)) < 1e-9,
+			std::abs(sim.fuse_total() - (before + 0.5)) < 1e-9,
 			number(sim.fuse_total()) + " vs " + number(before));
 	}
 
@@ -405,6 +414,73 @@ int main () {
 		check("a game with no finish line has none", !forever.won());
 	}
 
+	// --- The heat counter, which everything shares. --------------------------
+	{
+		check("ten lines forge a heat",
+			temper::heats_done(0, 0, false) == 0
+				&& temper::heats_done(9, 99, false) == 0
+				&& temper::heats_done(10, 0, false) == 1
+				&& temper::heats_done(119, 0, false) == 11
+				&& temper::heats_done(120, 0, false) == 12);
+		check("a dig race counts dug rows instead",
+			temper::heats_done(99, 5, true) == 0
+				&& temper::heats_done(0, 6, true) == 1
+				&& temper::heats_done(0, 17, true) == 2);
+		check("a broken counter never forges a negative heat",
+			temper::heats_done(-5, -5, false) == 0
+				&& temper::heats_done(-5, -5, true) == 0);
+	}
+
+	// --- The bot's pick. ----------------------------------------------------
+	{
+		const std::vector<std::string> table
+			= {"thick_wick", "bellows", "overheat"};
+		std::mt19937 one(77u);
+		std::mt19937 two(77u);
+		const int first = temper::bot_pick(table, 3, one);
+		check("the bot's pick is a card on the table",
+			first >= 0 && first < static_cast<int>(table.size()));
+		check("the same seed picks the same card",
+			temper::bot_pick(table, 3, two) == first);
+
+		// Collapse is never taken, wherever it sits and whatever else is up.
+		bool never = true;
+		for (unsigned roll = 0; roll < 300 && never; ++roll) {
+			std::mt19937 rng(roll);
+			const std::vector<std::string> mixed
+				= {"collapse", "quench", "white_heat"};
+			const int at = temper::bot_pick(mixed,
+				static_cast<int>(roll % 7), rng);
+			never = at != 0 && at >= 0;
+		}
+		check("the bot never takes Collapse", never);
+		std::mt19937 rng(5u);
+		check("a table with nothing acceptable returns no pick",
+			temper::bot_pick({"collapse"}, 6, rng) == -1
+				&& temper::bot_pick({}, 6, rng) == -1);
+
+		// Temperament: over many rolls, the lowest rank reaches for Fuel
+		// more often than the highest does. Loose on purpose - the claim
+		// is a lean, not a schedule.
+		int low_fuel = 0;
+		int high_fuel = 0;
+		const std::vector<std::string> spread
+			= {"thick_wick", "bellows", "gamble"};
+		for (unsigned roll = 0; roll < 400; ++roll) {
+			std::mt19937 a(roll);
+			std::mt19937 b(roll);
+			if (temper::bot_pick(spread, 0, a) == 0) {
+				++low_fuel;
+			}
+			if (temper::bot_pick(spread, 6, b) == 0) {
+				++high_fuel;
+			}
+		}
+		check("a low rank leans on Fuel harder than a high rank",
+			low_fuel > high_fuel,
+			std::to_string(low_fuel) + " vs " + std::to_string(high_fuel));
+	}
+
 	// --- A whole run of the mode, played out. -------------------------------
 	{
 		// The pieces of the mode, driven the way the GUI drives them: play
@@ -427,7 +503,8 @@ int main () {
 			const std::optional<Event> event = driver.next(sim);
 			alive = sim.step(event);
 			++frame;
-			const int forged = sim.lines_cleared() / temper::kLinesPerHeat;
+			const int forged = temper::heats_done(
+				sim.lines_cleared(), sim.downstack(), false);
 			if (forged > heat && heat < temper::kHeats) {
 				const std::vector<std::string> cards
 					= temper::offer(seed, heat, taken);
@@ -435,10 +512,17 @@ int main () {
 					ran_dry = true;
 					break;
 				}
-				// Always the first card, so the run is one fixed build
-				// rather than a different one every time this test runs.
-				taken.push_back(cards.front());
-				sim.retune(temper::tempered(start, taken));
+				// The bot's own picker, seeded, so the harness drafts the
+				// way a real duel bot would - which also keeps it off
+				// collapse, the one card that would flip the clearing rule
+				// out from under the naive planner driving the run.
+				std::mt19937 picker(seed + static_cast<unsigned>(heat));
+				const int at = temper::bot_pick(cards,
+					static_cast<int>(bot::ranks().size()) - 1, picker);
+				if (at >= 0) {
+					taken.push_back(cards[static_cast<size_t>(at)]);
+					sim.retune(temper::tempered(start, taken));
+				}
 				++heat;
 			}
 		}
@@ -446,8 +530,11 @@ int main () {
 			sim.won() && !ran_dry,
 			std::to_string(sim.lines_cleared()) + " lines at heat "
 				+ std::to_string(heat));
-		check("and drafted a temper for each of them",
-			static_cast<int>(taken.size()) == temper::kHeats,
+		// Eleven picks forge a run - the twelfth crossing is the win - and
+		// the picker may pass a heat by, so the pin is a floor, not the
+		// count the GUI happens to reach.
+		check("and drafted most of the heats it crossed",
+			static_cast<int>(taken.size()) >= 10,
 			std::to_string(taken.size()) + " taken");
 		// The build actually moved the rules the run finished under.
 		const SimConfig built = temper::tempered(start, taken);

@@ -1,5 +1,8 @@
-// The tempering: what a run of the draft mode is allowed to change about
-// itself, and what it is offered.
+// The tempering: what a run is allowed to change about itself, and what it
+// is offered. This is the game's whole gimmick, not one mode's: every game
+// played under the fuse rules crosses a heat and drafts a temper there -
+// the trainer rules never do - and the standalone Tempering mode is the
+// twelve-heat run of exactly this.
 //
 // Every temper here is one or two numbers out of SimConfig - the fuse's
 // schedule, the refuel bank, the Flash window, the Flow gains, Overdrive's
@@ -14,6 +17,7 @@
 // nothing else.
 #pragma once
 
+#include <random>
 #include <string>
 #include <vector>
 
@@ -42,7 +46,7 @@ struct Temper {
 const std::vector<Temper>& pool ();
 
 // One temper by id, or nullptr for a key this build does not know (an id
-// from a newer file, which is read rather than refused).
+// from a newer file, or one since retired - read rather than refused).
 const Temper* find (const std::string& id);
 
 // Apply a temper's arithmetic to `rules`. An unknown id does nothing.
@@ -58,9 +62,27 @@ SimConfig tempered (const SimConfig& start, const std::vector<std::string>& take
 std::vector<std::string> offer (unsigned seed, int heat,
 	const std::vector<std::string>& taken);
 
-// The shape of a Tempering run: ten lines to a heat, twelve heats to a
-// finished blade. The quota the sim is given is the product.
+// How many heats this run has forged so far - the one owner of the count,
+// shared by the offer gate, the HUD, the stat panel and the bot's side of
+// a duel. A dig race (Meltdown) is measured by the garbage rows it has dug
+// out; every other game by the lines it has cleared.
+int heats_done (int lines, int downstack, bool by_digging);
+
+// The bot's pick from an offer, by rank temperament: low ranks lean on
+// Fuel, high ranks on Flow and Risk, and collapse is never taken (its
+// planner assumes naive clears). Returns the index into `offers`, or -1
+// when nothing on the table is acceptable - the caller then passes the
+// heat by without a card.
+int bot_pick (const std::vector<std::string>& offers, int rank_index,
+	std::mt19937& rng);
+
+// The shape of a heat, and of the one mode that is a complete run of them:
+// ten lines to a heat (six dug rows in Meltdown), twelve heats to a
+// finished blade. The quota the sim is given is the product; only the
+// Tempering mode has a quota or a heat cap - everywhere else the forge
+// keeps dealing until the pool runs dry.
 constexpr int kLinesPerHeat = 10;
+constexpr int kDigsPerHeat = 6;
 constexpr int kHeats = 12;
 constexpr int kQuota = kLinesPerHeat * kHeats;
 

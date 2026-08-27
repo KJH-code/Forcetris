@@ -41,28 +41,29 @@ std::map<std::string, std::vector<int>> default_keys ();
 
 // Bumped whenever the shipped handling changes. A config file written before
 // the bump is still carrying the old numbers, so it is brought forward once
-// and stamped - see load_config.
-constexpr int kHandlingRev = 1;
+// and stamped - see load_config. Rev 2 is the TETR.IO-defaults retune.
+constexpr int kHandlingRev = 2;
 
 // The three handling sets the settings screen offers. Named rather than typed
-// in twice, so the trainer's numbers are never lost and the fast ones are one
-// click away.
+// in twice, so no set's numbers are ever lost and each is one click away.
 enum class Handling {
-	Instant = 0,  // ARR 0, instant soft drop: what a stacker actually plays.
-	Fast = 1,     // A column per frame instead of a teleport.
+	Standard = 0, // TETR.IO's own defaults: where a new player starts.
+	Instant = 1,  // ARR 0, instant soft drop: what a stacker actually plays.
 	Trainer = 2,  // The Python trainer's numbers, kept whole.
 };
 
 struct Config {
 	// The handling, in the same units the Python settings menu shows. These
-	// are a stacker's numbers, not the trainer's: on the engine's 20ms grid
-	// the trainer's cost 500ms to cross the board and two full seconds to
-	// soft drop from spawn to the floor, which is most of what made the game
-	// feel slow next to a modern one. apply_handling holds all three sets.
-	int das = 100;
-	int arr = 0;
-	int dcd = 0;
-	int sdf = 40;
+	// are TETR.IO's own defaults - 167/33/17/6 - because that is where its
+	// players start before tuning down as they improve, and a beginner's
+	// first minutes here should feel like the game everyone learns on. The
+	// stacker's numbers are one click away on the Instant button;
+	// apply_handling holds all three sets, and these members must equal
+	// what it writes for Handling::Standard.
+	int das = 167;
+	int arr = 33;
+	int dcd = 17;
+	int sdf = 6;
 	int are = 0;
 	double forced_delay = 1.0;
 	bool kicks = true;

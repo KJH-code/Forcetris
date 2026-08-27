@@ -22,43 +22,36 @@ int weight_of (Family family) {
 } // namespace
 
 const std::vector<Temper>& pool () {
+	// Ten cards, and every face reads without a manual: the number lives in
+	// the arithmetic here and in the README, never on the card. The effects
+	// are sized so that a single copy is felt - half a second of wick, three
+	// seconds of Overdrive - because a card whose effect needs a stopwatch
+	// to notice teaches the player that cards do not matter.
 	static const std::vector<Temper> all = {
 		// --- Fuel: the run lasts longer. ---------------------------------
-		{"quench", "Quench",
-			"a cleared line banks 0.15s more fuse", Family::Fuel, 3},
-		{"cistern", "Cistern",
-			"the bank holds 2.0s more", Family::Fuel, 3},
-		{"ladle", "Ladle",
-			"a new piece may draw 0.4s more from the bank", Family::Fuel, 3},
-		{"slow_burn", "Slow Burn",
-			"each heat shortens the fuse 0.04s less", Family::Fuel, 3},
 		{"thick_wick", "Thick Wick",
-			"every piece burns 0.35s longer", Family::Fuel, 3},
+			"pieces burn longer", Family::Fuel, 3},
+		{"quench", "Quench",
+			"clears refill more fuse", Family::Fuel, 3},
+		{"slow_burn", "Slow Burn",
+			"the forge tightens slower", Family::Fuel, 2},
 		// --- Flow: Overdrive sooner, longer, worth more. ------------------
 		{"bellows", "Bellows",
-			"Overdrive burns 2.0s longer", Family::Flow, 3},
+			"Overdrive lasts longer", Family::Flow, 3},
 		{"white_heat", "White Heat",
-			"Overdrive multiplies 0.25 more", Family::Flow, 3},
+			"Overdrive hits harder", Family::Flow, 2},
 		{"spark", "Spark",
-			"a cleared line is worth 1 more Flow", Family::Flow, 3},
-		{"clean_strike", "Clean Strike",
-			"a lock inside the Flash is worth 3 more Flow", Family::Flow, 3},
-		{"wide_window", "Wide Window",
-			"the Flash window opens 8% wider", Family::Flow, 2},
+			"Flow charges faster", Family::Flow, 2},
 		// --- Risk: a gain with a price on it. ----------------------------
 		{"overheat", "Overheat",
-			"Flow gains double; every piece burns 0.4s less", Family::Risk, 2},
+			"double Flow - shorter fuse", Family::Risk, 1},
 		{"gamble", "Gamble",
-			"Overdrive multiplies 0.75 more; a burnt piece costs 12 more Flow",
-			Family::Risk, 2},
-		{"thin_walls", "Thin Walls",
-			"attack banks 0.4s more; the bank holds 1.5s less",
-			Family::Risk, 2},
+			"huge Overdrive - burns cost Flow", Family::Risk, 1},
 		// --- Rule: the run becomes a different game. ----------------------
 		{"collapse", "Collapse",
-			"cleared rows collapse: the stack falls in pieces", Family::Rule, 1},
+			"clears cascade", Family::Rule, 1},
 		{"every_twist", "Every Twist",
-			"every spin scores, minis included", Family::Rule, 1},
+			"every spin scores", Family::Rule, 1},
 	};
 	return all;
 }
@@ -73,47 +66,38 @@ const Temper* find (const std::string& id) {
 }
 
 void apply (SimConfig& rules, const std::string& id) {
-	if (id == "quench") {
-		rules.fuse_refuel_line += 0.15;
-	} else if (id == "cistern") {
-		rules.fuse_bank_cap += 2.0;
-	} else if (id == "ladle") {
-		rules.fuse_draw_cap += 0.4;
+	if (id == "thick_wick") {
+		rules.fuse_base += 0.5;
+	} else if (id == "quench") {
+		rules.fuse_refuel_line += 0.3;
 	} else if (id == "slow_burn") {
 		// A floor rather than zero: a schedule that never tightens would
 		// make the twelfth heat the same as the first.
-		rules.fuse_decay = std::max(0.03, rules.fuse_decay - 0.04);
-	} else if (id == "thick_wick") {
-		rules.fuse_base += 0.35;
+		rules.fuse_decay = std::max(0.03, rules.fuse_decay - 0.05);
 	} else if (id == "bellows") {
-		rules.overdrive_secs += 2.0;
+		rules.overdrive_secs += 3.0;
 	} else if (id == "white_heat") {
-		rules.overdrive_mult += 0.25;
+		rules.overdrive_mult += 0.5;
 	} else if (id == "spark") {
-		rules.flow_gain_line += 1.0;
-	} else if (id == "clean_strike") {
-		rules.flow_flash_gain += 3.0;
-	} else if (id == "wide_window") {
-		rules.flash_frac += 0.08;
+		rules.flow_gain_line += 2.0;
+		rules.flow_gain_attack += 2.0;
 	} else if (id == "overheat") {
 		rules.flow_gain_line *= 2.0;
 		rules.flow_gain_attack *= 2.0;
 		rules.flow_flash_gain *= 2.0;
 		// Never below the floor the schedule itself may not cross.
-		rules.fuse_base = std::max(rules.fuse_min, rules.fuse_base - 0.4);
+		rules.fuse_base = std::max(rules.fuse_min, rules.fuse_base - 0.5);
 	} else if (id == "gamble") {
-		rules.overdrive_mult += 0.75;
-		rules.flow_burn_loss += 12.0;
-	} else if (id == "thin_walls") {
-		rules.fuse_refuel_attack += 0.4;
-		// The bank may not shrink past the draw it has to serve.
-		rules.fuse_bank_cap
-			= std::max(rules.fuse_draw_cap, rules.fuse_bank_cap - 1.5);
+		rules.overdrive_mult += 1.0;
+		rules.flow_burn_loss += 15.0;
 	} else if (id == "collapse") {
 		rules.cleartype = 1;
 	} else if (id == "every_twist") {
 		rules.spin_rule = 3;
 	}
+	// An id this build does not know - a card from a newer build's replay,
+	// or one that has since been retired - is read rather than refused, so
+	// there is deliberately no terminal else.
 }
 
 SimConfig tempered (const SimConfig& start,
@@ -123,6 +107,19 @@ SimConfig tempered (const SimConfig& start,
 		apply(rules, id);
 	}
 	return rules;
+}
+
+int heats_done (int lines, int downstack, bool by_digging) {
+	// The one owner of "how far through the forge is this run": everything
+	// that counts heats - the offer gate, the HUD, the stat panel, the
+	// bot's side of a duel - counts them here, so no two screens can
+	// disagree about which heat a board is in. A dig race is measured by
+	// the garbage it has dug out rather than the lines it happened to
+	// clear doing it; everything else is measured in cleared lines.
+	if (by_digging) {
+		return std::max(0, downstack) / kDigsPerHeat;
+	}
+	return std::max(0, lines) / kLinesPerHeat;
 }
 
 std::vector<std::string> offer (unsigned seed, int heat,
@@ -159,6 +156,58 @@ std::vector<std::string> offer (unsigned seed, int heat,
 		weights.erase(weights.begin() + static_cast<long>(at));
 	}
 	return cards;
+}
+
+int bot_pick (const std::vector<std::string>& offers, int rank_index,
+		std::mt19937& rng) {
+	// The bot drafts by temperament rather than by reading the board: a low
+	// rank plays to survive and leans on Fuel, a high rank plays to press
+	// and leans on Flow and Risk. Collapse is never taken - the planner
+	// assumes naive clears, and a bot that rewrites its own clearing rule
+	// mid-round would be sabotaging the very search that plays its pieces.
+	// -1 when nothing acceptable is on the table; the caller passes the
+	// heat by without a card, which is what a dry pool already does.
+	const double press = std::clamp(rank_index / 6.0, 0.0, 1.0);
+	std::vector<int> weights;
+	std::vector<int> takeable;
+	for (size_t at = 0; at < offers.size(); ++at) {
+		const Temper* card = find(offers[at]);
+		if (card == nullptr || std::string(card->id) == "collapse") {
+			continue;
+		}
+		int weight = 0;
+		switch (card->family) {
+			case Family::Fuel:
+				weight = 2 + static_cast<int>(6 * (1.0 - press));
+				break;
+			case Family::Flow:
+				weight = 2 + static_cast<int>(6 * press);
+				break;
+			case Family::Risk:
+				weight = 1 + static_cast<int>(4 * press);
+				break;
+			case Family::Rule:
+				weight = 1;   // every_twist: harmless, occasionally taken.
+				break;
+		}
+		takeable.push_back(static_cast<int>(at));
+		weights.push_back(weight);
+	}
+	if (takeable.empty()) {
+		return -1;
+	}
+	int total = 0;
+	for (const int weight : weights) {
+		total += weight;
+	}
+	std::uniform_int_distribution<int> pick(0, total - 1);
+	int roll = pick(rng);
+	size_t at = 0;
+	while (at + 1 < takeable.size() && roll >= weights[at]) {
+		roll -= weights[at];
+		++at;
+	}
+	return takeable[at];
 }
 
 } // namespace temper

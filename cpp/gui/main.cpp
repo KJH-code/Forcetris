@@ -389,7 +389,6 @@ struct App {
 	std::vector<std::string> offers;
 	int offer_at = 0;
 	int offer_shown = 0;         // Frames the cards have been on the table.
-	bool forged = false;         // The run reached its twelfth heat.
 	// The juice: a fixed pool of clear sparks (a hard cap, not a queue -
 	// an overflowing celebration recycles its oldest embers), and the
 	// frame the board stops shuddering.
@@ -593,7 +592,6 @@ void start_game (App& app, int mode,
 	app.offers.clear();
 	app.offer_at = 0;
 	app.heat = 0;
-	app.forged = false;
 	// The dials just used are worth keeping even if the app never gets a
 	// clean exit - phones rarely grant one.
 	save_config(app.config, app.config_file);
@@ -642,6 +640,33 @@ void start_game (App& app, int mode,
 
 // A match against the bot: the player's session as ever, the opponent and
 // the scoreboard beside it.
+// One round of a duel put on the table: the player's session, the bot's,
+// and the draft state both sides start the round with. Shared by the match's
+// first round and every one after it, so the rules a round is played under -
+// the career stage's tightened fuse included - can never quietly differ
+// between round one and round two, which is exactly the bug the old
+// duplicated construction had.
+void deal_versus_round (App& app) {
+	// The player's draft starts over with the board: fresh tempers, fresh
+	// offers, a heat counter at zero, and a seed of this round's own.
+	app.tempers.clear();
+	app.offers.clear();
+	app.offer_at = 0;
+	app.offer_shown = 0;
+	app.heat = 0;
+	const unsigned seed = app.seeds();
+	app.temper_seed = seed;
+	// The rules this round is played under were fixed by start_versus -
+	// meta_for reads the Rules tab, which the career stage overrides, so
+	// the recording is stamped from the config actually in force.
+	replay::Meta meta = meta_for(app.config, 5);
+	stamp_fuse(meta, app.temper_start);
+	app.session.emplace(app.temper_start, seed, meta);
+	app.versus->begin_round(app.temper_start, app.seeds(), meta);
+	app.countdown = app.start_delay;
+	reset_effects(app);
+}
+
 void start_versus (App& app, int career_stage = -1) {
 	app.mode = 5;
 	app.career_stage = career_stage;
@@ -662,18 +687,17 @@ void start_versus (App& app, int career_stage = -1) {
 		config.fuse_base = std::max(config.fuse_min,
 			config.fuse_base - 0.1 * career_stage);
 	}
-	const replay::Meta meta = meta_for(app.config, 5);
-	app.session.emplace(config, app.seeds(), meta);
+	// The round rules, tightened and all, kept for every round of the
+	// match - and the base every draft rebuilds from.
+	app.temper_start = config;
 	app.versus.emplace(rank, first_to);
-	app.versus->begin_round(config, app.seeds(), meta);
+	deal_versus_round(app);
 	app.screen = Screen::Game;
 	app.paused = false;
 	app.editing = false;
 	app.place_panels = true;
 	app.hiscore_place = -1;
 	app.score_saved = false;
-	app.countdown = app.start_delay;
-	reset_effects(app);
 	app.audio.start_music();
 }
 
@@ -738,16 +762,8 @@ void next_versus_round (App& app) {
 		replay::save(*done, replay::folder(app.root));
 		record_game(app, *done, round_verdict(app));
 	}
-	SimConfig config = app.config.sim();
-	config.gametype = 5;
-	config.cheese_holes = 1;
-	config.cheese_messiness = 30;
-	const replay::Meta meta = meta_for(app.config, 5);
-	app.session.emplace(config, app.seeds(), meta);
 	app.versus->round += 1;
-	app.versus->begin_round(config, app.seeds(), meta);
-	app.countdown = app.start_delay;
-	reset_effects(app);
+	deal_versus_round(app);
 }
 
 // What each family of temper is painted in: fuel the iron's own orange,
@@ -761,6 +777,64 @@ ImU32 family_ink (temper::Family family) {
 		case temper::Family::Rule: return IM_COL32(240, 234, 220, 255);
 		case temper::Family::Fuel:
 		default: return IM_COL32(214, 128, 62, 255);
+	}
+}
+
+// The family's one-word tag, as the card wears it.
+const char* family_tag (temper::Family family) {
+	switch (family) {
+		case temper::Family::Flow: return "FLOW";
+		case temper::Family::Risk: return "RISK";
+		case temper::Family::Rule: return "RULE";
+		case temper::Family::Fuel:
+		default: return "FUEL";
+	}
+}
+
+// The family's glyph, drawn in primitives the way the mode buttons draw
+// theirs: a flame for fuel, a bolt for Flow, a blade for risk, a scroll
+// bar for the rule cards. Small on purpose - it is a stamp, not an icon
+// set, and it reads at a glance next to the tag word.
+void family_glyph (ImDrawList* draw, temper::Family family, ImVec2 at,
+		float size, ImU32 ink) {
+	const float r = size / 2.f;
+	const ImVec2 mid(at.x + r, at.y + r);
+	switch (family) {
+		case temper::Family::Flow:
+			// A bolt: two strokes with a kink.
+			draw->AddTriangleFilled(ImVec2(mid.x + r * 0.5f, at.y),
+				ImVec2(mid.x - r * 0.7f, mid.y + r * 0.25f),
+				ImVec2(mid.x + r * 0.1f, mid.y + r * 0.05f), ink);
+			draw->AddTriangleFilled(ImVec2(mid.x - r * 0.5f, at.y + size),
+				ImVec2(mid.x + r * 0.7f, mid.y - r * 0.25f),
+				ImVec2(mid.x - r * 0.1f, mid.y - r * 0.05f), ink);
+			break;
+		case temper::Family::Risk:
+			// A blade, point down.
+			draw->AddTriangleFilled(ImVec2(mid.x, at.y + size),
+				ImVec2(mid.x - r * 0.45f, at.y + r * 0.5f),
+				ImVec2(mid.x + r * 0.45f, at.y + r * 0.5f), ink);
+			draw->AddRectFilled(ImVec2(mid.x - r * 0.8f, at.y + r * 0.28f),
+				ImVec2(mid.x + r * 0.8f, at.y + r * 0.52f), ink);
+			break;
+		case temper::Family::Rule:
+			// A scroll: three lines of law.
+			for (int row = 0; row < 3; ++row) {
+				draw->AddRectFilled(
+					ImVec2(at.x + r * 0.2f, at.y + r * 0.35f + row * r * 0.55f),
+					ImVec2(at.x + size - r * 0.2f,
+						at.y + r * 0.6f + row * r * 0.55f), ink);
+			}
+			break;
+		case temper::Family::Fuel:
+		default:
+			// The flame the mode buttons already speak.
+			draw->AddTriangleFilled(ImVec2(mid.x, at.y),
+				ImVec2(mid.x - r * 0.75f, mid.y + r * 0.7f),
+				ImVec2(mid.x + r * 0.75f, mid.y + r * 0.7f), ink);
+			draw->AddCircleFilled(ImVec2(mid.x, mid.y + r * 0.45f),
+				r * 0.62f, ink);
+			break;
 	}
 }
 
@@ -797,14 +871,23 @@ std::string temper_line (const std::vector<std::string>& taken) {
 	return line;
 }
 
-// A heat has been forged if the line counter has crossed another ten. Put
-// three cards on the table when it has; the loop stops stepping the sim
-// while they are there, so the fuse waits with the player.
+// A heat has been forged if the run's counter has crossed another rung -
+// lines everywhere, dug rows in Meltdown. Put three cards on the table when
+// it has; the loop stops stepping the sim while they are there, so the fuse
+// waits with the player. This fires for every fuse-rules game: the draft is
+// part of the fuse ruleset, not one mode's gimmick. Only Tempering has a
+// ceiling, because only Tempering has a finish line; everywhere else the
+// forge keeps dealing until the pool runs dry.
 void offer_tempers (App& app) {
-	if (!app.session.has_value() || app.heat >= temper::kHeats) {
+	if (!app.session.has_value() || !app.session->sim().config().fuse) {
 		return;
 	}
-	const int forged = app.session->sim().lines_cleared() / temper::kLinesPerHeat;
+	if (app.mode == 6 && app.heat >= temper::kHeats) {
+		return;
+	}
+	const Sim& sim = app.session->sim();
+	const int forged = temper::heats_done(
+		sim.lines_cleared(), sim.downstack(), app.mode == 3);
 	if (forged <= app.heat) {
 		return;
 	}
@@ -812,8 +895,8 @@ void offer_tempers (App& app) {
 	app.offer_at = 0;
 	app.offer_shown = 0;
 	if (app.offers.empty()) {
-		// The pool ran dry, which it cannot with the numbers as they are -
-		// but a draft with nothing to draft must not stop the game.
+		// The pool ran dry - nineteen stacks is all there is - and a draft
+		// with nothing to draft must not stop the game.
 		app.heat = forged;
 		return;
 	}
@@ -971,7 +1054,8 @@ void handle_event (App& app, const SDL_Event& event) {
 		if (event.type == SDL_FINGERDOWN) {
 			app.touch_shown = true;   // Any touch calls the buttons back.
 			if (app.screen == Screen::Game && !app.paused && !app.editing
-				&& app.countdown <= 0 && app.session.has_value()) {
+				&& app.countdown <= 0 && app.offers.empty()
+				&& app.session.has_value()) {
 				for (size_t i = 0; i < app.touch.size(); ++i) {
 					const SDL_Rect& rect = app.touch[i].rect;
 					if (x >= rect.x && x < rect.x + rect.w
@@ -1034,7 +1118,12 @@ void handle_event (App& app, const SDL_Event& event) {
 		} else if (app.show_settings) {
 			app.show_settings = false;
 		} else if (app.screen == Screen::Game) {
-			app.paused = !app.paused;
+			// Not while a draft is up: the cards outrank the pause menu in
+			// the draw order, so a pause taken here would be invisible - a
+			// game frozen twice with nothing on screen saying so.
+			if (app.offers.empty()) {
+				app.paused = !app.paused;
+			}
 		} else if (app.screen == Screen::Viewer && app.viewing.has_value()) {
 			app.screen = app.viewing->back;
 			app.viewing.reset();
@@ -1108,6 +1197,12 @@ void handle_event (App& app, const SDL_Event& event) {
 			|| code == SDL_SCANCODE_KP_ENTER || code == SDL_SCANCODE_SPACE) {
 			take_temper(app, app.offer_at);
 		}
+		// Whatever else was pressed dies here: a game key that fell through
+		// would queue in the session and land as a burst on the first
+		// unfrozen frame, moving a piece the player never saw move.
+		return;
+	}
+	if (app.screen == Screen::Game && !app.offers.empty() && down) {
 		return;
 	}
 	if (app.screen != Screen::Game || app.paused || app.editing
@@ -2080,6 +2175,14 @@ void draw_versus_panel (App& app) {
 	draw_label("BOT", static_cast<float>(left), top - ui(22),
 		theirs.overdrive() ? IM_COL32(255, 214, 96, 255)
 			: IM_COL32(176, 158, 140, 255));
+	// What the bot has drafted, under its board - the same build line the
+	// player's pause screen shows, because an opponent's tempers are half
+	// of reading the fight.
+	if (!match.bot_tempers.empty()) {
+		draw_label(temper_line(match.bot_tempers).c_str(),
+			static_cast<float>(left), top + kHeight * cell + px(6),
+			IM_COL32(176, 158, 140, 255));
+	}
 	// The bot's Flow rail on its board's right flank - watching the gauge
 	// creep up is the warning the ignition deserves.
 	if (theirs.config().fuse) {
@@ -2354,9 +2457,9 @@ void draw_settings (App& app) {
 			ImGui::Spacing();
 			// The three sets, first, because the numbers below only mean
 			// something to someone who already knows what they want.
-			for (const Handling set : {Handling::Instant, Handling::Fast,
+			for (const Handling set : {Handling::Standard, Handling::Instant,
 				Handling::Trainer}) {
-				if (set != Handling::Instant) {
+				if (set != Handling::Standard) {
 					ImGui::SameLine();
 				}
 				if (ImGui::Button(handling_name(set), ImVec2(ui(120), 0))) {
@@ -2932,6 +3035,13 @@ void draw_help (App& app) {
 			"A full rail ignites Overdrive: the fuse freezes, everything\n"
 			"you send is multiplied, and every clear also burns a garbage\n"
 			"row off your own floor - until it gutters out.");
+		ImGui::TextUnformatted("");
+		ImGui::TextUnformatted("The draft");
+		ImGui::TextUnformatted(
+			"Every ten lines is a heat. The forge tightens and offers three\n"
+			"tempers; take one - the board waits while you choose. Fuel\n"
+			"survives, Flow presses, Risk trades, Rule rewrites. In a duel\n"
+			"the bot drafts its own.");
 		ImGui::TextDisabled(
 			"The plain trainer rules live under Settings, Rules, Fuse.");
 	} else {
@@ -4041,17 +4151,28 @@ void draw_menus (App& app) {
 			}
 			ImGui::End();
 		} else {
+			// Seven modes of button and blurb outgrow a short display; the
+			// cap turns the overflow into a scrollbar instead of running
+			// the last mode off the bottom edge.
+			ImGui::SetNextWindowSizeConstraints(ImVec2(ui(300), 0.f),
+				ImVec2(FLT_MAX, ImGui::GetIO().DisplaySize.y - ui(12)));
 			ImGui::Begin("mode select", nullptr, box);
 			forge_panel(app);
 			ImGui::PushFont(app.fonts.head);
 			ImGui::TextUnformatted("Choose a mode");
 			ImGui::PopFont();
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			if (mode_button("Tempering", 5, IM_COL32(214, 128, 62, 255), ui(280), ui(44))) {
+				start_game(app, 6);
+			}
+			ImGui::TextDisabled("The run: twelve heats, a temper drafted");
+			ImGui::TextDisabled("at each. Forge the blade or go cold.");
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
 			if (mode_button("Ignition", 0, IM_COL32(255, 138, 58, 255), ui(280), ui(44))) {
 				start_game(app, 0);
 			}
-			ImGui::TextDisabled("Endless. The fuse shortens as the levels");
-			ImGui::TextDisabled("climb; burn bright for as long as you can.");
+			ImGui::TextDisabled("Endless. The fuse shortens, the drafts");
+			ImGui::TextDisabled("keep coming; burn for as long as you can.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
 			if (mode_button("Blaze", 1, IM_COL32(255, 196, 78, 255), ui(280), ui(44))) {
 				start_game(app, 1);
@@ -4075,12 +4196,7 @@ void draw_menus (App& app) {
 				app.mode_popup = 2;
 			}
 			ImGui::TextDisabled("Fight the bot, rank D through X.");
-			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (mode_button("Tempering", 5, IM_COL32(214, 128, 62, 255), ui(280), ui(44))) {
-				start_game(app, 6);
-			}
-			ImGui::TextDisabled("Twelve heats of ten lines. Every heat the");
-			ImGui::TextDisabled("forge tightens and offers you a temper.");
+			ImGui::TextDisabled("It drafts its own tempers.");
 			ImGui::Dummy(ImVec2(0.f, ui(6)));
 			if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
 				app.screen = Screen::Menu;
@@ -4101,7 +4217,11 @@ void draw_menus (App& app) {
 		ImGui::PopFont();
 		ImGui::TextDisabled("The forge tightens. Take something with you.");
 		ImGui::Dummy(ImVec2(0.f, ui(6)));
-		const float card_w = kMobile ? ui(300) : ui(220);
+		// A card is its family's colour and word, a name, and one plain
+		// line - no numbers anywhere on the face. The card either reads in
+		// a second or it has failed; the arithmetic lives in the README
+		// for whoever wants it.
+		const float card_w = kMobile ? ui(300) : ui(224);
 		for (size_t at = 0; at < app.offers.size(); ++at) {
 			const temper::Temper* card = temper::find(app.offers[at]);
 			if (card == nullptr) {
@@ -4114,6 +4234,18 @@ void draw_menus (App& app) {
 			}
 			ImGui::PushID(static_cast<int>(at));
 			ImGui::BeginGroup();
+			{
+				// The stamp above the name: glyph, then the family word,
+				// both in the family's own ink.
+				const ImU32 ink = family_ink(card->family);
+				ImDrawList* draw = ImGui::GetWindowDrawList();
+				const ImVec2 pen = ImGui::GetCursorScreenPos();
+				const float glyph = ImGui::GetFontSize() * 0.9f;
+				family_glyph(draw, card->family, pen, glyph, ink);
+				draw->AddText(ImVec2(pen.x + glyph + ui(6), pen.y), ink,
+					family_tag(card->family));
+				ImGui::Dummy(ImVec2(card_w, glyph + ui(2)));
+			}
 			ImGui::PushStyleColor(ImGuiCol_Button, family_ink(card->family));
 			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(24, 16, 12, 255));
 			// The cursor the arrow keys move sits on one card; a mouse can
@@ -4133,8 +4265,10 @@ void draw_menus (App& app) {
 				ImGui::PopStyleColor();
 			}
 			ImGui::PopStyleColor(2);
+			// The effect line carries the card, so it gets the body ink
+			// rather than the greyed-out afterthought treatment.
 			ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + card_w);
-			ImGui::TextDisabled("%s", card->text);
+			ImGui::TextUnformatted(card->text);
 			ImGui::PopTextWrapPos();
 			ImGui::EndGroup();
 			ImGui::PopID();
@@ -4152,7 +4286,7 @@ void draw_menus (App& app) {
 		ImGui::Begin("paused", nullptr, box);
 		forge_panel(app);
 		ImGui::TextUnformatted("Paused");
-		if (app.mode == 6 && !app.tempers.empty()) {
+		if (!app.tempers.empty()) {
 			ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
 		}
 		ImGui::Spacing();
@@ -4231,16 +4365,16 @@ void draw_menus (App& app) {
 				static_cast<int>(seconds) / 60, std::fmod(seconds, 60.));
 		}
 		if (app.mode == 6) {
-			// How far the run got, and what it was carrying when it did -
-			// two runs of the same score are not the same run.
 			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
 				won ? "All twelve heats" : "Heat %d of %d",
 				std::min(app.heat + 1, temper::kHeats), temper::kHeats);
-			if (!app.tempers.empty()) {
-				ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui(300));
-				ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
-				ImGui::PopTextWrapPos();
-			}
+		}
+		if (!app.tempers.empty()) {
+			// What the run was carrying when it ended - two runs of the
+			// same score are not the same run.
+			ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui(300));
+			ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
+			ImGui::PopTextWrapPos();
 		}
 		ImGui::Spacing();
 		// The two numbers a finished run is about. Everything else it
@@ -4726,7 +4860,13 @@ int run (bool smoke, long smoke_frames) {
 				behind = 0.02;
 				++frames;
 			}
-			if (frames % 3 == 0) {
+			if (!app.offers.empty()) {
+				// No mashed keys while the cards are up: space is both the
+				// hard drop and the take, and a masher slapping it would
+				// snatch the card off the screenshot tour's table before
+				// the camera fires. The auto-pick above still proves the
+				// take path.
+			} else if (frames % 3 == 0) {
 				const auto& actions = all_actions();
 				const auto& codes = app.config.keys[actions[mash() % actions.size()].id];
 				if (!codes.empty()) {
@@ -4772,6 +4912,14 @@ int run (bool smoke, long smoke_frames) {
 						app.career_od = true;
 					}
 					app.versus->step(*app.session);
+					// The player's side of the forge, only while the round
+					// is live: during the verdict linger the player's sim
+					// still steps, and a draft dealt there would freeze a
+					// countdown nobody can see and be swept away by the
+					// next round anyway.
+					if (app.versus->phase == VersusMatch::Phase::Playing) {
+						offer_tempers(app);
+					}
 					// The round and match flow: linger on the verdict, then
 					// the next round or the loss screen.
 					if (app.versus->phase == VersusMatch::Phase::RoundOver) {
@@ -4786,10 +4934,12 @@ int run (bool smoke, long smoke_frames) {
 					}
 				} else if (!live) {
 					end_game(app);
-				} else if (app.mode == 6) {
-					// A heat is ten lines. Crossing one is where the forge
-					// tightens the fuse, so it is also where it hands over a
-					// tool: the board waits until a card is taken.
+				} else {
+					// Crossing a heat is where the forge tightens the fuse,
+					// so it is also where it hands over a tool: the board
+					// waits until a card is taken. offer_tempers itself
+					// knows which games draft (fuse-rules ones) and which
+					// never do.
 					offer_tempers(app);
 				}
 				++frames;
@@ -4961,12 +5111,17 @@ int run (bool smoke, long smoke_frames) {
 						IM_COL32(255, 214, 96, 255));
 				}
 			}
-			if (app.mode == 6) {
-				// How far through the twelve, over the well, where the
-				// clock would be in a mode that had one.
+			if (app.session->sim().config().fuse) {
+				// How deep into the forge, over the well, where the clock
+				// would be in a mode that had one. Tempering counts to its
+				// finish line; everywhere else the count just climbs.
 				char heat[32];
-				std::snprintf(heat, sizeof heat, "HEAT %d / %d",
-					std::min(app.heat + 1, temper::kHeats), temper::kHeats);
+				if (app.mode == 6) {
+					std::snprintf(heat, sizeof heat, "HEAT %d / %d",
+						std::min(app.heat + 1, temper::kHeats), temper::kHeats);
+				} else {
+					std::snprintf(heat, sizeof heat, "HEAT %d", app.heat + 1);
+				}
 				draw_label(heat, kBoardX + ui(4), kBoardY - ui(24),
 					IM_COL32(255, 196, 120, 255));
 			}
@@ -4982,7 +5137,10 @@ int run (bool smoke, long smoke_frames) {
 			if (app.screen == Screen::Game && app.countdown > 0) {
 				draw_countdown(app);
 			}
-			if (app.screen == Screen::Game && !app.paused && !app.editing) {
+			if (app.screen == Screen::Game && !app.paused && !app.editing
+				&& app.offers.empty()) {
+				// The play buttons step aside while a draft is up - the
+				// cards are the only thing a finger should be able to hit.
 				draw_touch(app);
 			}
 		}

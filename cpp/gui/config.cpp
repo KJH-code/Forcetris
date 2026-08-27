@@ -187,11 +187,20 @@ Config load_config (const std::string& path) {
 			config.unknown.push_back(line);
 		}
 	}
-	// The one-time bring-forward. Only the handling fields are touched, and
-	// only once: the stamp goes out with the next save, and the Trainer button
-	// puts the old numbers back for anyone who wanted them.
+	// The bring-forward, but only for a file still on the numbers an older
+	// build shipped: a player who chose their own handling - Trainer, or
+	// hand-typed values - keeps it, and only picks up the stamp. A file on
+	// exactly the old shipped set (rev 1's Instant) moves to the current
+	// default; the deliberate-Instant player is indistinguishable from the
+	// never-touched one and gets moved once, with the Instant button one
+	// click away.
 	if (config.handling_rev < kHandlingRev) {
-		apply_handling(config, Handling::Instant);
+		const bool old_shipped = config.das == 100 && config.arr == 0
+			&& config.dcd == 0 && config.sdf == 40 && config.are == 0
+			&& !config.clear_delay;
+		if (old_shipped || config.handling_rev < 1) {
+			apply_handling(config, Handling::Standard);
+		}
 		config.handling_rev = kHandlingRev;
 	}
 	// A hand-edited or damaged file must not smuggle values the sliders
@@ -299,32 +308,34 @@ void apply_preset (Config& config, const std::string& name) {
 }
 
 void apply_handling (Config& config, Handling set) {
-	// DCD and ARE are left at zero in all three: neither buys anything on a
-	// 20ms grid, and a delayed spawn is the one thing nobody has ever asked
-	// a stacker for.
-	config.dcd = 0;
+	// A delayed spawn is the one thing none of the three asks for.
 	config.are = 0;
 	switch (set) {
 	case Handling::Trainer:
 		// The Python trainer's numbers, kept whole so nothing is taken away.
 		config.das = 140;
 		config.arr = 40;
+		config.dcd = 0;
 		config.sdf = 6;
 		config.clear_delay = true;
 		break;
-	case Handling::Fast:
-		// One column per frame rather than a jump to the wall, and the same
-		// instant soft drop. For anyone who wants to see the piece travel.
+	case Handling::Instant:
 		config.das = 100;
-		config.arr = 20;
+		config.arr = 0;
+		config.dcd = 0;
 		config.sdf = 40;
 		config.clear_delay = false;
 		break;
-	case Handling::Instant:
+	case Handling::Standard:
 	default:
-		config.das = 100;
-		config.arr = 0;
-		config.sdf = 40;
+		// TETR.IO's own defaults, digit for digit - where its players
+		// start, and so where this game's start too. The clear delay stays
+		// off in every set: the frozen board was responsiveness, not
+		// difficulty, and no modern game has it.
+		config.das = 167;
+		config.arr = 33;
+		config.dcd = 17;
+		config.sdf = 6;
 		config.clear_delay = false;
 		break;
 	}
@@ -333,21 +344,21 @@ void apply_handling (Config& config, Handling set) {
 const char* handling_name (Handling set) {
 	switch (set) {
 	case Handling::Trainer: return "Trainer";
-	case Handling::Fast: return "Fast";
-	case Handling::Instant:
-	default: return "Instant";
+	case Handling::Instant: return "Instant";
+	case Handling::Standard:
+	default: return "Standard";
 	}
 }
 
 const char* handling_note (Handling set) {
 	switch (set) {
 	case Handling::Trainer:
-		return "the old numbers: 500ms across the board, clears animate";
-	case Handling::Fast:
-		return "a column a frame, instant soft drop, no clear freeze";
+		return "the trainer's old numbers, clears animate";
 	case Handling::Instant:
+		return "straight to the wall, straight to the floor - a stacker's";
+	case Handling::Standard:
 	default:
-		return "straight to the wall, straight to the floor, no clear freeze";
+		return "TETR.IO's defaults: start here, tune down as you improve";
 	}
 }
 

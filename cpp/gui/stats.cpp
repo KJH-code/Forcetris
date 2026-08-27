@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "forcetris/attack.hpp"
+#include "forcetris/temper.hpp"
 
 namespace forcetris {
 namespace gui {
@@ -61,15 +62,20 @@ const std::vector<StatDef>& all_stats () {
 			return std::string("-");
 		}},
 		{"heat", "Heat", [] (const Session& s) {
-			// Tempering counts its run in heats of ten lines; every other
-			// mode has no finish line to count towards.
-			const int quota = s.sim().config().line_quota;
-			if (quota <= 0) {
+			// Every fuse game climbs the forge's heats; Tempering alone has
+			// a finish line to count towards, marked by its line quota. The
+			// trainer rules never heat at all.
+			const SimConfig& rules = s.sim().config();
+			if (!rules.fuse) {
 				return std::string("-");
 			}
-			const int per = std::max(1, quota / 12);
-			const int done = std::min(12, s.sim().lines_cleared() / per + 1);
-			return std::to_string(done) + " / 12";
+			const int done = 1 + temper::heats_done(s.sim().lines_cleared(),
+				s.sim().downstack(), rules.gametype == 3);
+			if (rules.line_quota > 0) {
+				return std::to_string(std::min(done, temper::kHeats))
+					+ " / " + std::to_string(temper::kHeats);
+			}
+			return std::to_string(done);
 		}},
 		{"pieces", "Pieces", [] (const Session& s) { return count(s.pieces()); }},
 		{"pps", "PPS", [] (const Session& s) {

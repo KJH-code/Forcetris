@@ -21,7 +21,7 @@ What is here:
 | `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
 | `rating` | An estimated Tetra League standing - Glicko, TR by the official conversion formula, rank - interpolated from TETR.IO's own reported per-rank averages, and labelled the estimate it is |
-| `temper` | The draft mode's pool: fifteen tempers, what each one does to the rules, and the weighted roll that offers three of them a heat |
+| `temper` | The game's central gimmick: the ten-card temper pool, what each card does to the rules, the weighted roll that offers three a heat, the heat counter every screen shares, and the bot's rank-tempered pick |
 | `munch` | MinoMuncher's statistics re-derived over this game's own records (formulas from the MIT-licensed minomuncher-core): the nine clear buckets, spin efficiencies, the three-way attack-per-line split, burst and plonk PPS by Gaussian mixture, the four-deep well rule, the surge accounting and the cheesiness sigmoid - scored over raw attack, a trainer having no multiplayer wire |
 | `profile` | The history: one tolerant key=value line per finished game, appended forever, read back for the profile screen's aggregates and growth charts |
 | `bot` | The versus opponent: a full-reachability search over the real kick tables - so its tucks and spins are exactly the game's - an attack-and-shape evaluation, a rank ladder paced to TETR.IO's own per-rank speeds, and the driver that types the plan into a sim one key at a time |
@@ -68,21 +68,21 @@ and finesse rules, kicks, the volumes, the key bindings and the stat layout
 — sit in one tabbed screen and mirror the Python game's. Handling applies
 from the next game; keys, volumes and layout apply at once.
 
-The handling the game *ships* with is a stacker's rather than the trainer's:
-DAS 100, ARR 0, SDF 40, ARE 0, and the clear delay off. That is not taste,
-it is arithmetic — `feel_check` drives the shipped config through the sim
-and counts the frames the player spends with nothing to control. On the
-trainer's old numbers a held direction took 500ms to cross the board, a
-held soft drop took two full seconds to fall from spawn to the floor, and
-an animated quad froze the board for 29 frames — 580ms — because a naive
-quad is four clearing passes and each pass costs six sprite frames plus a
-resume. The shipped numbers make those 120ms, 20ms and 20ms. The Handling
-tab leads with three buttons — **Instant** (what ships), **Fast** (a column
-a frame instead of a jump to the wall) and **Trainer** (the old numbers,
-kept whole) — and prints what the current sliders cost underneath. A config
-file written before this retune is brought forward once and stamped
-`handlingrev`, so an existing install gets the fix rather than only a fresh
-one; picking Trainer afterwards sticks.
+The handling the game *ships* with is TETR.IO's own defaults, digit for
+digit: DAS 167, ARR 33, DCD 17, SDF 6, ARE 0. Beginners arrive from the
+game everyone learns on and lower the numbers as they improve — that is
+what improving *is* — so the defaults are where they start, not where a
+stacker ends up. Two things stay banished whatever the handling says: the
+clear-animation freeze (an animated quad froze the board for 580ms; no
+modern game has that, and `feel_check` pins it at one frame) and the spawn
+delay. The Handling tab leads with three buttons — **Standard** (what
+ships), **Instant** (the stacker's 100/0/40: straight to the wall,
+straight to the floor) and **Trainer** (the Python trainer's numbers, kept
+whole, animated clears and all) — and prints what the current sliders cost
+in milliseconds underneath. A config file still on an older build's
+shipped numbers is brought forward once and stamped `handlingrev`; a file
+whose handling the player chose - Trainer, or hand-typed values - keeps
+it and only picks up the stamp.
 
 All three of the Python game's modes are here - free, timed with its five
 minute clock and closing score multiplier, arcade with its level ramp and
@@ -207,30 +207,57 @@ soft drop takes to reach the floor, and the frames a held direction takes
 to reach the wall - measured on the config the game ships with, so
 "sluggish" is a number that either moved or did not.
 
-**Tempering** is the variant's own run mode, and the one place the rules
-are not fixed. A run is twelve heats of ten lines. Every heat the forge
-tightens the fuse - which it already did - and offers three tempers, of
-which one is taken: a longer wick, a deeper refuel bank, two more seconds
-of Overdrive, doubled Flow bought with a shorter fuse, or one of the two
-rare cards that change what a clear or a spin *is*. The board waits while
-the cards are up, so the fuse waits too; the pick itself is one press
-(`1` `2` `3`, or the arrows and Enter). Clear the twelfth heat and the run
-is **Forged**; top out before it and the run is what it got to.
+**The draft is the game's whole gimmick.** Every game played under the
+fuse rules climbs the forge in heats - ten cleared lines each, six dug
+rows in Meltdown - and crossing a heat is where the forge tightens the
+fuse *and* offers three tempers, of which one is taken. The board and the
+fuse wait while the cards are up; the pick is one press (`1` `2` `3`, the
+arrows and Enter, or a tap). The trainer rules never draft: the draft is
+part of the fuse ruleset, and turning the fuse off in Rules turns the
+whole forge off with it.
+
+The pool is ten cards in four families, and a card's face carries no
+numbers - a family word and glyph, a name, and one plain line, because a
+card that needs a manual has already failed. **Fuel** survives: *Thick
+Wick* (pieces burn longer, `fuse_base +0.5s`), *Quench* (clears refill
+more fuse, `+0.3s` a line), *Slow Burn* (the forge tightens slower,
+`fuse_decay -0.05s`). **Flow** presses: *Bellows* (`overdrive_secs +3`),
+*White Heat* (`overdrive_mult +0.5`), *Spark* (`+2` Flow per line and per
+attack). **Risk** trades: *Overheat* (all Flow gains doubled, the wick
+half a second shorter), *Gamble* (`overdrive_mult +1.0`, a burnt piece
+costs `15` more Flow). **Rule** rewrites: *Collapse* (clears become a
+sticky cascade), *Every Twist* (every spin scores, minis included). Fuel
+and Flow stack two or three deep; Risk and Rule are one each - nineteen
+stacks in all, and when they run out the forge simply stops dealing.
+
+**Tempering** is the flagship: the run with a finish line. Twelve heats,
+a draft at each, and clearing the twelfth forges the blade - **Forged** -
+while topping out leaves the run what it got to. Its score goes to its
+own table. In a **Duel** both sides draft: the match freezes while you
+choose, and the bot picks its own card the instant it crosses its own
+heat - by temperament, a low rank leaning on Fuel and a high rank on Flow
+and Risk, never Collapse (its planner searches naive clears) - with its
+build shown under its board. The daily, being a fixed-seed run, offers
+everyone the same cards at the same heats.
 
 Every temper is one or two numbers out of `SimConfig`, which is what makes
-the mode cheap and honest: the sim reads its fuse and Flow values live at
-every use rather than deriving anything from them at construction, so
+the gimmick cheap and honest: the sim reads its fuse and Flow values live
+at every use rather than deriving anything from them at construction, so
 `Sim::retune` replaces them mid-run and the next piece is dealt the new
 schedule. Handling is deliberately not among the fields it copies - a
-draft may change the game, never the pad. The pool, the weighted roll and
-the arithmetic live in the core (`temper`), so a replay records the build
-a run was played with. A run's score goes to Tempering's own high score
-table. `temper_check` grades the whole of it: every card against the
-numbers it claims *and* against the ones it must leave alone (the whole `SimConfig` is compared field by field, so a
-card that quietly moves something it never declared is a failure), the
-roll's repeatability and its caps, a retune landing on the next piece
-without disturbing the handling, and a run driven all the way to its
-twelfth heat.
+draft may change the game, never the pad. The pool, the roll, the heat
+counter and the bot's pick all live in the core (`temper`), so a replay
+records the build a run was played with - the bot's side included, in the
+embedded opponent. `temper_check` grades the whole of it: every card
+against the numbers it claims *and* against the ones it must leave alone
+(the whole `SimConfig` is compared field by field, so a card that quietly
+moves something it never declared is a failure), the roll's repeatability
+and its caps, the heat counter, the bot's pick - deterministic, biased by
+rank, never Collapse - a retune landing on the next piece without
+disturbing the handling, and a run driven all the way to its twelfth
+heat. One honest asterisk: drafted runs score higher than the undrafted
+runs the tables already hold, so a table crossing this change compares
+eras, not just players.
 
 Two more modes are this side's own, with no Python counterpart:
 a cheese race - ten, eighteen or a hundred rows of holey garbage, dug as
@@ -332,19 +359,22 @@ main menu's Profile screen reads it all back: lifetime totals, bests and
 the versus record on one tab, growth charts of PPS, APM, VS, estimated TR
 and finesse - each with a ten-game moving average - on the next, and the
 munch averages on the third, all filterable by mode.
-Play opens a mode picker in the variant's own names - Ignition (endless,
-the fuse shortening per level), Blaze (three burning minutes) and Inferno
-(the rising floor) start at a click, while Meltdown / Bunker and Duel each
-open their own window: the cheese one holds Meltdown's race at three
-lengths, Bunker's survival at three paces, and the holes-per-row and
-messiness dials; the duel one the bot's rank row, the first-to count and
-the Fight button. A fuse-rules game scores into the variant's own six
-tables (fusescore.dat, one per mode, Duel included for the day it fights
-fused); the trainer's three-table SFH file keeps its bytes and its
-meaning, and the scores screen shows all nine side by side. Game history
-and replays carry the matching keys - ignition, blaze, inferno, meltdown,
-bunker, duel against the frozen legacy names - so no record ever changes
-game under your feet. Every dial is remembered in the config file, written the
+Play opens a mode picker in the variant's own names, Tempering - the run -
+leading it. Ignition (endless, the fuse shortening per level), Blaze
+(three burning minutes) and Inferno (the rising floor) start at a click,
+while Meltdown / Bunker and Duel each open their own window: the cheese
+one holds Meltdown's race at three lengths, Bunker's survival at three
+paces, and the holes-per-row and messiness dials; the duel one the bot's
+rank row, the first-to count and the Fight button - and every one of them
+drafts, because every one of them burns the fuse. A fuse-rules game
+scores into the variant's own seven tables (fusescore.dat, one per mode,
+Duel included for the day it fights fused); the trainer's three-table SFH
+file keeps its bytes and its meaning, and the scores screen shows all ten
+side by side. Game history and replays carry the matching keys - ignition,
+blaze, inferno, meltdown, bunker, duel, temper against the frozen legacy
+names - so no record ever changes game under your feet. A variant file
+written before a table was added is read as far as it goes and the new
+tables start empty, so adding a mode never costs anyone a score. Every dial is remembered in the config file, written the
 moment a game starts, so the next launch picks up where the last fight
 left off. Each entry carries a line on what it does, and Escape
 steps back out of anything - a detail window, the picker, the settings,

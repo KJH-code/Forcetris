@@ -8,8 +8,12 @@
 #pragma once
 
 #include <optional>
+#include <random>
+#include <string>
+#include <vector>
 
 #include "forcetris/bot.hpp"
+#include "forcetris/temper.hpp"
 #include "session.hpp"
 
 namespace forcetris {
@@ -34,6 +38,17 @@ struct VersusMatch {
 
 	std::optional<Session> bot;
 	std::optional<bot::Driver> driver;
+
+	// The bot's side of the draft. Its start config is captured *after*
+	// begin_round's handling overrides - a build rebuilt from the player's
+	// config would put the player's cleartype back on a planner that
+	// assumes naive clears, corrupting the bot on every draft, Rule card
+	// or not. Fresh per round, like the player's own.
+	SimConfig bot_start;
+	std::vector<std::string> bot_tempers;
+	int bot_heat = 0;
+	unsigned bot_seed = 0;
+	std::mt19937 bot_rng;
 
 	VersusMatch (int rank, int ft) : rank_index(rank), first_to(ft) {}
 
