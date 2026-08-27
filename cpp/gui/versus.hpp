@@ -8,7 +8,6 @@
 #pragma once
 
 #include <optional>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -39,24 +38,23 @@ struct VersusMatch {
 	std::optional<Session> bot;
 	std::optional<bot::Driver> driver;
 
-	// The bot's side of the draft. Its start config is captured *after*
-	// begin_round's handling overrides - a build rebuilt from the player's
-	// config would put the player's cleartype back on a planner that
-	// assumes naive clears, corrupting the bot on every draft, Rule card
-	// or not. Fresh per round, like the player's own.
-	SimConfig bot_start;
+	// The blade the bot carries: a fixed build applied to its rules at
+	// round start rather than drafted mid-round - a duel is real time, and
+	// the freeze that lets a hand read cards has no business in one. Kept
+	// here so the panel can print it under the bot's board.
 	std::vector<std::string> bot_tempers;
-	int bot_heat = 0;
-	unsigned bot_seed = 0;
-	std::mt19937 bot_rng;
 
 	VersusMatch (int rank, int ft) : rank_index(rank), first_to(ft) {}
 
 	// A fresh board and a fresh driver for the next round; the match
 	// counters stay. `player_meta` seeds the bot's own recording - same
-	// stamp and rules, the handling overridden below.
-	void begin_round (const SimConfig& player_config, unsigned seed,
-	                  const replay::Meta& player_meta);
+	// stamp and rules, the handling overridden below. `bot_base` is the
+	// rules the BOT plays under before its blade - for a plain duel the
+	// player's config, for a campaign boss the stage's terms with none of
+	// the player's permanent metal - and `blade` is what it carries in.
+	void begin_round (unsigned seed, const replay::Meta& player_meta,
+	                  const SimConfig& bot_base,
+	                  const std::vector<std::string>& blade);
 
 	// One 20ms tick, called right after the player's session stepped: drive
 	// the bot, step it, ferry the attack both ways, and notice the round

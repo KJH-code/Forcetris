@@ -123,11 +123,13 @@ int heats_done (int lines, int downstack, bool by_digging) {
 }
 
 std::vector<std::string> offer (unsigned seed, int heat,
-		const std::vector<std::string>& taken) {
-	// The roll is the run and the heat, and nothing else: the same run
-	// offers the same three cards at the same heat however it got there,
-	// so a replay can say what the choice actually was.
-	std::mt19937 rng(seed ^ (0x9e3779b9u * static_cast<unsigned>(heat + 1)));
+		const std::vector<std::string>& taken, unsigned salt) {
+	// The roll is the run, the heat and the reroll count, and nothing else:
+	// the same run offers the same three cards at the same heat however it
+	// got there, so a replay can say what the choice actually was. Salt
+	// zero must perturb nothing - it is every caller that predates rerolls.
+	std::mt19937 rng(seed ^ (0x9e3779b9u * static_cast<unsigned>(heat + 1))
+		^ (0x85ebca6bu * salt));
 	std::vector<const Temper*> left;
 	std::vector<int> weights;
 	for (const Temper& entry : pool()) {
@@ -160,13 +162,14 @@ std::vector<std::string> offer (unsigned seed, int heat,
 
 int bot_pick (const std::vector<std::string>& offers, int rank_index,
 		std::mt19937& rng) {
-	// The bot drafts by temperament rather than by reading the board: a low
-	// rank plays to survive and leans on Fuel, a high rank plays to press
-	// and leans on Flow and Risk. Collapse is never taken - the planner
-	// assumes naive clears, and a bot that rewrites its own clearing rule
-	// mid-round would be sabotaging the very search that plays its pieces.
-	// -1 when nothing acceptable is on the table; the caller passes the
-	// heat by without a card, which is what a dry pool already does.
+	// A pick by temperament rather than by reading the board: a low rank
+	// plays to survive and leans on Fuel, a high rank plays to press and
+	// leans on Flow and Risk. Collapse is never taken - the duel planner
+	// assumes naive clears, and rewriting the clearing rule would sabotage
+	// the very search that plays the pieces. The duel bot itself no longer
+	// drafts mid-round (it carries a blade instead); this drives the test
+	// harness's stand-in player, and waits for blade variety.
+	// -1 when nothing acceptable is on the table.
 	const double press = std::clamp(rank_index / 6.0, 0.0, 1.0);
 	std::vector<int> weights;
 	std::vector<int> takeable;
@@ -208,6 +211,32 @@ int bot_pick (const std::vector<std::string>& offers, int rank_index,
 		++at;
 	}
 	return takeable[at];
+}
+
+std::vector<std::string> blade_for (int rank_index) {
+	// One build per rung, hand-set rather than rolled: a duel against the
+	// same rank should be the same fight, and the escalation is the point -
+	// each rung keeps what the one below carried and adds an edge. Never
+	// collapse; the planner searches naive clears.
+	static const std::vector<std::vector<std::string>> blades = {
+		{"thick_wick"},                                          // D
+		{"thick_wick", "quench"},                                // C
+		{"thick_wick", "quench", "bellows"},                     // B
+		{"thick_wick", "quench", "bellows", "spark"},            // A
+		{"quench", "bellows", "spark", "white_heat"},            // S
+		{"quench", "bellows", "spark", "white_heat", "every_twist"},  // SS
+		{"bellows", "spark", "white_heat", "overheat", "every_twist"},  // U
+		{"bellows", "spark", "white_heat", "white_heat", "overheat",
+			"gamble"},                                           // X
+	};
+	const int last = static_cast<int>(blades.size()) - 1;
+	return blades[static_cast<size_t>(std::clamp(rank_index, 0, last))];
+}
+
+int embers_of (int lines, int attack) {
+	// The same shape as the Flow gains: lines pay, the attack they carried
+	// pays more, and nothing else does - haste alone earns no coin.
+	return std::max(0, lines) * 2 + std::max(0, attack) * 3;
 }
 
 } // namespace temper

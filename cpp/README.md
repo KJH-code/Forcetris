@@ -22,6 +22,7 @@ What is here:
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
 | `rating` | An estimated Tetra League standing - Glicko, TR by the official conversion formula, rank - interpolated from TETR.IO's own reported per-rank averages, and labelled the estimate it is |
 | `temper` | The game's central gimmick: the ten-card temper pool, what each card does to the rules, the weighted roll that offers three a heat, the heat counter every screen shares, and the bot's rank-tempered pick |
+| `campaign` | The Forge Road: sixteen declarative stage recipes across two chapters, the unlock chain, the star and slag arithmetic, the Anvil's permanent upgrades, and campaign.dat |
 | `munch` | MinoMuncher's statistics re-derived over this game's own records (formulas from the MIT-licensed minomuncher-core): the nine clear buckets, spin efficiencies, the three-way attack-per-line split, burst and plonk PPS by Gaussian mixture, the four-deep well rule, the surge accounting and the cheesiness sigmoid - scored over raw attack, a trainer having no multiplayer wire |
 | `profile` | The history: one tolerant key=value line per finished game, appended forever, read back for the profile screen's aggregates and growth charts |
 | `bot` | The versus opponent: a full-reachability search over the real kick tables - so its tucks and spins are exactly the game's - an attack-and-shape evaluation, a rank ladder paced to TETR.IO's own per-rank speeds, and the driver that types the plan into a sim one key at a time |
@@ -233,12 +234,43 @@ stacks in all, and when they run out the forge simply stops dealing.
 **Tempering** is the flagship: the run with a finish line. Twelve heats,
 a draft at each, and clearing the twelfth forges the blade - **Forged** -
 while topping out leaves the run what it got to. Its score goes to its
-own table. In a **Duel** both sides draft: the match freezes while you
-choose, and the bot picks its own card the instant it crosses its own
-heat - by temperament, a low rank leaning on Fuel and a high rank on Flow
-and Risk, never Collapse (its planner searches naive clears) - with its
-build shown under its board. The daily, being a fixed-seed run, offers
-everyone the same cards at the same heats.
+own table. The daily, being a fixed-seed run, offers everyone the same
+cards at the same heats.
+
+A **Duel never stops**. There are no drafts in versus, either side - the
+freeze that lets a hand read cards has no business in a real-time fight -
+and the heats only tighten the fuse there. The bot arrives *armed*
+instead: every rank carries a fixed blade (`temper::blade_for`, D's
+single thick wick escalating to X's overheat-and-gamble build, never
+Collapse - its planner searches naive clears), applied to its rules at
+round start and shown under its board, and written into its embedded
+recording the way a drafted build would have been.
+
+The draft screen is also where the run's coin is spent. Clears earn
+**embers** - `embers_of`: two a line, three per point of attack, and
+nothing for haste - and the purse buys a **reroll** of the three cards
+(6) or a **second pick** off the same table (14). The balance is derived
+from the sim's own totals minus what was spent, so it cannot drift, and
+it dies with the run - which is where the campaign picks up.
+
+**The Forge Road** is what became of the career screen: sixteen stages in
+two chapters, each a declarative recipe over the same engine - a line
+quota over preset rubble, a three-hole dig, cascade-only clears, a
+no-kicks room, a floor that rises while you chase a quota, a stage that
+starts with Overheat already in your blood, and a boss duel closing each
+chapter with its own blade (the Forgemaster fights two falls behind
+bellows, white heat, overheat and gamble). Clearing a stage opens the
+next and pays **slag**: generously the first time with a star bonus
+(clear / under par / no forced drops; bosses count win / sweep / ignited
+sweep), a little on repeats, and a dying run renders its unspent embers
+down - the prestige loop, "the run's coin dies, the metal stays". Slag
+buys permanent upgrades at **the Anvil** - a longer wick, a deeper bank,
+a greater bellows, ember sense, a free opening draft - and that metal
+rides into campaign stages *only*: stage records say `campaign`, a name
+no score table owns, so an Anvil-boosted run can never touch the pure
+modes' tables. Progress lives in `campaign.dat`, the same tolerant
+key=value file the career and profile keep, and the old ladder's
+career.dat stays untouched beside it; The Daily survives unchanged.
 
 Every temper is one or two numbers out of `SimConfig`, which is what makes
 the gimmick cheap and honest: the sim reads its fuse and Flow values live
@@ -433,7 +465,11 @@ else to fetch.
 
 Headless machines can still prove the whole thing runs:
 `FORCETRIS_SMOKE=1500 SDL_VIDEODRIVER=dummy ./forcetris` plays that many
-frames of scripted-random input and exits; `FORCETRIS_SHOT=/path/out.bmp`
+frames of scripted-random input and exits (`FORCETRIS_SMOKE_STAGE=<n>`
+points the run at a Forge Road stage instead, so every recipe's launch,
+overrides and settlement can be proven headlessly; `FORCETRIS_CAMPAIGN`
+redirects campaign.dat the way the other data files redirect);
+`FORCETRIS_SHOT=/path/out.bmp`
 saves the final frame. Between games it tours the screens a game never
 opens - how to play, both high score pages, the replay browser, the
 analysis of the run just finished, and that same analysis screen with

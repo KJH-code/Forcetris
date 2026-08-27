@@ -36,6 +36,7 @@
 
 #include "audio.hpp"
 #include "config.hpp"
+#include "forcetris/campaign.hpp"
 #include "forcetris/career.hpp"
 #include "forcetris/hiscore.hpp"
 #include "forcetris/munch.hpp"
@@ -379,16 +380,38 @@ struct App {
 	int career_stage = -1;
 	bool career_od = false;
 	bool daily_run = false;
+	// The Forge Road: what has been earned and bought, which stage the run
+	// in play belongs to (-1 for every ordinary game), whether this boss
+	// fight saw the player ignite, and what the last settlement paid - the
+	// over screen shows the receipt.
+	campaign::State campaign;
+	int campaign_stage = -1;
+	bool campaign_od = false;
+	int last_stage_stars = 0;
+	int last_slag_gain = 0;
 	// Tempering: the rules the run started from, the tempers drafted since,
 	// how many heats have been forged, and the three cards on the table
 	// right now - which is also the flag for "the board is waiting".
 	SimConfig temper_start;
 	std::vector<std::string> tempers;
 	unsigned temper_seed = 0;
+	// The duel's other side, fixed for the whole match: the rules the bot
+	// builds from (a campaign boss's terms carry none of the player's
+	// permanent metal) and the blade forged into them each round.
+	SimConfig versus_bot_base;
+	std::vector<std::string> versus_blade;
 	int heat = 0;
 	std::vector<std::string> offers;
 	int offer_at = 0;
 	int offer_shown = 0;         // Frames the cards have been on the table.
+	// The run's coin. The balance is derived - what the sim's totals have
+	// earned, minus what the draft screen has spent - so there is no
+	// second counter to fall out of step with the board.
+	int ember_spent = 0;
+	int ember_bonus = 0;         // Percent, from the Anvil; campaign only.
+	unsigned offer_salt = 0;     // Rerolls of the current hand.
+	int extra_picks = 0;         // Second cards bought on this hand.
+	bool offer_taken = false;    // A card has left this hand already.
 	// The juice: a fixed pool of clear sparks (a hard cap, not a queue -
 	// an overflowing celebration recycles its oldest embers), and the
 	// frame the board stops shuddering.
@@ -586,12 +609,19 @@ void start_game (App& app, int mode,
 		std::optional<unsigned> fixed_seed = std::nullopt) {
 	app.versus.reset();
 	app.career_stage = -1;
+	app.campaign_stage = -1;
 	app.daily_run = false;
 	app.mode = mode;
 	app.tempers.clear();
 	app.offers.clear();
 	app.offer_at = 0;
+	app.offer_shown = 0;
 	app.heat = 0;
+	app.ember_spent = 0;
+	app.ember_bonus = 0;
+	app.offer_salt = 0;
+	app.extra_picks = 0;
+	app.offer_taken = false;
 	// The dials just used are worth keeping even if the app never gets a
 	// clean exit - phones rarely grant one.
 	save_config(app.config, app.config_file);
@@ -647,22 +677,23 @@ void start_game (App& app, int mode,
 // between round one and round two, which is exactly the bug the old
 // duplicated construction had.
 void deal_versus_round (App& app) {
-	// The player's draft starts over with the board: fresh tempers, fresh
-	// offers, a heat counter at zero, and a seed of this round's own.
+	// A duel never drafts, so the temper state is scrubbed rather than
+	// re-dealt: a leftover solo build would print on the pause screen, and
+	// leftover offers would freeze the match under a card nobody can see.
 	app.tempers.clear();
 	app.offers.clear();
-	app.offer_at = 0;
-	app.offer_shown = 0;
-	app.heat = 0;
 	const unsigned seed = app.seeds();
-	app.temper_seed = seed;
 	// The rules this round is played under were fixed by start_versus -
 	// meta_for reads the Rules tab, which the career stage overrides, so
 	// the recording is stamped from the config actually in force.
 	replay::Meta meta = meta_for(app.config, 5);
 	stamp_fuse(meta, app.temper_start);
 	app.session.emplace(app.temper_start, seed, meta);
-	app.versus->begin_round(app.temper_start, app.seeds(), meta);
+	// The bot arrives armed rather than drafting: its blade is the round's
+	// identity, the same fight every time this rank is fought. A campaign
+	// boss overrides both its base rules and its blade.
+	app.versus->begin_round(app.seeds(), meta, app.versus_bot_base,
+		app.versus_blade);
 	app.countdown = app.start_delay;
 	reset_effects(app);
 }
@@ -670,7 +701,9 @@ void deal_versus_round (App& app) {
 void start_versus (App& app, int career_stage = -1) {
 	app.mode = 5;
 	app.career_stage = career_stage;
+	app.campaign_stage = -1;
 	app.career_od = false;
+	app.campaign_od = false;
 	app.daily_run = false;
 	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
@@ -688,8 +721,11 @@ void start_versus (App& app, int career_stage = -1) {
 			config.fuse_base - 0.1 * career_stage);
 	}
 	// The round rules, tightened and all, kept for every round of the
-	// match - and the base every draft rebuilds from.
+	// match. In a plain duel the bot builds from the same rules; its blade
+	// is its rank's standard issue.
 	app.temper_start = config;
+	app.versus_bot_base = config;
+	app.versus_blade = temper::blade_for(rank);
 	app.versus.emplace(rank, first_to);
 	deal_versus_round(app);
 	app.screen = Screen::Game;
@@ -871,6 +907,110 @@ std::string temper_line (const std::vector<std::string>& taken) {
 	return line;
 }
 
+// One stage of the Forge Road put on the table. The recipe decides
+// everything - the mode, the finish line, the overrides, the boss's terms -
+// and the launcher's whole job is to hand those decisions to the same
+// machinery every ordinary game uses, plus the three things a recipe can
+// ask for that no ordinary game does: a preset board, a fuse that burns
+// hot from the first frame, and the Anvil's permanent metal on the
+// player's side only.
+void start_stage (App& app, int index) {
+	if (index < 0 || index >= static_cast<int>(campaign::stages().size())) {
+		return;
+	}
+	const campaign::Stage& stage
+		= campaign::stages()[static_cast<size_t>(index)];
+	app.versus.reset();
+	app.career_stage = -1;
+	app.career_od = false;
+	app.campaign_od = false;
+	app.daily_run = false;
+	app.campaign_stage = index;
+	app.mode = stage.mode;
+	app.tempers.clear();
+	app.offers.clear();
+	app.offer_at = 0;
+	app.offer_shown = 0;
+	app.heat = 0;
+	app.ember_spent = 0;
+	app.offer_salt = 0;
+	app.extra_picks = 0;
+	app.offer_taken = false;
+	app.ember_bonus = campaign::ember_bonus_percent(app.campaign.forge);
+	save_config(app.config, app.config_file);
+
+	SimConfig base = app.config.sim();
+	base.gametype = stage.mode == 5 ? 5 : stage.mode;
+	if (stage.mode == 5) {
+		base.cheese_holes = 1;
+		base.cheese_messiness = 30;
+	}
+	const SimConfig mine = campaign::stage_config(stage, base,
+		app.campaign.forge);
+	const unsigned seed = app.seeds();
+	app.temper_seed = seed;
+	app.temper_start = mine;
+	replay::Meta meta = meta_for(app.config, stage.mode);
+	stamp_fuse(meta, mine);
+	// Its own name in every record: fuse_table_for has no fall-through, so
+	// an Anvil-boosted score can never reach an ordinary table even if the
+	// probe gate below were lost.
+	meta.gametype = "campaign";
+
+	if (stage.mode == 5) {
+		app.versus_bot_base = campaign::bot_config(stage, base);
+		app.versus_blade = campaign::blade_of(stage);
+		app.session.emplace(mine, seed, meta);
+		app.versus.emplace(stage.rank, stage.first_to);
+		app.versus->begin_round(app.seeds(), meta, app.versus_bot_base,
+			app.versus_blade);
+		app.countdown = app.start_delay;
+		reset_effects(app);
+	} else {
+		app.session.emplace(mine, seed, meta);
+		const std::vector<std::string> rows = campaign::board_rows(stage);
+		if (!rows.empty()) {
+			// Legal before the first step, and the countdown guarantees
+			// there has been none.
+			app.session->sim_mutable().seed(Board::from_rows(rows));
+		}
+		if (stage.pressure) {
+			// Sticks for the whole game: nothing solo ever rewrites it.
+			app.session->sim_mutable().set_pressure(true);
+		}
+		app.countdown = app.start_delay;
+		reset_effects(app);
+		if (campaign::free_drafts(app.campaign.forge) > 0) {
+			// Preheat: the first draft comes free at the door, dealt from
+			// heat zero the way the ten-line crossing would have dealt it.
+			app.offers = temper::offer(app.temper_seed, 0, {});
+			app.offer_at = 0;
+			app.offer_shown = 0;
+		}
+	}
+	app.screen = Screen::Game;
+	app.paused = false;
+	app.editing = false;
+	app.place_panels = true;
+	app.hiscore_place = -1;
+	app.score_saved = false;
+	app.audio.start_music();
+}
+
+// What the run's coin purse holds right now: earned by the sim's own
+// monotone totals - lines, and the attack they carried - swollen by the
+// Anvil's ember sense in a campaign stage, minus what the draft screen has
+// spent. Derived rather than accumulated, so it cannot drift.
+int ember_balance (const App& app) {
+	if (!app.session.has_value()) {
+		return 0;
+	}
+	const Sim& sim = app.session->sim();
+	const int earned = temper::embers_of(sim.lines_cleared(),
+		sim.attack_sent());
+	return earned + earned * app.ember_bonus / 100 - app.ember_spent;
+}
+
 // A heat has been forged if the run's counter has crossed another rung -
 // lines everywhere, dug rows in Meltdown. Put three cards on the table when
 // it has; the loop stops stepping the sim while they are there, so the fuse
@@ -894,6 +1034,9 @@ void offer_tempers (App& app) {
 	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers);
 	app.offer_at = 0;
 	app.offer_shown = 0;
+	app.offer_salt = 0;
+	app.extra_picks = 0;
+	app.offer_taken = false;
 	if (app.offers.empty()) {
 		// The pool ran dry - nineteen stacks is all there is - and a draft
 		// with nothing to draft must not stop the game.
@@ -914,10 +1057,45 @@ void take_temper (App& app, int at) {
 	app.tempers.push_back(app.offers[at]);
 	app.session->draft(temper::tempered(app.temper_start, app.tempers),
 		app.tempers.back());
+	app.audio.play("b2b");
+	// A bought second pick keeps the hand open, minus the card just taken;
+	// the heat advances once per hand, not once per card.
+	if (app.extra_picks > 0 && app.offers.size() > 1) {
+		--app.extra_picks;
+		app.offer_taken = true;
+		app.offers.erase(app.offers.begin() + at);
+		app.offer_at = std::min(app.offer_at,
+			static_cast<int>(app.offers.size()) - 1);
+		return;
+	}
 	app.offers.clear();
 	app.offer_shown = 0;
+	app.offer_taken = false;
+	app.extra_picks = 0;
 	++app.heat;
-	app.audio.play("b2b");
+}
+
+// The two things the coin buys, both on the draft screen: the same heat
+// dealt again, and a second card off the same table.
+void reroll_offer (App& app) {
+	if (app.offer_taken || ember_balance(app) < temper::kRerollCost) {
+		return;
+	}
+	app.ember_spent += temper::kRerollCost;
+	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers,
+		++app.offer_salt);
+	app.offer_at = 0;
+	app.audio.play("rotate");
+}
+
+void buy_extra_pick (App& app) {
+	if (app.extra_picks > 0 || app.offers.size() < 2
+		|| ember_balance(app) < temper::kExtraPickCost) {
+		return;
+	}
+	app.ember_spent += temper::kExtraPickCost;
+	app.extra_picks = 1;
+	app.audio.play("hold");
 }
 
 void end_game (App& app) {
@@ -954,13 +1132,48 @@ void end_game (App& app) {
 		career::save(career::path(app.root), app.career);
 		app.daily_run = false;
 	}
+	// The Forge Road's settlement: stars only ever upward, slag always -
+	// a win pays the stage's bounty, a death renders the unspent embers
+	// down. Written before the table probe, which a stage never enters.
+	if (app.campaign_stage >= 0) {
+		const campaign::Stage& stage
+			= campaign::stages()[static_cast<size_t>(app.campaign_stage)];
+		bool won = false;
+		int stars = 0;
+		if (stage.mode == 5 && app.versus.has_value()) {
+			won = app.versus->player_wins > app.versus->bot_wins;
+			const bool sweep = won && app.versus->bot_wins == 0;
+			stars = campaign::boss_stars(won, sweep, app.campaign_od);
+		} else if (app.session.has_value()) {
+			const Sim& sim = app.session->sim();
+			won = sim.won();
+			stars = campaign::solo_stars(won, sim.frame() * 0.02,
+				stage.par_seconds, app.session->forced());
+		}
+		const auto held = app.campaign.stars.find(stage.id);
+		const bool first_clear
+			= held == app.campaign.stars.end() || held->second == 0;
+		const int slag = campaign::slag_award(stage, first_clear, won, stars,
+			ember_balance(app));
+		app.campaign.slag += slag;
+		if (stars > app.campaign.stars[stage.id]) {
+			app.campaign.stars[stage.id] = stars;
+		}
+		campaign::save(campaign::path(app.root), app.campaign);
+		app.last_stage_stars = stars;
+		app.last_slag_gain = slag;
+	}
 	// Would this run make the table? The probe carries the raw clock value,
 	// exactly as eval_loss probes it - the conversion to stored centiseconds
 	// only happens if a name is entered and the score actually submitted.
 	// The loss-time counters: eval_loss probes before a still-resolving
 	// clear lands its points, so the snapshot does too.
 	const bool fused = app.session->sim().config().fuse;
-	if (fused) {
+	if (app.campaign_stage >= 0) {
+		// A stage never enters a table: its rules carry the Anvil's metal,
+		// and its record already says "campaign" - a name no table owns.
+		app.hiscore_place = -1;
+	} else if (fused) {
 		// A fuse-rules game competes in the variant's own tables, every
 		// mode with a table of its own.
 		const Sim& sim = app.session->sim();
@@ -1172,7 +1385,11 @@ void handle_event (App& app, const SDL_Event& event) {
 		&& !ImGui::GetIO().WantCaptureKeyboard
 		&& ((app.screen == Screen::Game && !app.editing && !app.layout_preview)
 			|| app.screen == Screen::Over)) {
-		if (app.mode == 5) {
+		if (app.campaign_stage >= 0) {
+			// A stage restarts as the stage, or the retry would silently
+			// shed the recipe and play a plain game in its clothes.
+			start_stage(app, app.campaign_stage);
+		} else if (app.mode == 5) {
 			start_versus(app, app.career_stage);
 		} else {
 			start_game(app, app.mode);
@@ -3040,8 +3257,9 @@ void draw_help (App& app) {
 		ImGui::TextUnformatted(
 			"Every ten lines is a heat. The forge tightens and offers three\n"
 			"tempers; take one - the board waits while you choose. Fuel\n"
-			"survives, Flow presses, Risk trades, Rule rewrites. In a duel\n"
-			"the bot drafts its own.");
+			"survives, Flow presses, Risk trades, Rule rewrites. A duel\n"
+			"never stops: no drafts there - the bot brings a forged blade\n"
+			"of its rank instead.");
 		ImGui::TextDisabled(
 			"The plain trainer rules live under Settings, Rules, Fuse.");
 	} else {
@@ -3787,7 +4005,7 @@ void draw_career (App& app) {
 	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(24)),
 		ImGuiCond_Always, ImVec2(0.5f, 0.f));
 	const float wide
-		= std::min(ui(420), ImGui::GetIO().DisplaySize.x - ui(16));
+		= std::min(ui(490), ImGui::GetIO().DisplaySize.x - ui(16));
 	ImGui::SetNextWindowSizeConstraints(ImVec2(wide, 0),
 		ImVec2(wide, ImGui::GetIO().DisplaySize.y - ui(48)));
 	ImGui::Begin("Career", nullptr, ImGuiWindowFlags_AlwaysAutoResize
@@ -3795,39 +4013,53 @@ void draw_career (App& app) {
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
 	ImGui::PushFont(app.fonts.head);
-	ImGui::TextUnformatted("The Ladder");
+	ImGui::TextUnformatted("The Forge Road");
 	ImGui::PopFont();
-	ImGui::TextDisabled("Fight the ranks in order. A win opens the next;");
-	ImGui::TextDisabled("a sweep pays two stars, a sweep with Overdrive three.");
+	ImGui::TextDisabled("Sixteen stages, each with its own fire. Clear one");
+	ImGui::TextDisabled("to open the next; slag buys permanent metal below.");
+	ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f), "SLAG %d",
+		app.campaign.slag);
 	ImGui::Dummy(ImVec2(0.f, ui(4)));
-	const auto& ladder = bot::ranks();
-	std::vector<std::string> names;
-	for (const auto& rank : ladder) {
-		names.push_back(rank.name);
-	}
-	if (ImGui::BeginTable("ladder", 3)) {
-		for (size_t stage = 0; stage < ladder.size(); ++stage) {
+	const std::vector<campaign::Stage>& road = campaign::stages();
+	for (size_t at = 0; at < road.size(); ++at) {
+		if (at % campaign::kPerChapter == 0) {
+			ImGui::PushFont(app.fonts.head);
+			ImGui::Text("Chapter %d",
+				static_cast<int>(at / campaign::kPerChapter) + 1);
+			ImGui::PopFont();
+		}
+		const campaign::Stage& stage = road[at];
+		const bool open_stage = campaign::open(app.campaign, at);
+		const auto found = app.campaign.stars.find(stage.id);
+		const int stars
+			= found != app.campaign.stars.end() ? found->second : 0;
+		ImGui::PushID(static_cast<int>(at));
+		if (ImGui::BeginTable("stage", 3,
+			ImGuiTableFlags_SizingFixedFit)) {
+			ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthStretch);
+			ImGui::TableSetupColumn("stars");
+			ImGui::TableSetupColumn("go");
 			ImGui::TableNextRow();
 			ImGui::TableSetColumnIndex(0);
-			// A rank badge: the ladder's colour deepening as it climbs,
-			// greyed out while the rung is still locked.
-			const bool open_rung = career::open(app.career, names, stage);
-			const float heat = static_cast<float>(stage)
-				/ std::max<size_t>(1, ladder.size() - 1);
-			const ImU32 badge = open_rung
-				? IM_COL32(static_cast<int>(196 + 59 * heat),
-					static_cast<int>(150 - 40 * heat),
-					static_cast<int>(70 - 20 * heat), 255)
-				: IM_COL32(78, 68, 60, 255);
-			rank_badge(ladder[stage].name, badge,
-				open_rung ? IM_COL32(28, 16, 8, 255)
-					: IM_COL32(150, 140, 130, 255), ui(38));
-			ImGui::SameLine();
-			ImGui::Text("Stage %d", static_cast<int>(stage) + 1);
+			// A boss row wears the duel's gold; a locked one goes ashen.
+			const ImVec4 name_ink = !open_stage
+				? ImVec4(0.45f, 0.42f, 0.4f, 1.f)
+				: stage.mode == 5 ? ImVec4(1.f, 0.84f, 0.38f, 1.f)
+				: ImVec4(0.93f, 0.87f, 0.8f, 1.f);
+			ImGui::TextColored(name_ink, "%d-%d  %s",
+				static_cast<int>(at) / campaign::kPerChapter + 1,
+				static_cast<int>(at) % campaign::kPerChapter + 1,
+				stage.name);
+			if (open_stage) {
+				// Wrapped, not clipped: a gimmick line cut mid-word reads
+				// like a bug, and the row can afford a second line.
+				ImGui::PushTextWrapPos(0.f);
+				ImGui::TextDisabled("%s", stage.blurb);
+				ImGui::PopTextWrapPos();
+			} else {
+				ImGui::TextDisabled("Locked.");
+			}
 			ImGui::TableSetColumnIndex(1);
-			const auto found = app.career.stars.find(names[stage]);
-			const int stars
-				= found != app.career.stars.end() ? found->second : 0;
 			char marks[8] = "- - -";
 			for (int i = 0; i < stars && i < 3; ++i) {
 				marks[i * 2] = '*';
@@ -3836,18 +4068,46 @@ void draw_career (App& app) {
 				? ImVec4(1.f, 0.84f, 0.38f, 1.f)
 				: ImVec4(0.45f, 0.5f, 0.58f, 1.f), "%s", marks);
 			ImGui::TableSetColumnIndex(2);
-			if (open_rung) {
-				ImGui::PushID(static_cast<int>(stage));
+			if (open_stage) {
 				if (ImGui::Button(stars > 0 ? "Again" : "Fight",
-					ImVec2(ui(70), 0))) {
-					start_versus(app, static_cast<int>(stage));
+					ImVec2(ui(64), 0))) {
+					start_stage(app, static_cast<int>(at));
 				}
-				ImGui::PopID();
-			} else {
-				ImGui::TextDisabled("Locked");
 			}
+			ImGui::EndTable();
 		}
-		ImGui::EndTable();
+		ImGui::PopID();
+	}
+	ImGui::Separator();
+	ImGui::PushFont(app.fonts.head);
+	ImGui::TextUnformatted("The Anvil");
+	ImGui::PopFont();
+	ImGui::TextDisabled("Permanent metal, paid in slag. It rides into every");
+	ImGui::TextDisabled("stage on the road - and only there.");
+	ImGui::Dummy(ImVec2(0.f, ui(2)));
+	for (const campaign::Upgrade& sold : campaign::anvil()) {
+		const auto held = app.campaign.forge.find(sold.id);
+		const int level = held != app.campaign.forge.end() ? held->second : 0;
+		ImGui::PushID(sold.id);
+		if (level >= sold.levels) {
+			ImGui::TextColored(ImVec4(1.f, 0.84f, 0.38f, 1.f), "%s %d/%d",
+				sold.name, level, sold.levels);
+		} else {
+			const int cost = campaign::upgrade_cost(sold, level + 1);
+			ImGui::Text("%s %d/%d", sold.name, level, sold.levels);
+			ImGui::SameLine();
+			ImGui::BeginDisabled(app.campaign.slag < cost);
+			char label[32];
+			std::snprintf(label, sizeof label, "Buy (%d)", cost);
+			if (ImGui::SmallButton(label)) {
+				app.campaign.slag -= cost;
+				app.campaign.forge[sold.id] = level + 1;
+				campaign::save(campaign::path(app.root), app.campaign);
+			}
+			ImGui::EndDisabled();
+		}
+		ImGui::TextDisabled("%s", sold.text);
+		ImGui::PopID();
 	}
 	ImGui::Separator();
 	ImGui::PushFont(app.fonts.head);
@@ -4012,6 +4272,7 @@ void draw_menus (App& app) {
 		ImGui::Dummy(ImVec2(0.f, ui(2)));
 		if (ImGui::Button("Career", ImVec2(ui(260), ui(44)))) {
 			app.career = career::load(career::path(app.root));
+			app.campaign = campaign::load(campaign::path(app.root));
 			app.screen = Screen::Career;
 		}
 		ImGui::Dummy(ImVec2(0.f, ui(6)));
@@ -4196,7 +4457,7 @@ void draw_menus (App& app) {
 				app.mode_popup = 2;
 			}
 			ImGui::TextDisabled("Fight the bot, rank D through X.");
-			ImGui::TextDisabled("It drafts its own tempers.");
+			ImGui::TextDisabled("Every rank carries its own blade.");
 			ImGui::Dummy(ImVec2(0.f, ui(6)));
 			if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
 				app.screen = Screen::Menu;
@@ -4216,6 +4477,37 @@ void draw_menus (App& app) {
 		ImGui::Text("HEAT %d of %d", app.heat + 1, temper::kHeats);
 		ImGui::PopFont();
 		ImGui::TextDisabled("The forge tightens. Take something with you.");
+		// The coin line: what the run has earned and not yet spent, and the
+		// two things it buys. Both buttons go quiet rather than vanish when
+		// the purse is short, so the prices are always readable.
+		{
+			const int purse = ember_balance(app);
+			ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f),
+				"EMBERS %d", purse);
+			ImGui::SameLine();
+			ImGui::BeginDisabled(app.offer_taken
+				|| purse < temper::kRerollCost);
+			char label[48];
+			std::snprintf(label, sizeof label, "Reroll (%d)",
+				temper::kRerollCost);
+			if (ImGui::SmallButton(label)) {
+				reroll_offer(app);
+			}
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			ImGui::BeginDisabled(app.extra_picks > 0 || app.offers.size() < 2
+				|| purse < temper::kExtraPickCost);
+			std::snprintf(label, sizeof label, "Second pick (%d)",
+				temper::kExtraPickCost);
+			if (ImGui::SmallButton(label)) {
+				buy_extra_pick(app);
+			}
+			ImGui::EndDisabled();
+			if (app.extra_picks > 0) {
+				ImGui::SameLine();
+				ImGui::TextDisabled("take two");
+			}
+		}
 		ImGui::Dummy(ImVec2(0.f, ui(6)));
 		// A card is its family's colour and word, a name, and one plain
 		// line - no numbers anywhere on the face. The card either reads in
@@ -4294,7 +4586,9 @@ void draw_menus (App& app) {
 			app.paused = false;
 		}
 		if (ImGui::Button("Restart", ImVec2(ui(240), 0))) {
-			if (app.mode == 5) {
+			if (app.campaign_stage >= 0) {
+				start_stage(app, app.campaign_stage);
+			} else if (app.mode == 5) {
 				start_versus(app, app.career_stage);
 			} else {
 				start_game(app, app.mode);
@@ -4368,6 +4662,19 @@ void draw_menus (App& app) {
 			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
 				won ? "All twelve heats" : "Heat %d of %d",
 				std::min(app.heat + 1, temper::kHeats), temper::kHeats);
+		}
+		if (app.campaign_stage >= 0) {
+			// The stage's receipt: its name, the stars this attempt earned
+			// (the road keeps the best), and the slag that came home.
+			const campaign::Stage& stage = campaign::stages()[
+				static_cast<size_t>(app.campaign_stage)];
+			std::string stars;
+			for (int i = 0; i < app.last_stage_stars; ++i) {
+				stars += "* ";
+			}
+			ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f),
+				"%s  %s+%d slag", stage.name,
+				stars.c_str(), app.last_slag_gain);
 		}
 		if (!app.tempers.empty()) {
 			// What the run was carrying when it ended - two runs of the
@@ -4468,7 +4775,9 @@ void draw_menus (App& app) {
 			ImGui::TextDisabled("Too short to record.");
 		}
 		if (ImGui::Button("Play again", ImVec2(ui(240), 0))) {
-			if (app.mode == 5) {
+			if (app.campaign_stage >= 0) {
+				start_stage(app, app.campaign_stage);
+			} else if (app.mode == 5) {
 				start_versus(app, app.career_stage);
 			} else {
 				start_game(app, app.mode);
@@ -4617,6 +4926,7 @@ void tour_screen (App& app, int stop) {
 			break;
 		case 14:
 			app.career = career::load(career::path(app.root));
+			app.campaign = campaign::load(campaign::path(app.root));
 			app.screen = Screen::Career;
 			break;
 		case 15:
@@ -4812,7 +5122,13 @@ int run (bool smoke, long smoke_frames) {
 		if (mode == 4) {
 			app.config.cheese_period = 150;
 		}
-		if (mode == 5) {
+		if (const char* stage = std::getenv("FORCETRIS_SMOKE_STAGE")) {
+			// A Forge Road stage under the masher, so every recipe's whole
+			// loop - launch, overrides, preset board, settlement - can be
+			// proven headlessly, stage by stage.
+			start_stage(app, std::clamp(std::atoi(stage), 0,
+				static_cast<int>(campaign::stages().size()) - 1));
+		} else if (mode == 5) {
 			start_versus(app);
 		} else {
 			start_game(app, mode);
@@ -4907,19 +5223,17 @@ int run (bool smoke, long smoke_frames) {
 				}
 				const bool live = app.session->step();
 				if (app.versus.has_value()) {
-					if (app.career_stage >= 0
+					if ((app.career_stage >= 0 || app.campaign_stage >= 0)
 						&& app.session->sim().overdrive()) {
 						app.career_od = true;
+						app.campaign_od = true;
 					}
 					app.versus->step(*app.session);
-					// The player's side of the forge, only while the round
-					// is live: during the verdict linger the player's sim
-					// still steps, and a draft dealt there would freeze a
-					// countdown nobody can see and be swept away by the
-					// next round anyway.
-					if (app.versus->phase == VersusMatch::Phase::Playing) {
-						offer_tempers(app);
-					}
+					// No drafts in a duel, either side: the freeze that
+					// lets a hand read cards has no business in a real-time
+					// fight. The heats still tighten the fuse - that is
+					// sim-side - and the builds are settled before the
+					// first piece falls.
 					// The round and match flow: linger on the verdict, then
 					// the next round or the loss screen.
 					if (app.versus->phase == VersusMatch::Phase::RoundOver) {
@@ -5113,14 +5427,19 @@ int run (bool smoke, long smoke_frames) {
 			}
 			if (app.session->sim().config().fuse) {
 				// How deep into the forge, over the well, where the clock
-				// would be in a mode that had one. Tempering counts to its
+				// would be in a mode that had one. Derived from the sim's
+				// own counters - a duel drafts nothing, but its fuse still
+				// tightens on the same rungs. Tempering counts to its
 				// finish line; everywhere else the count just climbs.
+				const Sim& sim = app.session->sim();
+				const int rung = 1 + temper::heats_done(sim.lines_cleared(),
+					sim.downstack(), app.mode == 3);
 				char heat[32];
 				if (app.mode == 6) {
 					std::snprintf(heat, sizeof heat, "HEAT %d / %d",
-						std::min(app.heat + 1, temper::kHeats), temper::kHeats);
+						std::min(rung, temper::kHeats), temper::kHeats);
 				} else {
-					std::snprintf(heat, sizeof heat, "HEAT %d", app.heat + 1);
+					std::snprintf(heat, sizeof heat, "HEAT %d", rung);
 				}
 				draw_label(heat, kBoardX + ui(4), kBoardY - ui(24),
 					IM_COL32(255, 196, 120, 255));
@@ -5217,6 +5536,8 @@ int run (bool smoke, long smoke_frames) {
 					// few frames each: every one of them has to build and
 					// draw with real data behind it, not merely compile.
 					tour_screen(app, toured++);
+				} else if (app.campaign_stage >= 0) {
+					start_stage(app, app.campaign_stage);
 				} else if (app.mode == 5) {
 					start_versus(app);
 				} else {

@@ -481,6 +481,69 @@ int main () {
 			std::to_string(low_fuel) + " vs " + std::to_string(high_fuel));
 	}
 
+	// --- The reroll salt. ---------------------------------------------------
+	{
+		// Salt zero is every caller that predates rerolls, so it must be a
+		// perfect no-op; each further salt is one paid reroll of the same
+		// heat, deterministic like the heat itself.
+		const auto plain = temper::offer(777u, 3, {});
+		check("salt zero deals the hand it always dealt",
+			temper::offer(777u, 3, {}, 0) == plain);
+		const auto rerolled = temper::offer(777u, 3, {}, 1);
+		check("a reroll deals a different hand", rerolled != plain);
+		check("the same reroll deals the same hand",
+			temper::offer(777u, 3, {}, 1) == rerolled
+				&& temper::offer(777u, 3, {}, 2) != rerolled);
+		check("a reroll still honours the caps",
+			rerolled.size() == 3 && rerolled[0] != rerolled[1]
+				&& rerolled[1] != rerolled[2] && rerolled[0] != rerolled[2]);
+	}
+
+	// --- The run economy's arithmetic. --------------------------------------
+	{
+		check("embers pay on lines and attack, and on nothing else",
+			temper::embers_of(0, 0) == 0
+				&& temper::embers_of(10, 0) == 20
+				&& temper::embers_of(0, 10) == 30
+				&& temper::embers_of(4, 6) == 26
+				&& temper::embers_of(-3, -3) == 0);
+		check("a reroll is cheaper than a second card",
+			temper::kRerollCost > 0
+				&& temper::kExtraPickCost > temper::kRerollCost);
+	}
+
+	// --- The blades. --------------------------------------------------------
+	{
+		bool sane = true;
+		bool armed = true;
+		std::string detail;
+		size_t below = 0;
+		for (size_t rank = 0; rank < bot::ranks().size(); ++rank) {
+			const std::vector<std::string> blade
+				= temper::blade_for(static_cast<int>(rank));
+			armed = armed && !blade.empty();
+			below = std::max(below, blade.size());
+			for (const std::string& id : blade) {
+				if (id == "collapse") {
+					sane = false;
+					detail += bot::ranks()[rank].name;
+					detail += " carries collapse; ";
+				} else if (temper::find(id) == nullptr) {
+					sane = false;
+					detail += id + " unknown; ";
+				}
+			}
+		}
+		check("every rank carries a blade of real cards", armed && sane, detail);
+		check("the ladder's blades escalate",
+			temper::blade_for(0).size()
+					< temper::blade_for(
+						static_cast<int>(bot::ranks().size()) - 1).size()
+				&& temper::blade_for(99).size()
+					== temper::blade_for(
+						static_cast<int>(bot::ranks().size()) - 1).size());
+	}
+
 	// --- A whole run of the mode, played out. -------------------------------
 	{
 		// The pieces of the mode, driven the way the GUI drives them: play

@@ -58,9 +58,12 @@ SimConfig tempered (const SimConfig& start, const std::vector<std::string>& take
 // The three cards this heat offers: decided by the run's seed and the heat
 // number alone, so the same run always offers the same choices, and never
 // including a temper the run has already taken as many times as it may.
-// Fewer than three only if the pool itself runs dry.
+// Fewer than three only if the pool itself runs dry. `salt` is the reroll
+// counter: zero - the default, and every pre-reroll caller - leaves the
+// hand exactly as it always was, and each paid reroll deals the same heat
+// again under salt+1, deterministic like everything else here.
 std::vector<std::string> offer (unsigned seed, int heat,
-	const std::vector<std::string>& taken);
+	const std::vector<std::string>& taken, unsigned salt = 0);
 
 // How many heats this run has forged so far - the one owner of the count,
 // shared by the offer gate, the HUD, the stat panel and the bot's side of
@@ -68,13 +71,31 @@ std::vector<std::string> offer (unsigned seed, int heat,
 // out; every other game by the lines it has cleared.
 int heats_done (int lines, int downstack, bool by_digging);
 
-// The bot's pick from an offer, by rank temperament: low ranks lean on
-// Fuel, high ranks on Flow and Risk, and collapse is never taken (its
-// planner assumes naive clears). Returns the index into `offers`, or -1
-// when nothing on the table is acceptable - the caller then passes the
-// heat by without a card.
+// A pick from an offer by rank temperament: low ranks lean on Fuel, high
+// ranks on Flow and Risk, and collapse is never taken (the duel planner
+// assumes naive clears). Returns the index into `offers`, or -1 when
+// nothing on the table is acceptable. The duel bot no longer drafts
+// mid-round - it arrives with a blade instead - so today this drives the
+// test harness's stand-in player, and stays for the day blades want
+// variety rolled at match time.
 int bot_pick (const std::vector<std::string>& offers, int rank_index,
 	std::mt19937& rng);
+
+// The blade a bot of this rank carries into a duel: a fixed list of temper
+// ids applied to its rules at round start, escalating from a D rank's
+// single thick wick to an X rank's full pressing build. Never collapse -
+// the planner searches naive clears - and indexes past the ladder clamp
+// to its top rung.
+std::vector<std::string> blade_for (int rank_index);
+
+// The run economy. Embers are the in-run coin: earned by what a run has
+// actually resolved - lines and the attack they carried - and spent on the
+// draft screen. The balance is derived (earned minus spent) rather than
+// accumulated, because lines_cleared and attack_sent are already monotone
+// live totals on the sim.
+int embers_of (int lines, int attack);
+constexpr int kRerollCost = 6;      // Deal this heat's three again.
+constexpr int kExtraPickCost = 14;  // Take a second card from the offer.
 
 // The shape of a heat, and of the one mode that is a complete run of them:
 // ten lines to a heat (six dug rows in Meltdown), twelve heats to a

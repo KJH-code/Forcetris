@@ -1,23 +1,31 @@
 #include "versus.hpp"
 
+#include "forcetris/temper.hpp"
+
 namespace forcetris {
 namespace gui {
 
-void VersusMatch::begin_round (const SimConfig& player_config, unsigned seed,
-                               const replay::Meta& player_meta) {
-	// The bot plays under the same rules, minus the trainer's chrome: no
-	// flat forced drop slamming its slow ranks (the fuse, when on, burns
-	// for both sides alike - the driver types inside it), no finesse retry
-	// handing its pieces back, instant soft drop so a planned sonic drop
-	// is one press, and DAS parked out of reach of its tap pairs.
-	SimConfig config = player_config;
+void VersusMatch::begin_round (unsigned seed, const replay::Meta& player_meta,
+                               const SimConfig& bot_base,
+                               const std::vector<std::string>& blade) {
+	// The bot plays under its own base rules - the player's config in a
+	// plain duel, the stage's bare terms for a campaign boss (never the
+	// player's Anvil metal) - with its blade forged in *before* the
+	// trainer's chrome comes off, so the belt below still guarantees the
+	// planner the naive clears it searches with. No flat forced drop
+	// slamming its slow ranks (the fuse, when on, burns for both sides
+	// alike - the driver types inside it), no finesse retry handing its
+	// pieces back, instant soft drop so a planned sonic drop is one press,
+	// and DAS parked out of reach of its tap pairs.
+	SimConfig config = temper::tempered(bot_base, blade);
 	config.forced_delay = 0.;
 	config.finesse_rule = 0;
 	config.sdf = 40;
 	config.das_ms = 330;
-	config.cleartype = 0;
+	config.cleartype = 0;   // The belt: blades never carry collapse either.
 	// Its recording carries the same stamp and rules, with the handling it
-	// actually played under - so an embedded bot side analyses truthfully.
+	// actually played under and the blade written down the way a drafted
+	// build would have been - so an embedded bot side analyses truthfully.
 	replay::Meta meta = player_meta;
 	meta.gametype = player_meta.gametype;
 	meta.forced_delay = config.forced_delay;
@@ -25,17 +33,10 @@ void VersusMatch::begin_round (const SimConfig& player_config, unsigned seed,
 	meta.cleartype = config.cleartype;
 	meta.das = config.das_ms;
 	meta.sdf = config.sdf;
+	meta.tempers = blade;
 	bot.emplace(config, seed, meta);
 	driver.emplace(seed, bot::ranks()[rank_index]);
-	// The bot's draft starts over with the board: its build is captured
-	// from the config it *actually* plays under - overrides included - so
-	// a rebuilt rule set can never hand the planner a clearing style it
-	// was not searching with.
-	bot_start = config;
-	bot_tempers.clear();
-	bot_heat = 0;
-	bot_seed = seed;
-	bot_rng.seed(seed ^ 0x74656d70u);
+	bot_tempers = blade;
 	phase = Phase::Playing;
 	phase_frames = 0;
 	round_player_won = false;
@@ -52,26 +53,6 @@ bool VersusMatch::step (Session& player) {
 	}
 	const bool bot_alive = bot->step();
 	bot->take_cues();   // The bot's sounds stay on its side of the table.
-	// The bot's side of the forge: when its counter crosses a heat it is
-	// dealt the same three cards a player would see and takes one at once -
-	// no freeze on its side, because the freeze exists for a hand, not a
-	// planner. The pick itself is the core's, rank-tempered, and it never
-	// takes Collapse; a heat with nothing acceptable passes by bare.
-	if (bot->sim().config().fuse) {
-		const int forged = temper::heats_done(bot->sim().lines_cleared(),
-			bot->sim().downstack(), false);
-		if (forged > bot_heat) {
-			const std::vector<std::string> cards
-				= temper::offer(bot_seed, bot_heat, bot_tempers);
-			const int at = temper::bot_pick(cards, rank_index, bot_rng);
-			if (at >= 0) {
-				bot_tempers.push_back(cards[static_cast<size_t>(at)]);
-				bot->draft(temper::tempered(bot_start, bot_tempers),
-					bot_tempers.back());
-			}
-			++bot_heat;
-		}
-	}
 	// Heat pressure, both ways: an Overdrive burning on one board makes
 	// the other board's fuse burn faster. Igniting is an attack.
 	player.sim_mutable().set_pressure(bot->sim().overdrive());

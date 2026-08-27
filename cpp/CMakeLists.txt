@@ -39,6 +39,7 @@ add_library(forcetris_core
 	src/career.cpp
 	src/munch.cpp
 	src/temper.cpp
+	src/campaign.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
 # nlohmann/json.hpp, vendored, for the replay files.
@@ -142,6 +143,10 @@ target_compile_options(profilecheck PRIVATE ${FORCETRIS_WARNINGS})
 add_executable(tempercheck tests/tempercheck.cpp)
 target_link_libraries(tempercheck PRIVATE forcetris_core)
 target_compile_options(tempercheck PRIVATE ${FORCETRIS_WARNINGS})
+
+add_executable(campaigncheck tests/campaigncheck.cpp)
+target_link_libraries(campaigncheck PRIVATE forcetris_core)
+target_compile_options(campaigncheck PRIVATE ${FORCETRIS_WARNINGS})
 
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
@@ -269,6 +274,10 @@ add_test(NAME profile_check COMMAND profilecheck)
 # roll repeats under a seed and respects the caps, a retune lands on the
 # next piece without touching the handling, and a run stops on its quota.
 add_test(NAME temper_check COMMAND tempercheck)
+# The Forge Road: the stage table's integrity, every override landing in
+# the built rules, the boss sides kept honest, the unlock chain, the
+# star/slag/Anvil arithmetic, and the save file's round trip.
+add_test(NAME campaign_check COMMAND campaigncheck)
 if (SDL2_FOUND)
 	# The generated half of the audio, rendered and graded: silence on
 	# request, a room that tracks the board, no clipping, a cue pool that
@@ -285,10 +294,10 @@ if (SDL2_FOUND)
 	# loop, the drawing and the shutdown hold together with no display.
 	add_test(NAME gui_smoke COMMAND forcetris)
 	set_tests_properties(gui_smoke PROPERTIES ENVIRONMENT
-		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat")
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat;FORCETRIS_CAMPAIGN=${CMAKE_CURRENT_BINARY_DIR}/smoke-campaign.dat")
 	# The same run in versus mode, ending in the viewer: proves the round is
 	# recorded with the bot's side embedded and the two-board viewer draws.
 	add_test(NAME gui_smoke_versus COMMAND forcetris)
 	set_tests_properties(gui_smoke_versus PROPERTIES ENVIRONMENT
-		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_SMOKE_MODE=5;FORCETRIS_SMOKE_VIEW=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat")
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_SMOKE_MODE=5;FORCETRIS_SMOKE_VIEW=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat;FORCETRIS_CAMPAIGN=${CMAKE_CURRENT_BINARY_DIR}/smoke-campaign.dat")
 endif()
