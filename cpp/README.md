@@ -22,7 +22,7 @@ What is here:
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
 | `rating` | An estimated Tetra League standing - Glicko, TR by the official conversion formula, rank - interpolated from TETR.IO's own reported per-rank averages, and labelled the estimate it is |
 | `temper` | The game's central gimmick: the ten-card temper pool, what each card does to the rules, the weighted roll that offers three a heat, the heat counter every screen shares, and the bot's rank-tempered pick |
-| `campaign` | The Forge Road's machinery: the unlock chain, the star and slag arithmetic, the Anvil's permanent upgrades, and campaign.dat. The content - the chapter table and every stage recipe - lives apart in `stages.cpp`, so growing the road edits one file. The game's design itself (audience, goals, roadmap) is written down in the repository root's `DESIGN.md` |
+| `campaign` | The Forge Map's machinery: the seeded branching map generator (`forgemap.cpp`), the run state and its difficulty arithmetic, the chapter gate, the star and slag arithmetic, the Anvil's permanent upgrades, and campaign.dat. The content - the chapter table and every stage recipe - lives apart in `stages.cpp`, so growing the road edits one file. The game's design itself (audience, goals, roadmap) is written down in the repository root's `DESIGN.md` |
 | `munch` | MinoMuncher's statistics re-derived over this game's own records (formulas from the MIT-licensed minomuncher-core): the nine clear buckets, spin efficiencies, the three-way attack-per-line split, burst and plonk PPS by Gaussian mixture, the four-deep well rule, the surge accounting and the cheesiness sigmoid - scored over raw attack, a trainer having no multiplayer wire |
 | `profile` | The history: one tolerant key=value line per finished game, appended forever, read back for the profile screen's aggregates and growth charts |
 | `bot` | The versus opponent: a full-reachability search over the real kick tables - so its tucks and spins are exactly the game's - an attack-and-shape evaluation, a rank ladder paced to TETR.IO's own per-rank speeds, and the driver that types the plan into a sim one key at a time |
@@ -270,24 +270,42 @@ nothing for haste - and the purse buys a **reroll** of the three cards
 from the sim's own totals minus what was spent, so it cannot drift, and
 it dies with the run - which is where the campaign picks up.
 
-**The Forge Road** is what became of the career screen: sixteen stages in
-two chapters, each a declarative recipe over the same engine - a line
-quota over preset rubble, a three-hole dig, cascade-only clears, a
-no-kicks room, a floor that rises while you chase a quota, a stage that
-starts with Overheat already in your blood, and a boss duel closing each
-chapter with its own blade (the Forgemaster fights two falls behind
-bellows, white heat, overheat and gamble). Clearing a stage opens the
-next and pays **slag**: generously the first time with a star bonus
-(clear / under par / no forced drops; bosses count win / sweep / ignited
-sweep), a little on repeats, and a dying run renders its unspent embers
-down - the prestige loop, "the run's coin dies, the metal stays". Slag
-buys permanent upgrades at **the Anvil** - a longer wick, a deeper bank,
-a greater bellows, ember sense, a free opening draft - and that metal
-rides into campaign stages *only*: stage records say `campaign`, a name
-no score table owns, so an Anvil-boosted run can never touch the pure
-modes' tables. Progress lives in `campaign.dat`, the same tolerant
-key=value file the career and profile keep, and the old ladder's
-career.dat stays untouched beside it; The Daily survives unchanged.
+**The Forge Map** is what became of the career screen: a chapter played
+as one seeded climb. Setting out builds a branching graph six rows deep -
+two doors at the entrance, two or three lanes through the middle, the
+chapter's boss alone at the top - as a pure function of (chapter, seed),
+so the save file stores two numbers and the path picked, and
+`campaign_check` grades the generator's promises (shape, connectivity,
+non-crossing edges) across dozens of seeds without a window. Battle nodes
+draw from the chapter's recipe pool with the easy fires at the gate and
+the hard ones under the boss; each is a declarative recipe over the same
+engine - a line quota over preset rubble, a three-hole dig, cascade-only
+clears, a floor that rises, a stage that starts with Overheat already in
+your blood - and the boss duel carries its own blade (the Forgemaster
+fights two falls behind bellows, white heat, overheat and gamble).
+
+The roguelite is that the build outlives the battle: a won node banks its
+embers into the run and deals **the spoils** on the map - three cards,
+take one or take nothing, reroll or a second pick paid from the run's
+purse - and every temper picked rides into every later battle of the
+climb, forged into the player's rules before the first piece falls. A
+stage never drafts mid-game any more; on the Forge Map the board never
+stops. What death costs is picked at the door: **mild** re-offers the
+node, **forged** spends one of three lives, **white-hot** ends the climb
+outright - and heavier fires pay 150 / 200 percent slag. Death always
+renders unspent embers down to slag - the prestige loop, "the run's coin
+dies, the metal stays". Slag buys permanent upgrades at **the Anvil** - a
+longer wick, a deeper bank, a greater bellows, ember sense, Preheat's
+free spoils at the door - and that metal rides into campaign battles
+*only*: their records say `campaign`, a name no score table owns, so an
+Anvil-boosted run can never touch the pure modes' tables. Stars still
+accrue per stage id (clear / under par / no forced drops; bosses count
+win / sweep / ignited sweep) and the next chapter opens on the previous
+boss's star. Progress - the run in flight included, as `run_*` keys that
+simply stop being written when the climb ends - lives in `campaign.dat`,
+the same tolerant key=value file the career and profile keep; the old
+ladder's career.dat stays untouched beside it, and The Daily survives
+unchanged.
 
 Every temper is one or two numbers out of `SimConfig`, which is what makes
 the gimmick cheap and honest: the sim reads its fuse and Flow values live
@@ -486,8 +504,11 @@ frames of scripted-random input and exits (`FORCETRIS_SMOKE_STAGE=<n>`
 points the run at a Forge Road stage instead, so every recipe's launch,
 overrides and settlement can be proven headlessly - the campaign file is
 loaded first, the way the Career screen loads it, so the file's Anvil
-upgrades, Preheat's free draft included, ride along; `FORCETRIS_CAMPAIGN`
-redirects campaign.dat the way the other data files redirect);
+upgrades ride along; `FORCETRIS_SMOKE_RUN=1` sets out on chapter one's
+map instead and drives the whole roguelite loop - node picked, battle
+fought, verdict settled, spoils taken, next node - failing if not a
+single battle settles; `FORCETRIS_CAMPAIGN` redirects campaign.dat the
+way the other data files redirect);
 `FORCETRIS_SHOT=/path/out.bmp`
 saves the final frame. Between games it tours the screens a game never
 opens - how to play, both high score pages, the replay browser, the

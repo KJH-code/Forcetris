@@ -41,6 +41,7 @@ add_library(forcetris_core
 	src/temper.cpp
 	src/campaign.cpp
 	src/stages.cpp
+	src/forgemap.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
 # nlohmann/json.hpp, vendored, for the replay files.
@@ -301,4 +302,9 @@ if (SDL2_FOUND)
 	add_test(NAME gui_smoke_versus COMMAND forcetris)
 	set_tests_properties(gui_smoke_versus PROPERTIES ENVIRONMENT
 		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_SMOKE_MODE=5;FORCETRIS_SMOKE_VIEW=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-versus-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat;FORCETRIS_CAMPAIGN=${CMAKE_CURRENT_BINARY_DIR}/smoke-campaign.dat")
+	# The map run under the masher: set out on chapter one, auto-pick nodes
+	# and spoils, fight battles, settle - the whole roguelite loop headless.
+	add_test(NAME gui_smoke_run COMMAND forcetris)
+	set_tests_properties(gui_smoke_run PROPERTIES ENVIRONMENT
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=1500;FORCETRIS_SMOKE_RUN=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-run-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-run-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat;FORCETRIS_CAMPAIGN=${CMAKE_CURRENT_BINARY_DIR}/smoke-run-campaign.dat")
 endif()

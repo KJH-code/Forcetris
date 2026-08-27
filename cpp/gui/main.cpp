@@ -389,6 +389,21 @@ struct App {
 	bool campaign_od = false;
 	int last_stage_stars = 0;
 	int last_slag_gain = 0;
+	// The Forge Map: the run's graph (rebuilt from the save's chapter and
+	// seed whenever a run is on), which node the battle in play came from
+	// (-1 when the stage was launched outside the map, e.g. the stage
+	// smoke), whether a reward hand is owed on the map, whether the last
+	// settlement ended the run, and the difficulty picked at the door for
+	// the next set-out.
+	std::vector<campaign::MapNode> run_map;
+	int run_node = -1;
+	bool map_reward = false;
+	bool run_ended = false;
+	// A won map battle is spent: no retry may fight the same node twice.
+	bool node_done = false;
+	int pick_difficulty = campaign::kMild;
+	// A reward hand on the map takes into the run's build, not a session's.
+	bool offer_reward = false;
 	// Tempering: the rules the run started from, the tempers drafted since,
 	// how many heats have been forged, and the three cards on the table
 	// right now - which is also the flag for "the board is waiting".
@@ -412,9 +427,6 @@ struct App {
 	unsigned offer_salt = 0;     // Rerolls of the current hand.
 	int extra_picks = 0;         // Second cards bought on this hand.
 	bool offer_taken = false;    // A card has left this hand already.
-	// Preheat's free draft, owed but not yet dealt: the cards wait behind
-	// the starting countdown instead of being drawn over it.
-	bool preheat_owed = false;
 	// Smooth motion: the piece as it stood before the last sim tick, so the
 	// renderer can draw the space between two 20ms steps instead of only
 	// the steps. lerp_have is false whenever the last tick carried input -
@@ -681,7 +693,6 @@ void start_game (App& app, int mode,
 	app.hiscore_place = -1;
 	app.score_saved = false;
 	app.countdown = app.start_delay;
-	app.preheat_owed = false;
 	reset_effects(app);
 	app.audio.start_music();
 }
@@ -713,7 +724,6 @@ void deal_versus_round (App& app) {
 	app.versus->begin_round(app.seeds(), meta, app.versus_bot_base,
 		app.versus_blade);
 	app.countdown = app.start_delay;
-	app.preheat_owed = false;
 	reset_effects(app);
 }
 
@@ -929,11 +939,14 @@ std::string temper_line (const std::vector<std::string>& taken) {
 // One stage of the Forge Road put on the table. The recipe decides
 // everything - the mode, the finish line, the overrides, the boss's terms -
 // and the launcher's whole job is to hand those decisions to the same
-// machinery every ordinary game uses, plus the three things a recipe can
-// ask for that no ordinary game does: a preset board, a fuse that burns
-// hot from the first frame, and the Anvil's permanent metal on the
-// player's side only.
-void start_stage (App& app, int index) {
+// machinery every ordinary game uses, plus the things a recipe can ask
+// for that no ordinary game does: a preset board, a fuse that burns hot
+// from the first frame, and the Anvil's permanent metal on the player's
+// side only. A battle launched from the map (run_node >= 0) also carries
+// the run's build: every temper picked on the climb, forged into the
+// player's rules before the first piece falls - a stage never drafts
+// mid-game, so this is the only door the build comes through.
+void start_stage (App& app, int index, int run_node = -1) {
 	if (index < 0 || index >= static_cast<int>(campaign::stages().size())) {
 		return;
 	}
@@ -945,9 +958,12 @@ void start_stage (App& app, int index) {
 	app.campaign_od = false;
 	app.daily_run = false;
 	app.campaign_stage = index;
+	app.run_node = run_node;
+	app.run_ended = false;
+	app.node_done = false;
 	app.mode = stage.mode;
-	app.tempers.clear();
 	app.offers.clear();
+	app.offer_reward = false;
 	app.offer_at = 0;
 	app.offer_shown = 0;
 	app.heat = 0;
@@ -956,6 +972,10 @@ void start_stage (App& app, int index) {
 	app.extra_picks = 0;
 	app.offer_taken = false;
 	app.ember_bonus = campaign::ember_bonus_percent(app.campaign.forge);
+	// The pause screen's build line reads app.tempers; a map battle shows
+	// the run's, a bare stage shows none.
+	app.tempers = run_node >= 0
+		? app.campaign.run.tempers : std::vector<std::string>{};
 	save_config(app.config, app.config_file);
 
 	SimConfig base = app.config.sim();
@@ -964,8 +984,10 @@ void start_stage (App& app, int index) {
 		base.cheese_holes = 1;
 		base.cheese_messiness = 30;
 	}
-	const SimConfig mine = campaign::stage_config(stage, base,
-		app.campaign.forge);
+	SimConfig mine = campaign::stage_config(stage, base, app.campaign.forge);
+	if (run_node >= 0) {
+		mine = temper::tempered(mine, app.campaign.run.tempers);
+	}
 	const unsigned seed = app.seeds();
 	app.temper_seed = seed;
 	app.temper_start = mine;
@@ -975,6 +997,7 @@ void start_stage (App& app, int index) {
 	// an Anvil-boosted score can never reach an ordinary table even if the
 	// probe gate below were lost.
 	meta.gametype = "campaign";
+	meta.tempers = app.tempers;
 
 	if (stage.mode == 5) {
 		app.versus_bot_base = campaign::bot_config(stage, base);
@@ -999,11 +1022,6 @@ void start_stage (App& app, int index) {
 		}
 		app.countdown = app.start_delay;
 		reset_effects(app);
-		// Preheat: the first draft comes free at the door - but the door
-		// has a countdown on it, so the hand is owed now and dealt the
-		// frame the countdown expires. Dealing here drew the cards under
-		// the 3-2-1 and both fought for the same screen.
-		app.preheat_owed = campaign::free_drafts(app.campaign.forge) > 0;
 	}
 	app.screen = Screen::Game;
 	app.paused = false;
@@ -1017,8 +1035,13 @@ void start_stage (App& app, int index) {
 // What the run's coin purse holds right now: earned by the sim's own
 // monotone totals - lines, and the attack they carried - swollen by the
 // Anvil's ember sense in a campaign stage, minus what the draft screen has
-// spent. Derived rather than accumulated, so it cannot drift.
+// spent. Derived rather than accumulated, so it cannot drift. A reward
+// hand on the map spends the run's banked embers instead - the climb's
+// purse, not a battle's.
 int ember_balance (const App& app) {
+	if (app.offer_reward) {
+		return app.campaign.run.embers;
+	}
 	if (!app.session.has_value()) {
 		return 0;
 	}
@@ -1026,6 +1049,110 @@ int ember_balance (const App& app) {
 	const int earned = temper::embers_of(sim.lines_cleared(),
 		sim.attack_sent());
 	return earned + earned * app.ember_bonus / 100 - app.ember_spent;
+}
+
+// The spoils: three cards on the map after a won battle, one taken into
+// the run - or none, the climb does not insist. The hand is a pure
+// function of the run's seed and height, so a reroll can be paid for and
+// the same climb re-deals the same spoils.
+void deal_reward (App& app) {
+	campaign::Run& run = app.campaign.run;
+	if (!run.active) {
+		return;
+	}
+	app.map_reward = false;
+	app.tempers = run.tempers;
+	app.temper_seed = run.seed
+		^ (0x9e3779b9u * static_cast<unsigned>(run.depth + 1));
+	app.heat = run.depth;
+	app.offer_salt = 0;
+	app.extra_picks = 0;
+	app.offer_taken = false;
+	app.offers = temper::offer(app.temper_seed, app.heat, run.tempers);
+	app.offer_at = 0;
+	app.offer_shown = 0;
+	app.offer_reward = !app.offers.empty();
+	if (app.offer_reward) {
+		app.audio.play("overdrive");
+	}
+}
+
+// A run put down, willingly or not: the leftover embers render down to
+// slag - scaled by the difficulty, the prestige - and the keys leave the
+// file. The stars already written stay written; they are the door to the
+// next chapter.
+void end_run (App& app) {
+	campaign::Run& run = app.campaign.run;
+	if (!run.active) {
+		return;
+	}
+	app.campaign.slag += (run.embers / 5)
+		* campaign::slag_percent(run.difficulty) / 100;
+	run = campaign::Run{};
+	app.run_map.clear();
+	app.map_reward = false;
+	campaign::save(campaign::path(app.root), app.campaign);
+}
+
+// A new climb: the run keys written, the map stood up from its two
+// numbers, and - if the Anvil's Preheat is bought - the first spoils
+// dealt free at the door.
+void begin_run (App& app, int chapter, int difficulty, unsigned seed) {
+	campaign::Run& run = app.campaign.run;
+	run = campaign::Run{};
+	run.active = true;
+	run.chapter = chapter;
+	run.seed = seed;
+	run.difficulty = difficulty;
+	app.run_map = campaign::build_map(chapter, seed);
+	app.run_ended = false;
+	app.map_reward = false;
+	campaign::save(campaign::path(app.root), app.campaign);
+	if (campaign::free_drafts(app.campaign.forge) > 0) {
+		deal_reward(app);
+	}
+}
+
+// Which nodes the climb can take next: the whole entrance row when
+// nothing is fought yet, afterwards only what the last node's edges
+// reach.
+bool node_pickable (const App& app, int node) {
+	const campaign::Run& run = app.campaign.run;
+	if (!run.active || node < 0
+		|| node >= static_cast<int>(app.run_map.size())
+		|| app.run_map[static_cast<size_t>(node)].depth != run.depth) {
+		return false;
+	}
+	if (run.path.empty()) {
+		return true;
+	}
+	const campaign::MapNode& from
+		= app.run_map[static_cast<size_t>(run.path.back())];
+	return std::find(from.next.begin(), from.next.end(), node)
+		!= from.next.end();
+}
+
+void start_run_node (App& app, int node) {
+	if (node_pickable(app, node)) {
+		start_stage(app, app.run_map[static_cast<size_t>(node)].stage, node);
+	}
+}
+
+// The retry, with the map in mind: a stage on a living run restarts as
+// the same node with the same build. A node already won cannot be fought
+// twice, and a run that just ended has no board to go back to - both
+// retries walk to the map instead.
+void restart_stage (App& app) {
+	if (app.run_ended || app.node_done) {
+		app.run_ended = false;
+		app.node_done = false;
+		app.campaign_stage = -1;
+		app.run_node = -1;
+		app.versus.reset();
+		app.screen = Screen::Career;
+		return;
+	}
+	start_stage(app, app.campaign_stage, app.run_node);
 }
 
 // A heat has been forged if the run's counter has crossed another rung -
@@ -1037,6 +1164,12 @@ int ember_balance (const App& app) {
 // forge keeps dealing until the pool runs dry.
 void offer_tempers (App& app) {
 	if (!app.session.has_value() || !app.session->sim().config().fuse) {
+		return;
+	}
+	if (app.campaign_stage >= 0) {
+		// A stage never drafts mid-game: the map hands out its cards
+		// between battles, and the board on the Forge Road never stops.
+		// The heats still tighten the fuse - that is the sim's own.
 		return;
 	}
 	if (app.mode == 6 && app.heat >= temper::kHeats) {
@@ -1065,10 +1198,35 @@ void offer_tempers (App& app) {
 
 // One card taken: the run's rules are rebuilt from the start plus every
 // temper in order, which is what makes a stack of the same card add up
-// rather than each one overwrite the last.
+// rather than each one overwrite the last. A reward hand on the map has
+// no board to retune - the card goes into the run's build, where the next
+// battle's start_stage forges it in.
 void take_temper (App& app, int at) {
-	if (!app.session.has_value() || at < 0
-		|| at >= static_cast<int>(app.offers.size())) {
+	if (at < 0 || at >= static_cast<int>(app.offers.size())) {
+		return;
+	}
+	if (app.offer_reward) {
+		campaign::Run& run = app.campaign.run;
+		run.tempers.push_back(app.offers[at]);
+		app.tempers = run.tempers;
+		app.audio.play("b2b");
+		if (app.extra_picks > 0 && app.offers.size() > 1) {
+			--app.extra_picks;
+			app.offer_taken = true;
+			app.offers.erase(app.offers.begin() + at);
+			app.offer_at = std::min(app.offer_at,
+				static_cast<int>(app.offers.size()) - 1);
+			return;
+		}
+		app.offers.clear();
+		app.offer_reward = false;
+		app.offer_shown = 0;
+		app.offer_taken = false;
+		app.extra_picks = 0;
+		campaign::save(campaign::path(app.root), app.campaign);
+		return;
+	}
+	if (!app.session.has_value()) {
 		return;
 	}
 	app.tempers.push_back(app.offers[at]);
@@ -1092,13 +1250,31 @@ void take_temper (App& app, int at) {
 	++app.heat;
 }
 
+// The spoils declined: the map does not insist. Nothing is banked for it -
+// passing is a choice, not a saving - but the climb moves on unslowed.
+void skip_reward (App& app) {
+	if (!app.offer_reward) {
+		return;
+	}
+	app.offers.clear();
+	app.offer_reward = false;
+	app.offer_shown = 0;
+	app.offer_taken = false;
+	app.extra_picks = 0;
+	campaign::save(campaign::path(app.root), app.campaign);
+}
+
 // The two things the coin buys, both on the draft screen: the same heat
 // dealt again, and a second card off the same table.
 void reroll_offer (App& app) {
 	if (app.offer_taken || ember_balance(app) < temper::kRerollCost) {
 		return;
 	}
-	app.ember_spent += temper::kRerollCost;
+	if (app.offer_reward) {
+		app.campaign.run.embers -= temper::kRerollCost;
+	} else {
+		app.ember_spent += temper::kRerollCost;
+	}
 	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers,
 		++app.offer_salt);
 	app.offer_at = 0;
@@ -1110,7 +1286,11 @@ void buy_extra_pick (App& app) {
 		|| ember_balance(app) < temper::kExtraPickCost) {
 		return;
 	}
-	app.ember_spent += temper::kExtraPickCost;
+	if (app.offer_reward) {
+		app.campaign.run.embers -= temper::kExtraPickCost;
+	} else {
+		app.ember_spent += temper::kExtraPickCost;
+	}
 	app.extra_picks = 1;
 	app.audio.play("hold");
 }
@@ -1152,6 +1332,9 @@ void end_game (App& app) {
 	// The Forge Road's settlement: stars only ever upward, slag always -
 	// a win pays the stage's bounty, a death renders the unspent embers
 	// down. Written before the table probe, which a stage never enters.
+	// A battle fought on the map settles the run too: the battle's embers
+	// bank into the climb on a win, the path climbs a row, and a death
+	// costs what the difficulty says a death costs.
 	if (app.campaign_stage >= 0) {
 		const campaign::Stage& stage
 			= campaign::stages()[static_cast<size_t>(app.campaign_stage)];
@@ -1170,15 +1353,48 @@ void end_game (App& app) {
 		const auto held = app.campaign.stars.find(stage.id);
 		const bool first_clear
 			= held == app.campaign.stars.end() || held->second == 0;
+		campaign::Run& run = app.campaign.run;
+		const bool on_map = run.active && app.run_node >= 0
+			&& app.run_node < static_cast<int>(app.run_map.size());
+		const int scale = on_map ? campaign::slag_percent(run.difficulty)
+			: 100;
 		const int slag = campaign::slag_award(stage, first_clear, won, stars,
-			ember_balance(app));
+			ember_balance(app)) * scale / 100;
 		app.campaign.slag += slag;
 		if (stars > app.campaign.stars[stage.id]) {
 			app.campaign.stars[stage.id] = stars;
 		}
-		campaign::save(campaign::path(app.root), app.campaign);
 		app.last_stage_stars = stars;
 		app.last_slag_gain = slag;
+		app.run_ended = false;
+		if (on_map) {
+			if (won) {
+				// The battle's unspent embers bank into the climb, and the
+				// path takes the node. The boss row banks nothing to spend -
+				// end_run renders whatever is left down to slag.
+				app.node_done = true;
+				run.embers += ember_balance(app);
+				run.path.push_back(app.run_node);
+				run.depth += 1;
+				if (run.depth >= campaign::kMapDepth) {
+					end_run(app);
+					app.run_ended = true;
+				} else {
+					app.map_reward = true;
+				}
+			} else if (run.difficulty == campaign::kWhite
+				|| (run.difficulty == campaign::kForged
+					&& --run.lives <= 0)) {
+				// White heat breaks on any death; a forged run breaks when
+				// the lives run out. Either way the climb is over and the
+				// leftover embers render down - the prestige.
+				end_run(app);
+				app.run_ended = true;
+			}
+			// A mild death changes nothing: the same node is still open
+			// on the map, and the retry costs only the walk back.
+		}
+		campaign::save(campaign::path(app.root), app.campaign);
 	}
 	// Would this run make the table? The probe carries the raw clock value,
 	// exactly as eval_loss probes it - the conversion to stored centiseconds
@@ -1412,9 +1628,10 @@ void handle_event (App& app, const SDL_Event& event) {
 		&& ((app.screen == Screen::Game && !app.editing && !app.layout_preview)
 			|| app.screen == Screen::Over)) {
 		if (app.campaign_stage >= 0) {
-			// A stage restarts as the stage, or the retry would silently
-			// shed the recipe and play a plain game in its clothes.
-			start_stage(app, app.campaign_stage);
+			// A stage restarts as the stage - same node, same run build -
+			// or the retry would silently shed the recipe and play a plain
+			// game in its clothes.
+			restart_stage(app);
 		} else if (app.mode == 5) {
 			start_versus(app, app.career_stage);
 		} else {
@@ -1422,11 +1639,13 @@ void handle_event (App& app, const SDL_Event& event) {
 		}
 		return;
 	}
-	// The draft has the keyboard while it is up: 1/2/3 takes a card
-	// outright, the arrows walk the row and Enter or space takes the one
-	// under the cursor. No confirm step - a pick every ten lines that costs
-	// two presses would be two presses too many.
-	if (down && app.screen == Screen::Game && !app.offers.empty()
+	// The draft has the keyboard while it is up - in a game, or as the
+	// spoils on the map: 1/2/3 takes a card outright, the arrows walk the
+	// row and Enter or space takes the one under the cursor. No confirm
+	// step - a pick that costs two presses would be two presses too many.
+	if (down
+		&& (app.screen == Screen::Game || app.screen == Screen::Career)
+		&& !app.offers.empty()
 		&& !app.editing && !ImGui::GetIO().WantCaptureKeyboard) {
 		const int cards = static_cast<int>(app.offers.size());
 		const SDL_Scancode code = event.key.keysym.scancode;
@@ -4106,74 +4325,227 @@ void draw_career (App& app) {
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
 	ImGui::PushFont(app.fonts.head);
-	ImGui::TextUnformatted("The Forge Road");
+	ImGui::TextUnformatted("The Forge Map");
 	ImGui::PopFont();
-	ImGui::TextDisabled("Every stage has its own fire. Clear one to open");
-	ImGui::TextDisabled("the next; slag buys permanent metal below.");
 	ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f), "SLAG %d",
 		app.campaign.slag);
-	ImGui::Dummy(ImVec2(0.f, ui(4)));
-	const std::vector<campaign::Stage>& road = campaign::stages();
-	for (size_t at = 0; at < road.size(); ++at) {
-		const campaign::Spot spot = campaign::spot_of(at);
-		if (spot.stage == 0) {
-			// A chapter opens with its own name and its promise, straight
-			// from the chapter table - the screen assumes nothing about
-			// how long a chapter runs.
-			const campaign::Chapter& chapter
-				= campaign::chapters()[spot.chapter];
-			ImGui::PushFont(app.fonts.head);
-			ImGui::Text("Chapter %d - %s", spot.chapter + 1, chapter.name);
-			ImGui::PopFont();
-			ImGui::TextDisabled("%s", chapter.blurb);
+	campaign::Run& run = app.campaign.run;
+	if (run.active && app.run_map.empty()) {
+		// Resumed from the file: the graph stands back up from its two
+		// numbers, exactly as it stood when the run was put down.
+		app.run_map = campaign::build_map(run.chapter, run.seed);
+	}
+	if (app.map_reward && app.offers.empty()) {
+		// The spoils owed from the last battle, dealt the moment the map
+		// is back on the table.
+		deal_reward(app);
+	}
+	if (!run.active) {
+		// --- The door: pick a chapter, pick how hot, set out. -----------
+		ImGui::TextDisabled("A chapter is one climb: pick a path up the");
+		ImGui::TextDisabled("map, and your spoils ride the whole run.");
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		ImGui::TextUnformatted("The fire");
+		struct Fire {
+			int level;
+			const char* name;
+			const char* note;
+		};
+		const Fire fires[3] = {
+			{campaign::kMild, "Mild",
+				"a death re-offers the node"},
+			{campaign::kForged, "Forged",
+				"three lives a climb, half again the slag"},
+			{campaign::kWhite, "White-hot",
+				"one death ends the climb, double slag"},
+		};
+		for (const Fire& fire : fires) {
+			if (ImGui::RadioButton(fire.name, &app.pick_difficulty,
+				fire.level)) {
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled("- %s", fire.note);
 		}
-		const campaign::Stage& stage = road[at];
-		const bool open_stage = campaign::open(app.campaign, at);
-		const auto found = app.campaign.stars.find(stage.id);
-		const int stars
-			= found != app.campaign.stars.end() ? found->second : 0;
-		ImGui::PushID(static_cast<int>(at));
-		if (ImGui::BeginTable("stage", 3,
-			ImGuiTableFlags_SizingFixedFit)) {
-			ImGui::TableSetupColumn("what", ImGuiTableColumnFlags_WidthStretch);
-			ImGui::TableSetupColumn("stars");
-			ImGui::TableSetupColumn("go");
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(0);
-			// A boss row wears the duel's gold; a locked one goes ashen.
-			const ImVec4 name_ink = !open_stage
-				? ImVec4(0.45f, 0.42f, 0.4f, 1.f)
-				: stage.mode == 5 ? ImVec4(1.f, 0.84f, 0.38f, 1.f)
-				: ImVec4(0.93f, 0.87f, 0.8f, 1.f);
-			ImGui::TextColored(name_ink, "%d-%d  %s",
-				spot.chapter + 1, spot.stage + 1, stage.name);
-			if (open_stage) {
-				// Wrapped, not clipped: a gimmick line cut mid-word reads
-				// like a bug, and the row can afford a second line.
-				ImGui::PushTextWrapPos(0.f);
-				ImGui::TextDisabled("%s", stage.blurb);
-				ImGui::PopTextWrapPos();
-			} else {
-				ImGui::TextDisabled("Locked.");
-			}
-			ImGui::TableSetColumnIndex(1);
-			char marks[8] = "- - -";
-			for (int i = 0; i < stars && i < 3; ++i) {
-				marks[i * 2] = '*';
-			}
-			ImGui::TextColored(stars > 0
-				? ImVec4(1.f, 0.84f, 0.38f, 1.f)
-				: ImVec4(0.45f, 0.5f, 0.58f, 1.f), "%s", marks);
-			ImGui::TableSetColumnIndex(2);
-			if (open_stage) {
-				if (ImGui::Button(stars > 0 ? "Again" : "Fight",
-					ImVec2(ui(64), 0))) {
-					start_stage(app, static_cast<int>(at));
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		int flat = 0;
+		for (size_t c = 0; c < campaign::chapters().size(); ++c) {
+			const campaign::Chapter& chapter = campaign::chapters()[c];
+			const bool open_chapter
+				= campaign::chapter_open(app.campaign, static_cast<int>(c));
+			int stars = 0;
+			for (int s = 0; s < chapter.stages; ++s) {
+				const auto found = app.campaign.stars.find(
+					campaign::stages()[static_cast<size_t>(flat + s)].id);
+				if (found != app.campaign.stars.end()) {
+					stars += found->second;
 				}
 			}
-			ImGui::EndTable();
+			ImGui::PushID(static_cast<int>(c));
+			ImGui::PushFont(app.fonts.head);
+			ImGui::TextColored(open_chapter
+				? ImVec4(0.93f, 0.87f, 0.8f, 1.f)
+				: ImVec4(0.45f, 0.42f, 0.4f, 1.f),
+				"Chapter %d - %s", static_cast<int>(c) + 1, chapter.name);
+			ImGui::PopFont();
+			if (open_chapter) {
+				ImGui::TextDisabled("%s", chapter.blurb);
+				ImGui::TextColored(ImVec4(1.f, 0.84f, 0.38f, 1.f),
+					"STARS %d / %d", stars, chapter.stages * 3);
+				ImGui::SameLine();
+				if (ImGui::Button("Set out", ImVec2(ui(100), 0))) {
+					begin_run(app, static_cast<int>(c),
+						app.pick_difficulty, app.seeds());
+				}
+			} else {
+				ImGui::TextDisabled(
+					"Locked - beat the chapter before it.");
+			}
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+			ImGui::PopID();
+			flat += chapter.stages;
 		}
-		ImGui::PopID();
+	} else {
+		// --- The climb: the map, entrance at the bottom, boss at the top.
+		const campaign::Chapter& chapter
+			= campaign::chapters()[static_cast<size_t>(run.chapter)];
+		ImGui::Text("Chapter %d - %s", run.chapter + 1, chapter.name);
+		ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f), "EMBERS %d",
+			run.embers);
+		ImGui::SameLine();
+		ImGui::TextDisabled("%s fire", campaign::difficulty_name(
+			run.difficulty));
+		if (run.difficulty == campaign::kForged) {
+			ImGui::SameLine();
+			ImGui::TextColored(ImVec4(1.f, 0.6f, 0.4f, 1.f), "LIVES %d",
+				run.lives);
+		}
+		if (!run.tempers.empty()) {
+			ImGui::PushTextWrapPos(0.f);
+			ImGui::TextDisabled("%s", temper_line(run.tempers).c_str());
+			ImGui::PopTextWrapPos();
+		}
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		// The rows, boss first so the climb reads bottom-to-top, with
+		// every node's rectangle remembered so the edges can be drawn in
+		// the gaps between rows afterwards.
+		std::vector<ImVec2> tops(app.run_map.size());
+		std::vector<ImVec2> bottoms(app.run_map.size());
+		const float node_w = ui(148);
+		const float node_h = ui(34);
+		const float row_gap = ui(26);
+		const float lane_gap = ui(10);
+		const float panel_w = ImGui::GetContentRegionAvail().x;
+		for (int r = campaign::kMapDepth - 1; r >= 0; --r) {
+			int lanes = 0;
+			for (const campaign::MapNode& node : app.run_map) {
+				lanes += node.depth == r ? 1 : 0;
+			}
+			const float row_w = lanes * node_w + (lanes - 1) * lane_gap;
+			float x = ImGui::GetStyle().WindowPadding.x
+				+ std::max(0.f, (panel_w - row_w) / 2);
+			bool first_in_row = true;
+			for (size_t at = 0; at < app.run_map.size(); ++at) {
+				const campaign::MapNode& node = app.run_map[at];
+				if (node.depth != r) {
+					continue;
+				}
+				const campaign::Stage& stage = campaign::stages()[
+					static_cast<size_t>(node.stage)];
+				const bool taken = std::find(run.path.begin(),
+					run.path.end(), static_cast<int>(at)) != run.path.end();
+				const bool pickable
+					= node_pickable(app, static_cast<int>(at));
+				if (!first_in_row) {
+					ImGui::SameLine();
+				}
+				first_in_row = false;
+				ImGui::SetCursorPosX(x);
+				x += node_w + lane_gap;
+				ImGui::PushID(static_cast<int>(at));
+				// A fought node wears its ember gold, the boss its duel
+				// gold; what cannot be reached goes ashen.
+				if (taken) {
+					ImGui::PushStyleColor(ImGuiCol_Button,
+						IM_COL32(122, 84, 40, 255));
+				} else if (node.kind == 1) {
+					ImGui::PushStyleColor(ImGuiCol_Button,
+						pickable ? IM_COL32(196, 132, 40, 255)
+						         : IM_COL32(70, 52, 34, 255));
+				} else if (!pickable) {
+					ImGui::PushStyleColor(ImGuiCol_Button,
+						IM_COL32(52, 42, 36, 255));
+				} else {
+					ImGui::PushStyleColor(ImGuiCol_Button,
+						IM_COL32(120, 66, 30, 255));
+				}
+				ImGui::BeginDisabled(!pickable || !app.offers.empty());
+				// The name alone: the boss says so by its gold and its row,
+				// and a prefix would only push the name off the button.
+				if (ImGui::Button(stage.name, ImVec2(node_w, node_h))) {
+					start_run_node(app, static_cast<int>(at));
+				}
+				ImGui::EndDisabled();
+				ImGui::PopStyleColor();
+				if (ImGui::IsItemHovered(
+					ImGuiHoveredFlags_AllowWhenDisabled)) {
+					ImGui::SetTooltip("%s", stage.blurb);
+				}
+				tops[at] = ImVec2(
+					(ImGui::GetItemRectMin().x
+						+ ImGui::GetItemRectMax().x) / 2,
+					ImGui::GetItemRectMin().y);
+				bottoms[at] = ImVec2(tops[at].x,
+					ImGui::GetItemRectMax().y);
+				ImGui::PopID();
+			}
+			if (r > 0) {
+				ImGui::Dummy(ImVec2(0.f, row_gap));
+			}
+		}
+		// The edges, drawn in the gaps: the path walked in bright gold,
+		// the doors open right now in ember orange, the rest as ash.
+		ImDrawList* draw = ImGui::GetWindowDrawList();
+		for (size_t at = 0; at < app.run_map.size(); ++at) {
+			const bool from_taken = std::find(run.path.begin(),
+				run.path.end(), static_cast<int>(at)) != run.path.end();
+			const bool from_here = !run.path.empty()
+				&& run.path.back() == static_cast<int>(at);
+			for (const int to : app.run_map[at].next) {
+				const bool to_taken = std::find(run.path.begin(),
+					run.path.end(), to) != run.path.end();
+				ImU32 ink = IM_COL32(90, 74, 60, 130);
+				float thick = ui(1);
+				if (from_taken && to_taken) {
+					ink = IM_COL32(255, 214, 96, 220);
+					thick = ui(3);
+				} else if ((from_here
+						|| (run.path.empty()
+							&& app.run_map[at].depth == 0))
+					&& node_pickable(app, to)) {
+					ink = IM_COL32(232, 140, 60, 200);
+					thick = ui(2);
+				}
+				draw->AddLine(tops[at], bottoms[static_cast<size_t>(to)],
+					ink, thick);
+			}
+		}
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		if (ImGui::SmallButton("Abandon the climb")) {
+			ImGui::OpenPopup("abandon");
+		}
+		if (ImGui::BeginPopup("abandon")) {
+			ImGui::TextUnformatted("Put the run down? The embers render");
+			ImGui::TextUnformatted("to slag; the map is lost.");
+			if (ImGui::Button("Abandon", ImVec2(ui(100), 0))) {
+				end_run(app);
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Keep climbing", ImVec2(ui(120), 0))) {
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
 	}
 	ImGui::Separator();
 	ImGui::PushFont(app.fonts.head);
@@ -4562,18 +4934,24 @@ void draw_menus (App& app) {
 			ImGui::End();
 		}
 		ImGui::PopStyleVar();
-	} else if (app.screen == Screen::Game && !app.offers.empty()) {
-		// The draft. The board is frozen behind it and the fuse with it, so
-		// this is the one screen in the game that is allowed to take its
-		// time - but the pick itself is one press, because ten lines from
-		// now there will be another one.
+	} else if ((app.screen == Screen::Game
+			|| app.screen == Screen::Career) && !app.offers.empty()) {
+		// The draft. In a game the board is frozen behind it and the fuse
+		// with it; on the map it is the spoils of the last battle. Either
+		// way the pick itself is one press.
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 		ImGui::Begin("temper", nullptr, box);
 		forge_panel(app);
 		ImGui::PushFont(app.fonts.head);
-		ImGui::Text("HEAT %d of %d", app.heat + 1, temper::kHeats);
+		if (app.offer_reward) {
+			ImGui::TextUnformatted("The Spoils");
+		} else {
+			ImGui::Text("HEAT %d of %d", app.heat + 1, temper::kHeats);
+		}
 		ImGui::PopFont();
-		ImGui::TextDisabled("The forge tightens. Take something with you.");
+		ImGui::TextDisabled(app.offer_reward
+			? "Won in the last fire. Take one up the climb."
+			: "The forge tightens. Take something with you.");
 		// The coin line: what the run has earned and not yet spent, and the
 		// two things it buys. Both buttons go quiet rather than vanish when
 		// the purse is short, so the prices are always readable.
@@ -4665,6 +5043,12 @@ void draw_menus (App& app) {
 		ImGui::Dummy(ImVec2(0.f, ui(4)));
 		ImGui::TextDisabled("%s", kMobile
 			? "Tap one." : "1 2 3, or the arrows and Enter.");
+		if (app.offer_reward) {
+			// The map does not insist: the climb can walk past its spoils.
+			if (ImGui::Button("Take nothing", ImVec2(ui(140), 0))) {
+				skip_reward(app);
+			}
+		}
 		if (!app.tempers.empty()) {
 			ImGui::Separator();
 			ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
@@ -4684,7 +5068,7 @@ void draw_menus (App& app) {
 		}
 		if (ImGui::Button("Restart", ImVec2(ui(240), 0))) {
 			if (app.campaign_stage >= 0) {
-				start_stage(app, app.campaign_stage);
+				restart_stage(app);
 			} else if (app.mode == 5) {
 				start_versus(app, app.career_stage);
 			} else {
@@ -4772,6 +5156,27 @@ void draw_menus (App& app) {
 			ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f),
 				"%s  %s+%d slag", stage.name,
 				stars.c_str(), app.last_slag_gain);
+			// The climb's own line under the receipt: where the run stands
+			// now, or how it ended.
+			const campaign::Run& run = app.campaign.run;
+			if (app.run_ended) {
+				ImGui::TextColored(ImVec4(1.f, 0.6f, 0.4f, 1.f), "%s",
+					won ? "The climb is complete."
+					    : "The climb is over. The embers rendered down.");
+			} else if (run.active && app.run_node >= 0) {
+				if (won) {
+					ImGui::TextColored(ImVec4(1.f, 0.84f, 0.38f, 1.f),
+						"Row %d of %d - the spoils wait on the map.",
+						run.depth, campaign::kMapDepth);
+				} else if (run.difficulty == campaign::kForged) {
+					ImGui::TextColored(ImVec4(1.f, 0.6f, 0.4f, 1.f),
+						"A life spent - %d left. The node still burns.",
+						run.lives);
+				} else {
+					ImGui::TextDisabled(
+						"The node still burns on the map.");
+				}
+			}
 		}
 		if (!app.tempers.empty()) {
 			// What the run was carrying when it ended - two runs of the
@@ -4871,9 +5276,26 @@ void draw_menus (App& app) {
 		} else {
 			ImGui::TextDisabled("Too short to record.");
 		}
-		if (ImGui::Button("Play again", ImVec2(ui(240), 0))) {
+		if (app.run_node >= 0 || app.run_ended) {
+			// A map battle's exits: the climb is the home screen, and a
+			// retry is only offered while the node is still open.
+			if (!app.node_done && !app.run_ended
+				&& ImGui::Button("Retry the node", ImVec2(ui(240), 0))) {
+				restart_stage(app);
+			}
+			if (ImGui::Button(app.map_reward
+				? "To the map - spoils wait" : "To the map",
+				ImVec2(ui(240), 0))) {
+				app.versus.reset();
+				app.campaign_stage = -1;
+				app.run_node = -1;
+				app.run_ended = false;
+				app.node_done = false;
+				app.screen = Screen::Career;
+			}
+		} else if (ImGui::Button("Play again", ImVec2(ui(240), 0))) {
 			if (app.campaign_stage >= 0) {
-				start_stage(app, app.campaign_stage);
+				restart_stage(app);
 			} else if (app.mode == 5) {
 				start_versus(app, app.career_stage);
 			} else {
@@ -4935,11 +5357,13 @@ std::string screen_shot_key (const App& app) {
 		case Screen::Replays: return "replays";
 		case Screen::Viewer: return "viewer";
 		case Screen::Scores: return "scores";
+		case Screen::Career:
+			// The map with the spoils on it is its own picture.
+			return !app.offers.empty() ? "spoils" : "career";
 		case Screen::Help: return "help";
 		case Screen::Analysis:
 			return app.studying.has_value() ? "analysis" : "analysis_empty";
 		case Screen::Profile: return "profile";
-		case Screen::Career: return "career";
 	}
 	return "screen";
 }
@@ -5228,13 +5652,20 @@ int run (bool smoke, long smoke_frames) {
 		if (mode == 4) {
 			app.config.cheese_period = 150;
 		}
-		if (const char* stage = std::getenv("FORCETRIS_SMOKE_STAGE")) {
+		if (std::getenv("FORCETRIS_SMOKE_RUN") != nullptr) {
+			// The whole roguelite loop under the masher: set out on chapter
+			// one at a fixed seed, and the block at the loop's tail keeps
+			// picking nodes and spoils until the frame budget runs out.
+			app.campaign = campaign::load(campaign::path(app.root));
+			begin_run(app, 0, campaign::kMild, 20260827u);
+			app.screen = Screen::Career;
+		} else if (const char* stage = std::getenv("FORCETRIS_SMOKE_STAGE")) {
 			// A Forge Road stage under the masher, so every recipe's whole
 			// loop - launch, overrides, preset board, settlement - can be
 			// proven headlessly, stage by stage. The campaign file loads
 			// first, the way the Career screen would have loaded it on the
-			// way in: the smoke's stage carries the file's Anvil - Preheat's
-			// owed hand included - not a blank forge's.
+			// way in: the smoke's stage carries the file's Anvil, not a
+			// blank forge's.
 			app.campaign = campaign::load(campaign::path(app.root));
 			start_stage(app, std::clamp(std::atoi(stage), 0,
 				static_cast<int>(campaign::stages().size()) - 1));
@@ -5257,12 +5688,15 @@ int run (bool smoke, long smoke_frames) {
 	}
 
 	// The smoke run's tour of the screens a game never opens. It only starts
-	// once a game has ended, and the viewer mode skips it, so the run is only
-	// held to finishing a tour it was in a position to start.
-	const bool touring = smoke && std::getenv("FORCETRIS_SMOKE_VIEW") == nullptr;
+	// once a game has ended; the viewer mode and the map-run mode skip it -
+	// each of those is its own whole test.
+	const bool touring = smoke
+		&& std::getenv("FORCETRIS_SMOKE_VIEW") == nullptr
+		&& std::getenv("FORCETRIS_SMOKE_RUN") == nullptr;
 	int toured = 0;
 	int tour_frames = 0;
 	bool game_ended = false;
+	long run_battles = 0;   // Map battles the smoke run settled.
 	while (!app.quit) {
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
@@ -5348,15 +5782,6 @@ int run (bool smoke, long smoke_frames) {
 					// The pre-game breath: both boards stand frozen - the
 					// versus step is skipped too, so the bot waits with you.
 					--app.countdown;
-					if (app.countdown == 0 && app.preheat_owed) {
-						// The countdown has just burned out: now the owed
-						// Preheat hand goes on the table, dealt from heat
-						// zero the way the ten-line crossing would deal it.
-						app.preheat_owed = false;
-							app.offers = temper::offer(app.temper_seed, 0, {});
-						app.offer_at = 0;
-						app.offer_shown = 0;
-					}
 					++frames;
 					continue;
 				}
@@ -5682,7 +6107,36 @@ int run (bool smoke, long smoke_frames) {
 		}
 
 		if (smoke) {
-			if (app.screen == Screen::Over) {
+			const bool run_smoke
+				= std::getenv("FORCETRIS_SMOKE_RUN") != nullptr;
+			if (run_smoke) {
+				// The map run drives itself: every battle verdict walks back
+				// to the map, spoils are auto-picked by the block above, the
+				// next open node is taken, and a finished or broken run sets
+				// out again - the loop the whole mode is made of.
+				if (app.screen == Screen::Over) {
+					game_ended = true;
+					++run_battles;
+					app.versus.reset();
+					app.campaign_stage = -1;
+					app.run_node = -1;
+					app.run_ended = false;
+					app.node_done = false;
+					app.screen = Screen::Career;
+				} else if (app.screen == Screen::Career
+					&& app.offers.empty() && !app.map_reward) {
+					if (!app.campaign.run.active) {
+						begin_run(app, 0, campaign::kMild, app.seeds());
+					} else {
+						for (size_t at = 0; at < app.run_map.size(); ++at) {
+							if (node_pickable(app, static_cast<int>(at))) {
+								start_run_node(app, static_cast<int>(at));
+								break;
+							}
+						}
+					}
+				}
+			} else if (app.screen == Screen::Over) {
 				game_ended = true;
 				// With FORCETRIS_SMOKE_VIEW set the run ends in the replay
 				// viewer instead of another game, so the screenshot shows a
@@ -5747,6 +6201,15 @@ int run (bool smoke, long smoke_frames) {
 			// not held to it - there was never a screen to open.
 			SDL_Log("smoke: the screen tour did not finish");
 			return 1;
+		}
+		if (std::getenv("FORCETRIS_SMOKE_RUN") != nullptr) {
+			SDL_Log("smoke: the map run settled %ld battles", run_battles);
+			if (run_battles == 0) {
+				// The whole point of the run smoke is the loop: node picked,
+				// battle fought, verdict settled, back to the map. Zero
+				// settlements means it never turned once.
+				return 1;
+			}
 		}
 	}
 	return 0;

@@ -81,6 +81,48 @@ struct Spot {
 };
 Spot spot_of (size_t stage_index);
 
+// --- The map: a chapter played as one seeded climb. ---------------------
+// A run is a branching graph six rows deep, entrance at row 0, the
+// chapter's boss alone at the top. Every fork is the player's to pick and
+// the whole graph is a pure function of (chapter, seed), so a map can be
+// rebuilt from the save file's two numbers and graded without a window.
+constexpr int kMapDepth = 6;
+// What a node holds. `kind` is written into no file yet, but its values
+// are frozen the way ids are: 0 battle, 1 boss (forge, event and rest
+// arrive in later versions and take the next numbers).
+struct MapNode {
+	int depth = 0;             // Row, 0 entrance .. kMapDepth-1 boss.
+	int lane = 0;              // Position in the row, left to right.
+	int kind = 0;              // 0 battle, 1 boss.
+	int stage = 0;             // Flat index into stages().
+	std::vector<int> next;     // Node indices in the row above.
+};
+std::vector<MapNode> build_map (int chapter, unsigned seed);
+
+// The run in progress, part of the save. Tempers and embers persist
+// across the whole climb - that is the roguelite - and what death costs
+// depends on the difficulty picked at the door.
+constexpr int kMild = 0;    // Death re-offers the same node.
+constexpr int kForged = 1;  // Death spends a life; none left ends the run.
+constexpr int kWhite = 2;   // Death ends the run outright.
+constexpr int kForgedLives = 3;
+struct Run {
+	bool active = false;
+	int chapter = 0;
+	unsigned seed = 0;
+	int difficulty = kMild;
+	int depth = 0;                     // The next row to fight.
+	std::vector<int> path;             // The node picked at each row done.
+	std::vector<std::string> tempers;  // The build, in pick order.
+	int embers = 0;
+	int lives = kForgedLives;          // Meaningful under kForged only.
+};
+// Slag awards scale with the weight of death: 100 / 150 / 200 percent.
+int slag_percent (int difficulty);
+const char* difficulty_name (int difficulty);   // "mild" / "forged" / "white".
+int difficulty_from (const std::string& name);  // kMild when unrecognized.
+
+
 // The permanent upgrades the Anvil sells. Level `n` costs cost_base * n
 // slag; effects apply to a stage's rules in apply_anvil, except the two
 // the GUI itself consumes (ember gain, the free opening draft).
@@ -100,6 +142,7 @@ struct State {
 	std::map<std::string, int> stars;   // By stage id, 0..3.
 	int slag = 0;
 	std::map<std::string, int> forge;   // Upgrade id -> level bought.
+	Run run;                            // The climb in progress, if any.
 	std::vector<std::string> unknown;
 };
 
@@ -111,6 +154,11 @@ bool save (const std::string& path, const State& state);
 // The gate: stage 0 is always open, each later stage opens once the one
 // before it holds at least one star.
 bool open (const State& state, size_t stage);
+
+// The chapter gate the map uses instead: the first chapter is always
+// open, each later one opens once the chapter before it has its boss
+// starred.
+bool chapter_open (const State& state, int chapter);
 
 // A stage's rules, built in the honest order: the player's base config,
 // then the stage's own overrides, then its pre-applied tempers, then the

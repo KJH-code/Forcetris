@@ -333,7 +333,220 @@ int main () {
 		check("a damaged file is clamped into sense",
 			fixed.slag == 0 && fixed.stars.at("c1s1") == 3
 				&& fixed.forge.at("wick") == 3);
+
+		// --- The run rides in the same file. --------------------------------
+		campaign::State climbing;
+		climbing.slag = 40;
+		climbing.run.active = true;
+		climbing.run.chapter = 1;
+		climbing.run.seed = 0xBEEFu;
+		climbing.run.difficulty = campaign::kForged;
+		climbing.run.depth = 2;
+		climbing.run.path = {1, 3};
+		climbing.run.tempers = {"thick_wick", "bellows", "thick_wick"};
+		climbing.run.embers = 27;
+		climbing.run.lives = 2;
+		check("a run saves", campaign::save(file, climbing));
+		const campaign::State resumed = campaign::load(file);
+		check("and resumes exactly where it stood",
+			resumed.run.active && resumed.run.chapter == 1
+				&& resumed.run.seed == 0xBEEFu
+				&& resumed.run.difficulty == campaign::kForged
+				&& resumed.run.depth == 2
+				&& resumed.run.path == climbing.run.path
+				&& resumed.run.tempers == climbing.run.tempers
+				&& resumed.run.embers == 27 && resumed.run.lives == 2);
+		climbing.run.active = false;
+		check("ending a run erases its keys",
+			campaign::save(file, climbing)
+				&& !campaign::load(file).run.active
+				&& campaign::load(file).run.tempers.empty());
+		{
+			// Leftover run keys with no seed must not revive a ghost run,
+			// and a depth taller than its path is pulled back down.
+			std::ofstream out(file, std::ios::trunc);
+			out << "run_depth 3\nrun_embers 9\n";
+		}
+		check("run keys without a seed are not a run",
+			!campaign::load(file).run.active
+				&& campaign::load(file).run.embers == 0);
+		{
+			std::ofstream out(file, std::ios::trunc);
+			out << "run_seed 7\nrun_depth 5\nrun_path 0,1\n"
+				<< "run_embers -4\nrun_lives 99\ndifficulty nonsense\n";
+		}
+		const campaign::State bent = campaign::load(file);
+		check("a bent run is clamped into sense",
+			bent.run.active && bent.run.depth == 2 && bent.run.embers == 0
+				&& bent.run.lives == 9
+				&& bent.run.difficulty == campaign::kMild);
 		fs::remove_all(folder, ignored);
+	}
+
+	// --- The map. -----------------------------------------------------------
+	{
+		using campaign::MapNode;
+		// Shape, connectivity and honesty of every map, across both
+		// chapters and a spread of seeds - the generator's whole promise.
+		bool shaped = true;
+		bool connected = true;
+		bool ranged = true;
+		bool crossed = false;
+		std::string detail;
+		for (int chapter = 0;
+			chapter < static_cast<int>(campaign::chapters().size());
+			++chapter) {
+			int battle_lo = 0;
+			for (int c = 0; c < chapter; ++c) {
+				battle_lo += campaign::chapters()[c].stages;
+			}
+			const int boss_stage = battle_lo
+				+ campaign::chapters()[chapter].stages - 1;
+			for (unsigned seed = 1; seed <= 40; ++seed) {
+				const std::vector<MapNode> map
+					= campaign::build_map(chapter, seed * 977u);
+				// Rows: entrance of two, middle of two or three, one boss.
+				int widths[campaign::kMapDepth] = {};
+				for (const MapNode& node : map) {
+					if (node.depth < 0 || node.depth >= campaign::kMapDepth) {
+						shaped = false;
+						continue;
+					}
+					++widths[node.depth];
+				}
+				shaped = shaped && widths[0] == 2
+					&& widths[campaign::kMapDepth - 1] == 1;
+				for (int r = 1; r < campaign::kMapDepth - 1; ++r) {
+					shaped = shaped && widths[r] >= 2 && widths[r] <= 3;
+				}
+				// Every node's kind and stage sit in its chapter's range.
+				for (const MapNode& node : map) {
+					const bool boss = node.depth == campaign::kMapDepth - 1;
+					ranged = ranged && node.kind == (boss ? 1 : 0)
+						&& (boss ? node.stage == boss_stage
+							: node.stage >= battle_lo
+								&& node.stage < boss_stage);
+				}
+				// Edges point one row up and never cross; every node is
+				// reachable from the entrance and reaches the boss.
+				std::vector<int> reach(map.size(), 0);
+				for (size_t at = 0; at < map.size(); ++at) {
+					if (map[at].depth == 0) {
+						reach[at] = 1;
+					}
+				}
+				for (size_t at = 0; at < map.size(); ++at) {
+					for (const int to : map[at].next) {
+						if (to < 0 || to >= static_cast<int>(map.size())
+							|| map[to].depth != map[at].depth + 1) {
+							shaped = false;
+							continue;
+						}
+						if (reach[at]) {
+							reach[to] = 1;
+						}
+						for (size_t other = 0; other < map.size(); ++other) {
+							if (map[other].depth != map[at].depth
+								|| other == at) {
+								continue;
+							}
+							for (const int their : map[other].next) {
+								if ((map[at].lane - map[other].lane)
+									* (map[to].lane - map[their].lane) < 0) {
+									crossed = true;
+								}
+							}
+						}
+					}
+				}
+				std::vector<int> climbs(map.size(), 0);
+				for (size_t at = map.size(); at-- > 0;) {
+					if (map[at].depth == campaign::kMapDepth - 1) {
+						climbs[at] = 1;
+						continue;
+					}
+					for (const int to : map[at].next) {
+						if (to >= 0 && to < static_cast<int>(map.size())
+							&& climbs[to]) {
+							climbs[at] = 1;
+						}
+					}
+				}
+				for (size_t at = 0; at < map.size(); ++at) {
+					connected = connected && reach[at] && climbs[at];
+				}
+				if ((!shaped || !connected || !ranged || crossed)
+					&& detail.empty()) {
+					detail = "chapter " + std::to_string(chapter) + " seed "
+						+ std::to_string(seed * 977u);
+				}
+			}
+		}
+		check("every map is shaped 2 / 2..3 / 1 with honest kinds", shaped,
+			detail);
+		check("every battle draws from its chapter, every boss is the boss",
+			ranged, detail);
+		check("every node is reachable and every node reaches the boss",
+			connected, detail);
+		check("no two edges cross", !crossed, detail);
+		check("the same seed builds the same map",
+			[] {
+				const auto a = campaign::build_map(0, 12345u);
+				const auto b = campaign::build_map(0, 12345u);
+				if (a.size() != b.size()) {
+					return false;
+				}
+				for (size_t i = 0; i < a.size(); ++i) {
+					if (a[i].depth != b[i].depth || a[i].lane != b[i].lane
+						|| a[i].kind != b[i].kind || a[i].stage != b[i].stage
+						|| a[i].next != b[i].next) {
+						return false;
+					}
+				}
+				return true;
+			}());
+		check("different seeds build different maps",
+			[] {
+				for (unsigned seed = 1; seed <= 8; ++seed) {
+					const auto a = campaign::build_map(0, seed);
+					const auto b = campaign::build_map(0, seed + 100u);
+					for (size_t i = 0; i < a.size() && i < b.size(); ++i) {
+						if (a[i].stage != b[i].stage
+							|| a[i].next != b[i].next) {
+							return true;
+						}
+					}
+				}
+				return false;
+			}());
+		check("a chapter off the road builds no map",
+			campaign::build_map(-1, 1u).empty()
+				&& campaign::build_map(99, 1u).empty());
+	}
+
+	// --- Difficulty and the chapter gate. -----------------------------------
+	{
+		check("slag scales with the weight of death",
+			campaign::slag_percent(campaign::kMild) == 100
+				&& campaign::slag_percent(campaign::kForged) == 150
+				&& campaign::slag_percent(campaign::kWhite) == 200);
+		check("difficulty names round-trip",
+			campaign::difficulty_from(
+					campaign::difficulty_name(campaign::kWhite))
+					== campaign::kWhite
+				&& campaign::difficulty_from(
+					campaign::difficulty_name(campaign::kForged))
+					== campaign::kForged
+				&& campaign::difficulty_from("gibberish") == campaign::kMild);
+		campaign::State fresh;
+		const int first_boss = campaign::chapters()[0].stages - 1;
+		campaign::State keyed;
+		keyed.stars[campaign::stages()[first_boss].id] = 1;
+		check("the first chapter is open, the second waits for the boss",
+			campaign::chapter_open(fresh, 0)
+				&& !campaign::chapter_open(fresh, 1)
+				&& campaign::chapter_open(keyed, 1)
+				&& !campaign::chapter_open(keyed, 99));
 	}
 
 	std::printf("%s\n",

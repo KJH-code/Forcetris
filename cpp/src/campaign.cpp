@@ -103,9 +103,58 @@ State load (const std::string& path) {
 					? std::clamp(level, 0, sold->levels)
 					: std::max(0, level);
 			}
+		} else if (key == "difficulty") {
+			std::string name;
+			in >> name;
+			state.run.difficulty = difficulty_from(name);
+		} else if (key == "run_chapter") {
+			in >> state.run.chapter;
+			state.run.chapter = std::clamp(state.run.chapter, 0,
+				static_cast<int>(chapters().size()) - 1);
+		} else if (key == "run_seed") {
+			// The seed's presence is what says a climb is under way: every
+			// other run key without it is leftovers, not a run.
+			in >> state.run.seed;
+			state.run.active = !in.fail();
+		} else if (key == "run_depth") {
+			in >> state.run.depth;
+			state.run.depth = std::clamp(state.run.depth, 0, kMapDepth);
+		} else if (key == "run_path") {
+			std::string csv;
+			in >> csv;
+			state.run.path.clear();
+			std::istringstream nodes(csv);
+			std::string one;
+			while (std::getline(nodes, one, ',')) {
+				if (!one.empty()) {
+					state.run.path.push_back(
+						std::max(0, std::atoi(one.c_str())));
+				}
+			}
+		} else if (key == "run_tempers") {
+			std::string csv;
+			in >> csv;
+			state.run.tempers = split_ids(csv.c_str());
+		} else if (key == "run_embers") {
+			in >> state.run.embers;
+			state.run.embers = std::max(0, state.run.embers);
+		} else if (key == "run_lives") {
+			in >> state.run.lives;
+			state.run.lives = std::clamp(state.run.lives, 0, 9);
 		} else {
 			state.unknown.push_back(line);
 		}
+	}
+	if (!state.run.active) {
+		// Leftover run keys with no seed reset to a clean no-run state, so
+		// a half-erased file can never revive a ghost climb.
+		state.run = Run{};
+	} else {
+		// The depth is the number of rows already fought, which is also
+		// the path's length - held to it, so a mangled file cannot claim
+		// a height it never climbed.
+		state.run.depth = std::min(state.run.depth,
+			static_cast<int>(state.run.path.size()));
 	}
 	return state;
 }
@@ -125,6 +174,30 @@ bool save (const std::string& path, const State& state) {
 	for (const auto& [id, level] : state.forge) {
 		out << "forge " << id << " " << level << "\n";
 	}
+	if (state.run.active) {
+		// The run rides in the same file; when there is none the keys are
+		// simply not written, which is how ending a run erases it.
+		out << "difficulty " << difficulty_name(state.run.difficulty) << "\n";
+		out << "run_chapter " << state.run.chapter << "\n";
+		out << "run_seed " << state.run.seed << "\n";
+		out << "run_depth " << state.run.depth << "\n";
+		if (!state.run.path.empty()) {
+			out << "run_path ";
+			for (size_t i = 0; i < state.run.path.size(); ++i) {
+				out << (i > 0 ? "," : "") << state.run.path[i];
+			}
+			out << "\n";
+		}
+		if (!state.run.tempers.empty()) {
+			out << "run_tempers ";
+			for (size_t i = 0; i < state.run.tempers.size(); ++i) {
+				out << (i > 0 ? "," : "") << state.run.tempers[i];
+			}
+			out << "\n";
+		}
+		out << "run_embers " << state.run.embers << "\n";
+		out << "run_lives " << state.run.lives << "\n";
+	}
 	for (const std::string& line : state.unknown) {
 		out << line << "\n";
 	}
@@ -140,6 +213,36 @@ bool open (const State& state, size_t stage) {
 	}
 	const auto before = state.stars.find(stages()[stage - 1].id);
 	return before != state.stars.end() && before->second > 0;
+}
+
+bool chapter_open (const State& state, int chapter) {
+	if (chapter < 0 || chapter >= static_cast<int>(chapters().size())) {
+		return false;
+	}
+	if (chapter == 0) {
+		return true;
+	}
+	// The previous chapter's boss is its last flat recipe; a star on it -
+	// any star - opens the door.
+	int boss = -1;
+	for (int c = 0; c < chapter; ++c) {
+		boss += chapters()[static_cast<size_t>(c)].stages;
+	}
+	const auto held = state.stars.find(stages()[static_cast<size_t>(boss)].id);
+	return held != state.stars.end() && held->second > 0;
+}
+
+int slag_percent (int difficulty) {
+	return difficulty == kWhite ? 200 : difficulty == kForged ? 150 : 100;
+}
+
+const char* difficulty_name (int difficulty) {
+	return difficulty == kWhite ? "white"
+		: difficulty == kForged ? "forged" : "mild";
+}
+
+int difficulty_from (const std::string& name) {
+	return name == "white" ? kWhite : name == "forged" ? kForged : kMild;
 }
 
 namespace {
