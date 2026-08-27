@@ -40,6 +40,7 @@ add_library(forcetris_core
 	src/munch.cpp
 	src/temper.cpp
 	src/campaign.cpp
+	src/stages.cpp
 )
 target_include_directories(forcetris_core PUBLIC include)
 # nlohmann/json.hpp, vendored, for the replay files.

@@ -23,6 +23,9 @@ closest thing, and it isn't adjustable. The C++ game in `cpp/` is the product; t
 Python game below is the original engine, kept as the graded reference the whole
 port is tested against.
 
+Where the game is headed — who it is for, what failure means, the branching-map
+campaign it is growing into — is written down in [DESIGN.md](DESIGN.md).
+
 ## Install
 
 Requires Python 3.10+ and pygame.

@@ -76,11 +76,48 @@ int main () {
 		check("every stage id is unique", unique, detail);
 		check("every stage is named and shaped for its mode", shaped && named,
 			detail);
-		check("the road is two chapters of eight",
-			campaign::stages().size() == 2 * campaign::kPerChapter);
-		check("each chapter ends in a boss",
-			campaign::stages()[campaign::kPerChapter - 1].mode == 5
-				&& campaign::stages().back().mode == 5);
+		// The chapter table is the road's other half: the two must agree,
+		// every chapter must be a real named stretch, and each must end in
+		// a boss - the shape every future chapter is held to.
+		int counted = 0;
+		bool chapters_named = true;
+		bool bossed = true;
+		std::set<std::string> chapter_ids;
+		bool chapters_unique = true;
+		for (const campaign::Chapter& chapter : campaign::chapters()) {
+			chapters_named = chapters_named && chapter.id != nullptr
+				&& chapter.id[0] != '\0' && chapter.name != nullptr
+				&& chapter.name[0] != '\0' && chapter.blurb != nullptr
+				&& chapter.stages > 0;
+			chapters_unique = chapters_unique
+				&& chapter_ids.insert(chapter.id ? chapter.id : "").second;
+			counted += chapter.stages;
+			if (counted <= static_cast<int>(campaign::stages().size())) {
+				bossed = bossed
+					&& campaign::stages()[counted - 1].mode == 5;
+			}
+		}
+		check("the chapter table covers the road exactly",
+			counted == static_cast<int>(campaign::stages().size()));
+		check("every chapter is named, non-empty and unique",
+			chapters_named && chapters_unique);
+		check("every chapter ends in a boss", bossed);
+		// spot_of is the screens' map from flat index to chapter frame:
+		// walk the road and hold it to the running count.
+		bool spotted = true;
+		int chapter_at = 0;
+		int within = 0;
+		for (size_t at = 0; at < campaign::stages().size(); ++at) {
+			if (within == campaign::chapters()[chapter_at].stages) {
+				++chapter_at;
+				within = 0;
+			}
+			const campaign::Spot spot = campaign::spot_of(at);
+			spotted = spotted && spot.chapter == chapter_at
+				&& spot.stage == within;
+			++within;
+		}
+		check("spot_of agrees with the chapter table", spotted);
 	}
 
 	// --- Every override lands, and nothing else moves. ----------------------
@@ -158,7 +195,8 @@ int main () {
 				&& campaign::free_drafts({}) == 0);
 
 		// The boss builds from the same base and must see none of it.
-		const Stage& boss = campaign::stages()[campaign::kPerChapter - 1];
+		const Stage& boss
+			= campaign::stages()[campaign::chapters()[0].stages - 1];
 		const SimConfig theirs = campaign::bot_config(boss, raw);
 		check("the boss's rules carry no player metal",
 			theirs.fuse_base == raw.fuse_base * boss.fuse_scale

@@ -55,10 +55,31 @@ struct Stage {
 	int slag_repeat = 5;     // ...and for every clear after it.
 };
 
-// The road, in order. Two chapters of eight; each chapter ends in a boss.
+// One chapter of the road: a named stretch of stages ending in a boss.
+// `id` is reserved for the save file the way stage ids are, and frozen the
+// same way. Chapters may differ in length - the screens walk this table
+// rather than assume one.
+struct Chapter {
+	const char* id;
+	const char* name;
+	const char* blurb;
+	int stages;
+};
+
+// The road, in order: the chapters, and every stage flat in chapter order.
+// Both tables live in stages.cpp - the content file - and campaigncheck
+// holds them in agreement.
+const std::vector<Chapter>& chapters ();
 const std::vector<Stage>& stages ();
-// How many stages open each chapter, for the screen's headers.
-constexpr int kPerChapter = 8;
+
+// Where a flat stage index falls on the road: which chapter, and which
+// stage within it, both 0-based. Meaningful only for indexes into
+// stages(); anything past the road lands one chapter past the last.
+struct Spot {
+	int chapter;
+	int stage;
+};
+Spot spot_of (size_t stage_index);
 
 // The permanent upgrades the Anvil sells. Level `n` costs cost_base * n
 // slag; effects apply to a stage's rules in apply_anvil, except the two

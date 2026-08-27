@@ -4108,18 +4108,24 @@ void draw_career (App& app) {
 	ImGui::PushFont(app.fonts.head);
 	ImGui::TextUnformatted("The Forge Road");
 	ImGui::PopFont();
-	ImGui::TextDisabled("Sixteen stages, each with its own fire. Clear one");
-	ImGui::TextDisabled("to open the next; slag buys permanent metal below.");
+	ImGui::TextDisabled("Every stage has its own fire. Clear one to open");
+	ImGui::TextDisabled("the next; slag buys permanent metal below.");
 	ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f), "SLAG %d",
 		app.campaign.slag);
 	ImGui::Dummy(ImVec2(0.f, ui(4)));
 	const std::vector<campaign::Stage>& road = campaign::stages();
 	for (size_t at = 0; at < road.size(); ++at) {
-		if (at % campaign::kPerChapter == 0) {
+		const campaign::Spot spot = campaign::spot_of(at);
+		if (spot.stage == 0) {
+			// A chapter opens with its own name and its promise, straight
+			// from the chapter table - the screen assumes nothing about
+			// how long a chapter runs.
+			const campaign::Chapter& chapter
+				= campaign::chapters()[spot.chapter];
 			ImGui::PushFont(app.fonts.head);
-			ImGui::Text("Chapter %d",
-				static_cast<int>(at / campaign::kPerChapter) + 1);
+			ImGui::Text("Chapter %d - %s", spot.chapter + 1, chapter.name);
 			ImGui::PopFont();
+			ImGui::TextDisabled("%s", chapter.blurb);
 		}
 		const campaign::Stage& stage = road[at];
 		const bool open_stage = campaign::open(app.campaign, at);
@@ -4140,9 +4146,7 @@ void draw_career (App& app) {
 				: stage.mode == 5 ? ImVec4(1.f, 0.84f, 0.38f, 1.f)
 				: ImVec4(0.93f, 0.87f, 0.8f, 1.f);
 			ImGui::TextColored(name_ink, "%d-%d  %s",
-				static_cast<int>(at) / campaign::kPerChapter + 1,
-				static_cast<int>(at) % campaign::kPerChapter + 1,
-				stage.name);
+				spot.chapter + 1, spot.stage + 1, stage.name);
 			if (open_stage) {
 				// Wrapped, not clipped: a gimmick line cut mid-word reads
 				// like a bug, and the row can afford a second line.
