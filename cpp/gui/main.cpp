@@ -412,6 +412,23 @@ struct App {
 	unsigned offer_salt = 0;     // Rerolls of the current hand.
 	int extra_picks = 0;         // Second cards bought on this hand.
 	bool offer_taken = false;    // A card has left this hand already.
+	// Preheat's free draft, owed but not yet dealt: the cards wait behind
+	// the starting countdown instead of being drawn over it.
+	bool preheat_owed = false;
+	// Smooth motion: the piece as it stood before the last sim tick, so the
+	// renderer can draw the space between two 20ms steps instead of only
+	// the steps. lerp_have is false whenever the last tick carried input -
+	// a pressed key's effect must land on the very next drawn frame, not
+	// slide in over the following twenty milliseconds.
+	Piece lerp_prev;
+	bool lerp_have = false;
+	float lerp_alpha = 1.f;      // 0 at the tick, 1 just before the next.
+	// The F3 frame diagnostics: recent render times and how many sim ticks
+	// each render carried, so a stutter report can arrive with numbers.
+	bool show_frames = false;
+	float frame_ms[120] = {};
+	int frame_at = 0;
+	int tick_hist[3] = {};       // Renders that carried 0, 1, 2+ ticks.
 	// The juice: a fixed pool of clear sparks (a hard cap, not a queue -
 	// an overflowing celebration recycles its oldest embers), and the
 	// frame the board stops shuddering.
@@ -664,6 +681,7 @@ void start_game (App& app, int mode,
 	app.hiscore_place = -1;
 	app.score_saved = false;
 	app.countdown = app.start_delay;
+	app.preheat_owed = false;
 	reset_effects(app);
 	app.audio.start_music();
 }
@@ -695,6 +713,7 @@ void deal_versus_round (App& app) {
 	app.versus->begin_round(app.seeds(), meta, app.versus_bot_base,
 		app.versus_blade);
 	app.countdown = app.start_delay;
+	app.preheat_owed = false;
 	reset_effects(app);
 }
 
@@ -980,13 +999,11 @@ void start_stage (App& app, int index) {
 		}
 		app.countdown = app.start_delay;
 		reset_effects(app);
-		if (campaign::free_drafts(app.campaign.forge) > 0) {
-			// Preheat: the first draft comes free at the door, dealt from
-			// heat zero the way the ten-line crossing would have dealt it.
-			app.offers = temper::offer(app.temper_seed, 0, {});
-			app.offer_at = 0;
-			app.offer_shown = 0;
-		}
+		// Preheat: the first draft comes free at the door - but the door
+		// has a countdown on it, so the hand is owed now and dealt the
+		// frame the countdown expires. Dealing here drew the cards under
+		// the 3-2-1 and both fought for the same screen.
+		app.preheat_owed = campaign::free_drafts(app.campaign.forge) > 0;
 	}
 	app.screen = Screen::Game;
 	app.paused = false;
@@ -1374,6 +1391,15 @@ void handle_event (App& app, const SDL_Event& event) {
 			& SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
 		SDL_SetWindowFullscreen(app.window,
 			full ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+		return;
+	}
+	// F3 toggles the frame diagnostics, so "it stutters" can arrive as
+	// numbers. The tick histogram starts fresh each time it comes up.
+	if (down && event.key.keysym.scancode == SDL_SCANCODE_F3) {
+		app.show_frames = !app.show_frames;
+		if (app.show_frames) {
+			app.tick_hist[0] = app.tick_hist[1] = app.tick_hist[2] = 0;
+		}
 		return;
 	}
 	// R restarts the run, hardcoded like Escape rather than rebindable - a
@@ -1947,6 +1973,24 @@ void draw_board (App& app) {
 
 	if (sim.entry() && sim.piece().form <= 6) {
 		const Piece& piece = sim.piece();
+		// Smooth motion: draw the piece part-way between its last two sim
+		// steps. Only a plain step qualifies - same form and rotation, at
+		// most one column across, zero or one row down. A rotation, spawn,
+		// hard drop or teleport (ARR 0 to the wall, SDF 40 to the floor)
+		// snaps, so the game keeps reading in cells.
+		int ox = 0;
+		int oy = 0;
+		if (app.config.smooth && app.lerp_have && app.lerp_alpha < 1.f) {
+			const Piece& was = app.lerp_prev;
+			const int dx = piece.x - was.x;
+			const int dy = piece.y - was.y;
+			if (piece.form == was.form && piece.state == was.state
+				&& dx >= -1 && dx <= 1 && (dy == 0 || dy == 1)) {
+				const float back = 1.f - app.lerp_alpha;
+				ox = -static_cast<int>(back * dx * kCell);
+				oy = -static_cast<int>(back * dy * kCell);
+			}
+		}
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 		const Piece ghost = board.dropped(piece);
 		if (ghost.y != piece.y) {
@@ -1961,7 +2005,9 @@ void draw_board (App& app) {
 				if (cell.y < 0) {
 					continue;
 				}
-				const int gx = kBoardX + cell.x * kCell;
+				// The ghost slides sideways with the piece but its row is the
+				// landing, a fact, so y stays snapped.
+				const int gx = kBoardX + cell.x * kCell + ox;
 				const int gy = kBoardY + cell.y * kCell;
 				fill(renderer, gx + 1, gy + 1, kCell - 2, kCell - 2, inner);
 				fill(renderer, gx + 1, gy + 1, kCell - 2, t, edge);
@@ -1972,8 +2018,8 @@ void draw_board (App& app) {
 		}
 		for (const Offset cell : cells_of(piece)) {
 			if (cell.y >= 0) {
-				draw_cell(renderer, kBoardX + cell.x * kCell,
-					kBoardY + cell.y * kCell, kFormColors[piece.form]);
+				draw_cell(renderer, kBoardX + cell.x * kCell + ox,
+					kBoardY + cell.y * kCell + oy, kFormColors[piece.form]);
 			}
 		}
 		// The burn made visible: past sixty percent of the fuse the piece
@@ -1994,8 +2040,8 @@ void draw_board (App& app) {
 				SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 				for (const Offset cell : cells_of(piece)) {
 					if (cell.y >= 0) {
-						fill(renderer, kBoardX + cell.x * kCell + 1,
-							kBoardY + cell.y * kCell + 1,
+						fill(renderer, kBoardX + cell.x * kCell + ox + 1,
+							kBoardY + cell.y * kCell + oy + 1,
 							kCell - 2, kCell - 2, glow);
 					}
 				}
@@ -2003,8 +2049,8 @@ void draw_board (App& app) {
 					const auto cells = cells_of(piece);
 					const Offset cell = cells[app.seeds() % kCells];
 					spawn_sparks_at(app,
-						kBoardX + (cell.x + 0.5f) * kCell,
-						kBoardY + (cell.y + 0.5f) * kCell,
+						kBoardX + (cell.x + 0.5f) * kCell + ox,
+						kBoardY + (cell.y + 0.5f) * kCell + oy,
 						{255, 150, 70, 255}, 1, 1.6f);
 				}
 			}
@@ -2489,6 +2535,45 @@ void draw_countdown (App& app) {
 		IM_COL32(255, 210, 74, 255), text);
 }
 
+// The F3 overlay: what the render loop has actually been doing, as numbers,
+// so "it stutters" can arrive as a report someone can act on. On a healthy
+// vsync-off desktop the frame time sits near a millisecond and the tick
+// histogram is almost all 0s and 1s; a fat 2+ column means renders are
+// arriving late and carrying bunched sim steps - the judder itself.
+void draw_frame_stats (App& app) {
+	float worst = 0.f;
+	float sum = 0.f;
+	int have = 0;
+	for (const float ms : app.frame_ms) {
+		if (ms > 0.f) {
+			sum += ms;
+			worst = std::max(worst, ms);
+			++have;
+		}
+	}
+	const float mean = have > 0 ? sum / have : 0.f;
+	const long total = static_cast<long>(app.tick_hist[0])
+		+ app.tick_hist[1] + app.tick_hist[2];
+	ImGui::SetNextWindowPos(ImVec2(static_cast<float>(ui(8)),
+		static_cast<float>(ui(8))));
+	ImGui::SetNextWindowBgAlpha(0.65f);
+	ImGui::Begin("##framestats", nullptr, ImGuiWindowFlags_NoDecoration
+		| ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs
+		| ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav
+		| ImGuiWindowFlags_NoSavedSettings);
+	ImGui::Text("frame %.2f ms avg, %.1f worst (%.0f fps)",
+		mean, worst, mean > 0.f ? 1000.f / mean : 0.f);
+	if (total > 0) {
+		ImGui::Text("sim ticks per frame  0: %d%%  1: %d%%  2+: %d%%",
+			static_cast<int>(app.tick_hist[0] * 100 / total),
+			static_cast<int>(app.tick_hist[1] * 100 / total),
+			static_cast<int>(app.tick_hist[2] * 100 / total));
+	}
+	ImGui::Text("smooth %s   vsync %s", app.config.smooth ? "on" : "off",
+		(kMobile || !app.config.lowlatency) ? "on" : "off");
+	ImGui::End();
+}
+
 // Where the phone's buttons sit. Portrait gets a two-row grid under the
 // board; landscape gets a thumb cluster in each bottom corner.
 void layout_touch (App& app, int w, int h) {
@@ -2772,6 +2857,9 @@ void draw_settings (App& app) {
 			ImGui::SameLine();
 			ImGui::TextDisabled("%s", kMobile ? ""
 				: "vsync off; a frame or two less input lag");
+			ImGui::Checkbox("Smooth motion", &app.config.smooth);
+			ImGui::SameLine();
+			ImGui::TextDisabled("draw the piece between engine steps");
 			ImGui::EndTabItem();
 		}
 		if (ImGui::BeginTabItem("Sound")) {
@@ -3229,6 +3317,11 @@ void draw_help (App& app) {
 			ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "F11");
 			ImGui::TableSetColumnIndex(1);
 			ImGui::TextUnformatted("Fullscreen (less latency on Windows)");
+			ImGui::TableNextRow();
+			ImGui::TableSetColumnIndex(0);
+			ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "F3");
+			ImGui::TableSetColumnIndex(1);
+			ImGui::TextUnformatted("Frame diagnostics overlay");
 		}
 		ImGui::EndTable();
 	}
@@ -4935,6 +5028,9 @@ void tour_screen (App& app, int stop) {
 			// tour starts a Tempering run and puts its first heat's cards
 			// on the table.
 			start_game(app, 6);
+			// The countdown goes: cards are only ever dealt on a board that
+			// is already running, and this stop must look like that too.
+			app.countdown = 0;
 			app.offers = temper::offer(app.temper_seed, 0, {});
 			app.offer_at = 0;
 			app.offer_shown = 0;
@@ -5012,7 +5108,13 @@ int run (bool smoke, long smoke_frames) {
 	// the same design at the display's density.
 	SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
 #endif
-	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+	// The timer subsystem is not decoration: on Windows it is what asks the
+	// OS for 1ms sleep granularity (timeBeginPeriod). Without it the pacing
+	// nap below the render loop - SDL_Delay(1) - can sleep up to ~15ms at a
+	// time, which bunches sim ticks into some frames and starves others:
+	// exactly the judder the low-latency mode exists to avoid.
+	SDL_SetHint(SDL_HINT_TIMER_RESOLUTION, "1");
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
 		SDL_Log("SDL_Init: %s", SDL_GetError());
 		return 1;
 	}
@@ -5125,7 +5227,11 @@ int run (bool smoke, long smoke_frames) {
 		if (const char* stage = std::getenv("FORCETRIS_SMOKE_STAGE")) {
 			// A Forge Road stage under the masher, so every recipe's whole
 			// loop - launch, overrides, preset board, settlement - can be
-			// proven headlessly, stage by stage.
+			// proven headlessly, stage by stage. The campaign file loads
+			// first, the way the Career screen would have loaded it on the
+			// way in: the smoke's stage carries the file's Anvil - Preheat's
+			// owed hand included - not a blank forge's.
+			app.campaign = campaign::load(campaign::path(app.root));
 			start_stage(app, std::clamp(std::atoi(stage), 0,
 				static_cast<int>(campaign::stages().size()) - 1));
 		} else if (mode == 5) {
@@ -5200,16 +5306,36 @@ int run (bool smoke, long smoke_frames) {
 			behind = 0.02;
 		} else {
 			const Uint64 now = SDL_GetPerformanceCounter();
-			behind += static_cast<double>(now - previous)
+			const double slice = static_cast<double>(now - previous)
 				/ SDL_GetPerformanceFrequency();
 			previous = now;
-			behind = std::min(behind, 0.25);
+			behind = std::min(behind + slice, 0.25);
+			app.frame_ms[app.frame_at] = static_cast<float>(slice * 1000.);
+			app.frame_at = (app.frame_at + 1) % 120;
 		}
 
 		if (smoke) {
 			app.input_nudge = false;
 		}
+		// Where the last drawn piece stood, taken before this batch of sim
+		// ticks so the renderer can draw the travel between two 20ms steps.
+		// A batch that carries input snaps instead: a pressed key's effect
+		// must be on screen the very next frame, not slide in late.
+		const bool nudged = app.input_nudge;
+		Piece pre_piece;
+		bool pre_entry = false;
+		long pre_frame = -1;
+		if (app.session.has_value() && app.screen == Screen::Game) {
+			const Sim& sim = app.session->sim();
+			pre_frame = sim.frame();
+			pre_entry = sim.entry();
+			if (pre_entry) {
+				pre_piece = sim.piece();
+			}
+		}
+		int ticks = 0;
 		while (behind >= 0.02 || (app.input_nudge && behind >= 0.0)) {
+			++ticks;
 			behind -= 0.02;
 			app.input_nudge = false;
 			if (app.screen == Screen::Game && !app.paused && !app.editing
@@ -5218,6 +5344,15 @@ int run (bool smoke, long smoke_frames) {
 					// The pre-game breath: both boards stand frozen - the
 					// versus step is skipped too, so the bot waits with you.
 					--app.countdown;
+					if (app.countdown == 0 && app.preheat_owed) {
+						// The countdown has just burned out: now the owed
+						// Preheat hand goes on the table, dealt from heat
+						// zero the way the ten-line crossing would deal it.
+						app.preheat_owed = false;
+							app.offers = temper::offer(app.temper_seed, 0, {});
+						app.offer_at = 0;
+						app.offer_shown = 0;
+					}
 					++frames;
 					continue;
 				}
@@ -5268,6 +5403,22 @@ int run (bool smoke, long smoke_frames) {
 				++frames;
 			}
 		}
+		if (!smoke) {
+			++app.tick_hist[std::min(ticks, 2)];
+		}
+		if (app.session.has_value() && app.screen == Screen::Game
+			&& app.session->sim().frame() != pre_frame) {
+			// The sim moved: remember where the piece was so the next draws
+			// can close the gap, unless this batch carried a key press.
+			app.lerp_prev = pre_piece;
+			app.lerp_have = !nudged && pre_entry && app.session->sim().entry();
+		}
+		// How far this drawn frame sits past the last tick, as a fraction of
+		// one. A nudged tick leaves behind negative - the sim ran ahead of
+		// the clock for the input's sake - and that draws as the current
+		// position, exactly where the pressed key put the piece.
+		app.lerp_alpha = behind <= 0. ? 1.f
+			: std::min(1.f, static_cast<float>(behind / 0.02));
 		if (app.session.has_value()) {
 			for (const std::string& cue : app.session->take_cues()) {
 				app.audio.play(cue);
@@ -5498,6 +5649,9 @@ int run (bool smoke, long smoke_frames) {
 			app.show_settings = true;
 		}
 		draw_menus(app);
+		if (app.show_frames) {
+			draw_frame_stats(app);
+		}
 
 		ImGui::Render();
 		ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), app.renderer);

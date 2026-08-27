@@ -208,6 +208,23 @@ soft drop takes to reach the floor, and the frames a held direction takes
 to reach the wall - measured on the config the game ships with, so
 "sluggish" is a number that either moved or did not.
 
+**The picture is paced as carefully as the sim.** The engine steps on a
+fixed 20ms grid (that grid is what the Python equivalence is graded on,
+so it never changes), but displays run at 60Hz and up, and drawing the
+piece only on the grid makes single moves beat against the refresh and
+read as judder. Smooth motion - on by default, a Rules-tab checkbox -
+draws the falling piece part-way between its last two engine steps
+instead: presentation only, and only for a plain step (same rotation, at
+most one column across, one row down); rotations, spawns, hard drops and
+ARR-0 teleports still snap, and a step that carried a key press snaps
+too, so input latency is untouched. On Windows the SDL timer subsystem
+is initialized alongside video so the pacing nap actually sleeps ~1ms
+(without timeBeginPeriod it can oversleep to ~15ms and bunch engine
+ticks into some frames while starving others). F3 toggles a frame
+diagnostics overlay - average and worst frame time, and how many engine
+ticks each drawn frame carried - so a stutter report can arrive with
+numbers attached.
+
 **The draft is the game's whole gimmick.** Every game played under the
 fuse rules climbs the forge in heats - ten cleared lines each, six dug
 rows in Meltdown - and crossing a heat is where the forge tightens the
@@ -467,7 +484,9 @@ Headless machines can still prove the whole thing runs:
 `FORCETRIS_SMOKE=1500 SDL_VIDEODRIVER=dummy ./forcetris` plays that many
 frames of scripted-random input and exits (`FORCETRIS_SMOKE_STAGE=<n>`
 points the run at a Forge Road stage instead, so every recipe's launch,
-overrides and settlement can be proven headlessly; `FORCETRIS_CAMPAIGN`
+overrides and settlement can be proven headlessly - the campaign file is
+loaded first, the way the Career screen loads it, so the file's Anvil
+upgrades, Preheat's free draft included, ride along; `FORCETRIS_CAMPAIGN`
 redirects campaign.dat the way the other data files redirect);
 `FORCETRIS_SHOT=/path/out.bmp`
 saves the final frame. Between games it tours the screens a game never

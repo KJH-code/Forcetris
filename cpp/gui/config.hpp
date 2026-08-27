@@ -87,6 +87,11 @@ struct Config {
 	// Uncapped rendering: vsync off, the loop paced by a millisecond nap.
 	// Cuts a frame or two of input latency on a desk; phones keep vsync.
 	bool lowlatency = true;
+	// Draw the falling piece between its 20ms sim steps instead of only on
+	// them. The sim stays on its graded 50Hz grid; this is presentation -
+	// without it a 60Hz+ display beats against the 50Hz steps and single
+	// moves read as judder.
+	bool smooth = true;
 
 	// The mode picker's dials, remembered between runs: how the cheese is
 	// cut and how the bot fight is set up.
