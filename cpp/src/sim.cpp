@@ -344,7 +344,8 @@ void Sim::eval_input (const std::optional<Event>& event) {
 			if (entry_) {
 				note_input(key == Key::Left ? "left" : "right");
 				cand_x_ = piece_.x + shift_dir_;
-				rotated_last_ = false;
+				// Whether this press disarms the spin is commit_move's call:
+				// a press the wall refuses moved nothing.
 				// Only the initial press is heard; auto-shift steps are not.
 				cue("move");
 			}
@@ -382,9 +383,9 @@ void Sim::eval_shift () {
 	} else if (shift_dir_ != 0 && entry_) {
 		shift_frame_ = shift_fdelay_;
 		das_charged_ = true;
-		// An auto-shift step is a move like any other, so it disarms the spin -
-		// even when the step is then reverted at the wall.
-		rotated_last_ = false;
+		// No disarm here: an auto-shift tick held against the wall moves
+		// nothing, and a spin set up by holding the key into the stack - the
+		// way a human plays a twist - must survive it. commit_move decides.
 		if (shift_fdelay_ < 1) {
 			// ARR 0: cover the whole distance to the wall in this one frame.
 			while (true) {
@@ -415,6 +416,12 @@ void Sim::commit_move () {
 	if (board_.collides(probe)) {
 		cand_x_ = piece_.x;
 	} else {
+		if (piece_.x != cand_x_) {
+			// A move disarms the spin only when the piece actually went
+			// somewhere. Rotations resync cand_x_ on the spot, so a kick's
+			// displacement never trips this.
+			rotated_last_ = false;
+		}
 		piece_.x = cand_x_;
 	}
 }

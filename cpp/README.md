@@ -95,6 +95,12 @@ immediately, the way TETR.IO plays it. Nothing about the outcome changes but the
 (the `clear_check` ctest holds the two modes to identical scores,
 counters and boards), though a no-delay run naturally fits more pieces
 into the same minutes - worth remembering when reading the score table.
+A chain that resolves inside that one lock frame still announces itself:
+the banner leads with CASCADE and the board rumbles, so a collapse is
+never mistaken for a single clear. Spins follow one rule in both
+engines: a move disarms the spin only when the piece actually goes
+somewhere, so holding the key into the stack while rotating - the way a
+twist is played - leaves the spin armed.
 The bot plays under whichever you pick, its pace re-tuned so its rank
 dial still means what it says. And above all of it sits the fuse - the
 variant's own ruleset, on by default and switchable off in Rules: every

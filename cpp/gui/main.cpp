@@ -2789,6 +2789,12 @@ void juice_cue (App& app, const std::string& cue) {
 		app.shake_until = app.session->sim().frame() + 10;
 	} else if (cue == "burn") {
 		spawn_sparks(app, {255, 140, 60, 255}, 4, 2.6f);
+	} else if (cue == "cascade") {
+		// The whole chain resolved in one frame - make the collapse felt:
+		// a wide rubble-toned burst and a longer rumble than a plain clear.
+		spawn_sparks(app, {214, 138, 82, 255}, 8, 3.6f);
+		spawn_sparks(app, {255, 150, 70, 255}, 4, 2.4f);
+		app.shake_until = app.session->sim().frame() + 8;
 	}
 }
 

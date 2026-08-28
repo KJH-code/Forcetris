@@ -356,6 +356,16 @@ SOUNDS.update({
         tone(196, 0.14, 0.16, 'saw', freq_end=88, release=0.5),
         sub(58, 0.16, 0.22, release=0.6),
     ), size=0.95, decay=0.72, wet=0.3, tail=0.45)), ms=13., spread=0.5),
+    # A cascade: the stack giving way. Three blunt falls in quick succession,
+    # each lower than the last, over a gritty rumble - rubble, not metal, so
+    # it reads as the board collapsing rather than as something you struck.
+    'cascade': lambda: widen(trim(room(mix(
+        lowpass(tone(120, 0.36, 0.28, 'noise', release=0.4), 1800.),
+        tone(220, 0.10, 0.24, 'square', freq_end=90, release=0.5),
+        after(0.09, tone(180, 0.10, 0.26, 'square', freq_end=75, release=0.5)),
+        after(0.18, tone(150, 0.12, 0.28, 'square', freq_end=62, release=0.5)),
+        after(0.18, sub(52, 0.30, 0.32, freq_end=40, release=0.4)),
+    ), size=1.2, decay=0.78, wet=0.32, tail=0.7)), ms=13., spread=0.6),
     # The timer firing has to be unmistakably not a hard drop you chose to
     # make. It is the one accident in the game, so it is the one clang: a bar
     # struck hard, low, with the room behind it.

@@ -440,9 +440,10 @@ class Core:
 					# costs four.
 					self.note_input('left')
 					self.newshape.translate((-1, 0))
+					# Whether this press disarms the spin is the commit tail's call
+					# in eval_shift: a press the wall refuses moved nothing.
 					# Only the initial press is heard. Auto-shift steps run every couple
 					# of frames and would turn the cue into a machine gun.
-					self.rotated_last = False
 					env.play_sound('move')
 			elif ctl.matches(self.user, 'right', event.key): # Shift right
 				self.shift_dir = 'r'
@@ -451,7 +452,6 @@ class Core:
 				if self.entry_flag:
 					self.note_input('right')
 					self.newshape.translate(( 1, 0))
-					self.rotated_last = False
 					env.play_sound('move')
 			elif ctl.matches(self.user, 'softdrop', event.key): # Toggle soft drop
 				self.soft_drop = True
@@ -536,8 +536,9 @@ class Core:
 		elif (self.shift_dir == 'l' or self.shift_dir == 'r') and self.entry_flag:
 			self.shift_frame = self.shift_fdelay
 			self.das_charged = True
-			# An auto-shift step is a move like any other, so it disarms the spin.
-			self.rotated_last = False
+			# No disarm here: an auto-shift tick held against the wall moves
+			# nothing, and a spin set up by holding the key into the stack - the
+			# way a human plays a twist - must survive it. The commit below decides.
 			step = -1 if self.shift_dir == 'l' else 1
 			if self.shift_fdelay < 1:
 				# ARR 0: cover the whole distance to the wall in this one frame.
@@ -552,6 +553,11 @@ class Core:
 		if self.check_collision(self.newshape):
 			self.newshape.pos = self.freeshape.pos[:]
 		else:
+			if self.freeshape.pos[0] != self.newshape.pos[0]:
+				# A move disarms the spin only when the piece actually went
+				# somewhere. Rotations sync freeshape on the spot in wall_kick,
+				# so a kick's displacement never trips this.
+				self.rotated_last = False
 			self.freeshape.pos = self.newshape.pos[:]
 
 	def eval_ghost (self):

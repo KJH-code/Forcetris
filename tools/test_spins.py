@@ -422,6 +422,53 @@ user.combo_ctr = 1
 core.display()
 check('the counters draw without complaint at either end of their range', True)
 
+# --- What disarms a spin. ---------------------------------------------------
+# The rule: a move disarms the spin only when the piece actually goes
+# somewhere. An auto-shift tick held against a wall moves nothing, and must
+# not kill a twist set up the human way - holding the key into the stack
+# while rotating. Kick displacement is the rotation's own, not a move.
+user.state = 'game'
+
+
+def shift_tick(direction, arr):
+    """Run one auto-shift frame in the given direction at the given ARR."""
+    core.shift_dir = direction
+    core.shift_frame = 1
+    core.shift_fdelay = arr
+    core.eval_shift()
+    core.shift_dir = '0'
+
+
+blank_board()
+place(2, 0, 1, 18)           # a T with its left block against the wall
+core.rotated_last = True
+held = core.freeshape.pos[0]
+shift_tick('l', 2)
+check('a wall-held auto-shift moves nothing', core.freeshape.pos[0] == held,
+      'x {} -> {}'.format(held, core.freeshape.pos[0]))
+check('and leaves the spin armed', core.rotated_last)
+shift_tick('l', 0)
+check('ARR 0 against the wall leaves it armed too', core.rotated_last)
+shift_tick('r', 2)
+check('a shift that actually moves disarms it', not core.rotated_last,
+      'x is now {}'.format(core.freeshape.pos[0]))
+
+# A rotation whose kick displaces the piece is still a rotation: the commit
+# tail that follows in the same frame must not read the kick as a move.
+blank_board()
+user.enablekicks = True
+place(2, 0, 5, 18)
+fill([(6, 18)])              # blocks the plain CW rotation, forcing the (-1, 0) kick
+core.newshape.rotate(True)
+core.wall_kick()
+core.rotated_last = True     # as the rotate handler sets it
+check('the rotation kicked and moved the piece',
+      user.twist_flag and core.freeshape.pos[0] == 4,
+      'twist {}, x {}'.format(user.twist_flag, core.freeshape.pos[0]))
+core.shift_frame = 1
+core.eval_shift()
+check('a kick displacement does not disarm the spin', core.rotated_last)
+
 # --- The settings row. ------------------------------------------------------
 user.state = 'settings_menu'
 settings.reset()

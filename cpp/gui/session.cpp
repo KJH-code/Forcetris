@@ -170,6 +170,16 @@ void Session::absorb () {
 			if (name.empty()) {
 				name = std::to_string(link) + " LINES";
 			}
+			if (lock.lines > link) {
+				// More lines fell than the final link names: the clear
+				// cascaded. Say so, and hand the GUI a cue of its own -
+				// with clear delay off the whole chain resolves inside one
+				// frame, so without this the player sees nothing happen.
+				// The cue is session-side only, never the sim's: the graded
+				// cue stream that the traces compare stays untouched.
+				name = "CASCADE  " + name;
+				cue_box_.push_back("cascade");
+			}
 			text += std::string(text.empty() ? "" : "  ") + name;
 		}
 		if (lock.perfect) {
