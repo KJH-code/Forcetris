@@ -319,4 +319,10 @@ if (SDL2_FOUND)
 	add_test(NAME gui_smoke_run COMMAND forcetris)
 	set_tests_properties(gui_smoke_run PROPERTIES ENVIRONMENT
 		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=2200;FORCETRIS_SMOKE_RUN=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-run-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-run-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat;FORCETRIS_CAMPAIGN=${CMAKE_CURRENT_BINARY_DIR}/smoke-run-campaign.dat")
+	# The same loop up the Endless Climb: set out at white heat, ride the
+	# ring's map, and prove at least one battle settles - the climb's whole
+	# machinery (pool, gatekeeper, scaling, ring advance) turning headless.
+	add_test(NAME gui_smoke_endless COMMAND forcetris)
+	set_tests_properties(gui_smoke_endless PROPERTIES ENVIRONMENT
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=2200;FORCETRIS_SMOKE_ENDLESS=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-endless-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-endless-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat;FORCETRIS_CAMPAIGN=${CMAKE_CURRENT_BINARY_DIR}/smoke-endless-campaign.dat")
 endif()

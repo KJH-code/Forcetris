@@ -38,6 +38,15 @@ void VersusMatch::arm_skills (const std::string& stage_id) {
 	} else if (stage_id == "c2s8") {
 		add("coldsnap", "COLD SNAP", 19, 9);
 		add("heatwave", "HEAT WAVE", 28, 6);
+	} else if (stage_id == "c3m1") {
+		add("sealgate", "THE VAULT SEALS", 20, 8);
+	} else if (stage_id == "c3s9") {
+		// The final boss alone carries three - the one fight allowed to
+		// break the one-per-miniboss, two-per-boss rule, because it is
+		// the road's whole curriculum turned hostile.
+		add("coldsnap", "COLD SNAP", 17, 8);
+		add("heatwave", "HEAT WAVE", 24, 6);
+		add("rustfall", "RUST ON THE WIND", 13, 0);
 	}
 }
 

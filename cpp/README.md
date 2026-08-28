@@ -301,9 +301,26 @@ boss fights with its own kit: telegraphed skills, two seconds of warning
 burning over your board before rust falls on it, a column seals shut,
 the iron cold-snaps, or a heat wave leans on your fuse. And the fuse is a stage gimmick now, not the campaign's default:
 most rooms play the board pure - the forced drop was the beginners' wall
-- and only Backdraft, the Overheated Wing and the duels still burn, the
-way the Dark Gallery is the room that goes dark. Above mild, a mid-fight
-restart is a surrender and costs what a death costs.
+- and only the Backdraft rooms, the Overheated Wing and the duels still
+burn, the way the Dark Gallery is the room that goes dark. Above mild, a
+mid-fight restart is a surrender and costs what a death costs.
+
+The road runs three chapters now. **The White Heart** is where the
+lessons combine: every one of its rooms stacks two gimmicks the first
+two chapters taught one at a time - darkness over sealed columns, a
+score run in the dark, cold iron under fog, cold iron over rubble, a
+fast fuse burning hot all stage - and it ends at **the Forge Heart**,
+the only foe on the road that fights with three telegraphed skills at
+once. Past it waits **the Endless Climb**, open once the Forgemaster
+has fallen: the same six-row map stacked as *rings* without end, every
+battle drawn from all three chapters' pools with the window sliding up
+as the rings stack, and the top of every ring held by the gatekeeper
+rotation - the road's six duels in order, then the Vault Warden and the
+Forge Heart trading watches forever. Each ring tightens the screws
+(gravity, quotas, the flood; duel foes climb half a rank per ring) and
+the climb is always played at white heat - one death ends it - so the
+record is simply the rows climbed, kept as a single best on the
+chapter-select card.
 
 The roguelite is that the build outlives the battle: a won node banks its
 embers into the run and deals **the spoils** on the map - three cards,
@@ -569,6 +586,8 @@ upgrades ride along; `FORCETRIS_SMOKE_RUN=1` resumes the file's run or
 sets out on chapter one's map and drives the whole roguelite loop -
 node picked, stops visited, battle fought, verdict settled, spoils
 taken, next node - failing if not a single battle settles;
+`FORCETRIS_SMOKE_ENDLESS=1` drives the same loop up the Endless Climb
+at white heat, setting out again whenever a death ends it;
 `FORCETRIS_CAMPAIGN` redirects campaign.dat the way the other data
 files redirect);
 `FORCETRIS_SHOT=/path/out.bmp`

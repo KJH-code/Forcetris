@@ -139,6 +139,13 @@ struct Run {
 	int chapter = 0;
 	unsigned seed = 0;
 	int difficulty = kMild;
+	// The Endless Climb: rings of the same six-row map stacked without
+	// end, each ring harder than the last. An endless run ignores
+	// `chapter` for its map (the battle pool spans every chapter) and is
+	// always played at white heat - one death ends it, and the record is
+	// the rows climbed.
+	bool endless = false;
+	int ring = 0;
 	int depth = 0;                     // The next row to fight.
 	std::vector<int> path;             // The node picked at each row done.
 	std::vector<std::string> tempers;  // The build, in pick order.
@@ -175,6 +182,8 @@ struct State {
 	int slag = 0;
 	std::map<std::string, int> forge;   // Upgrade id -> level bought.
 	Run run;                            // The climb in progress, if any.
+	// The record board: the most rows any Endless Climb has managed.
+	int endless_best = 0;
 	std::vector<std::string> unknown;
 };
 
@@ -191,6 +200,25 @@ bool open (const State& state, size_t stage);
 // open, each later one opens once the chapter before it has its boss
 // starred.
 bool chapter_open (const State& state, int chapter);
+
+// --- The Endless Climb. -------------------------------------------------
+// Opens once the Deep Forge's master has fallen at least once.
+bool endless_open (const State& state);
+// The record's unit: rows climbed - full rings, plus the rows of the one
+// in progress.
+int endless_rows (const Run& run);
+// A ring of the climb: the same six-row map, built like build_map but
+// with its battles drawn from every chapter's pool - the window sliding
+// up with the ring - and the top row held by the gatekeeper rotation:
+// rings 0..5 walk [c1m1, c1s8, c2m1, c2s8, c3m1, c3s9], and past them
+// the Vault Warden and the Forge Heart trade watches without end.
+std::vector<MapNode> build_endless_map (int ring, unsigned seed);
+// The climb's tightening, applied over a stage's config: gravity up,
+// quotas up, the flood faster - and never the other way.
+SimConfig endless_scaled (SimConfig config, int ring);
+// A duel foe's rank on the climb: half a rank per ring, capped at the
+// ladder's top rung.
+int endless_rank (int rank, int ring);
 
 // A stage's rules, built in the honest order: the player's base config,
 // then the stage's own overrides, then its pre-applied tempers, then the

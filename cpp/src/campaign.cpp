@@ -151,6 +151,16 @@ State load (const std::string& path) {
 		} else if (key == "run_lives") {
 			in >> state.run.lives;
 			state.run.lives = std::clamp(state.run.lives, 0, 9);
+		} else if (key == "run_endless") {
+			int flag = 0;
+			in >> flag;
+			state.run.endless = flag != 0;
+		} else if (key == "run_ring") {
+			in >> state.run.ring;
+			state.run.ring = std::clamp(state.run.ring, 0, 999);
+		} else if (key == "endless_best") {
+			in >> state.endless_best;
+			state.endless_best = std::max(0, state.endless_best);
 		} else {
 			state.unknown.push_back(line);
 		}
@@ -178,6 +188,9 @@ bool save (const std::string& path, const State& state) {
 	}
 	out << "# forcetris campaign 1\n";
 	out << "slag " << state.slag << "\n";
+	if (state.endless_best > 0) {
+		out << "endless_best " << state.endless_best << "\n";
+	}
 	for (const auto& [id, stars] : state.stars) {
 		out << "stage " << id << " " << stars << "\n";
 	}
@@ -214,6 +227,10 @@ bool save (const std::string& path, const State& state) {
 		}
 		out << "run_embers " << state.run.embers << "\n";
 		out << "run_lives " << state.run.lives << "\n";
+		if (state.run.endless) {
+			out << "run_endless 1\n";
+			out << "run_ring " << state.run.ring << "\n";
+		}
 	}
 	for (const std::string& line : state.unknown) {
 		out << line << "\n";
@@ -360,6 +377,44 @@ std::vector<std::string> board_rows (const Stage& stage) {
 		}
 	}
 	return rows;
+}
+
+bool endless_open (const State& state) {
+	// The Deep Forge's master must have fallen at least once: the climb
+	// draws on every chapter's rooms, so it waits for the shipped road's
+	// end - not the White Heart's, which is late-game of its own.
+	const auto held = state.stars.find("c2s8");
+	return held != state.stars.end() && held->second > 0;
+}
+
+int endless_rows (const Run& run) {
+	return run.ring * kMapDepth + run.depth;
+}
+
+SimConfig endless_scaled (SimConfig config, int ring) {
+	// The climb only ever tightens. Gravity gains two frames a ring down
+	// to a floor a human can still read; the finish lines stretch; the
+	// flood quickens. campaigncheck holds the monotonicity.
+	ring = std::max(0, ring);
+	config.fall_delay = std::max(8, config.fall_delay - 2 * ring);
+	if (config.line_quota > 0) {
+		config.line_quota += 2 * ring;
+	}
+	if (config.score_quota > 0) {
+		config.score_quota += config.score_quota * ring / 5;
+	}
+	if (config.survive_ms > 0) {
+		config.survive_ms += ring * 10000;
+	}
+	config.cheese_period = std::max(120, config.cheese_period - 20 * ring);
+	return config;
+}
+
+int endless_rank (int rank, int ring) {
+	// Half a rank per ring, capped at the ladder's top rung (X sits at
+	// index 7 - bot::ranks() is not included here on purpose, the cap is
+	// part of the climb's contract and pinned in campaigncheck).
+	return std::min(7, std::max(0, rank) + std::max(0, ring) / 2);
 }
 
 int solo_stars (bool won, double seconds, int par_seconds, int forced,

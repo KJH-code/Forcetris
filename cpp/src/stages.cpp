@@ -26,6 +26,8 @@ const std::vector<Chapter>& chapters () {
 			"The forge teaches one fire at a time.", 13},
 		{"c2", "The Deep Forge",
 			"Every lesson, turned against you.", 14},
+		{"c3", "The White Heart",
+			"Every lesson at once, at white heat.", 12},
 	};
 	return road;
 }
@@ -296,6 +298,120 @@ const std::vector<Stage>& stages () {
 		s.mode = 5; s.rank = 4; s.first_to = 2;
 		s.blade = "bellows,white_heat,overheat,gamble";
 		s.slag_first = 60; s.slag_repeat = 12;
+		list.push_back(s);
+
+		// --- Chapter 3: The White Heart. -------------------------------
+		// Every lesson at once: the rooms here pair gimmicks the first two
+		// chapters taught one at a time - never a rule the road has not
+		// already shown alone.
+		s = Stage{};
+		s.id = "c3s1"; s.name = "White Heat Rising";
+		s.blurb = "The heart's antechamber: nothing but speed. Twenty"
+			" lines.";
+		s.mode = 0; s.quota = 20; s.par_seconds = 170;
+		s.fall_delay = 20;
+		s.slag_first = 40; s.slag_repeat = 9;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3s2"; s.name = "The Narrow Dark";
+		s.blurb = "Sealed galleries, and only a lantern to see them by."
+			" Fifteen lines.";
+		s.mode = 0; s.quota = 15; s.par_seconds = 180;
+		s.dim = true;
+		s.sealed = (1 << 0) | (1 << 9);
+		s.slag_first = 42; s.slag_repeat = 9;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3k1"; s.name = "Cinder Wolf";
+		s.blurb = "Something old hunts the antechamber. A skirmish.";
+		s.mode = 5; s.rank = 4; s.first_to = 1;
+		s.slag_first = 44; s.slag_repeat = 9;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3s3"; s.name = "Gold in the Dark";
+		s.blurb = "20,000 points, weighed by lantern light. Spins pay"
+			" best where you can see least.";
+		s.mode = 0; s.quota = 0; s.score_quota = 20000;
+		s.par_seconds = 210;
+		s.dim = true;
+		s.slag_first = 46; s.slag_repeat = 10;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3s4"; s.name = "The Frozen Gallery";
+		s.blurb = "The iron freezes, and the smoke hides what comes next."
+			" Sixteen lines.";
+		s.mode = 0; s.quota = 16; s.par_seconds = 210;
+		s.cold_iron = true;
+		s.fog = true;
+		s.slag_first = 48; s.slag_repeat = 10;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3s5"; s.name = "The Last Flood";
+		s.blurb = "The heart floods faster than anywhere above. A hundred"
+			" and five seconds on the watch.";
+		s.mode = 4; s.quota = 14; s.survive_seconds = 105;
+		s.cheese_period = 260;
+		s.slag_first = 50; s.slag_repeat = 10;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3s6"; s.name = "Rubble and Frost";
+		s.blurb = "Five floors of cold scrap, and every line you cut"
+			" freezes before it breaks. Sixteen lines.";
+		s.mode = 0; s.quota = 16; s.par_seconds = 220;
+		s.cold_iron = true;
+		s.board = "77.7777777\n7777.77777\n7.77777777\n777777.777\n77777.7777";
+		s.slag_first = 52; s.slag_repeat = 11;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3r1"; s.name = "The Pack";
+		s.blurb = "Three of the forge's own, loose and hungry. Down them"
+			" all.";
+		s.mode = 5; s.rank = 2; s.first_to = 3;
+		s.raid = "2,3,4";
+		s.slag_first = 58; s.slag_repeat = 12;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3s7"; s.name = "Backdraft Vault";
+		s.blurb = "The third room that burns, and the hottest: a short"
+			" fuse under pressure. Twenty-two lines.";
+		s.mode = 0; s.quota = 22; s.par_seconds = 200;
+		s.fuse = true; s.pressure = true; s.fuse_scale = 0.8;
+		s.slag_first = 54; s.slag_repeat = 11;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3s8"; s.name = "Chain of Embers";
+		s.blurb = "Linked iron: what hangs, falls, and falls again."
+			" Eighteen lines.";
+		s.mode = 0; s.quota = 18; s.par_seconds = 210;
+		s.cleartype = 2;
+		s.slag_first = 56; s.slag_repeat = 11;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3m1"; s.name = "The Vault Warden";
+		s.blurb = "The heart's last door, and the warden who seals it."
+			" A duel.";
+		s.mode = 5; s.rank = 5; s.first_to = 1;
+		s.slag_first = 60; s.slag_repeat = 12;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3s9"; s.name = "The Forge Heart";
+		s.blurb = "Two falls against the fire itself. Everything it ever"
+			" taught you, turned to kill you.";
+		s.mode = 5; s.rank = 7; s.first_to = 2;
+		s.blade = "white_heat,white_heat,overheat,gamble,heavy_hand,"
+			"loaded_dice";
+		s.slag_first = 70; s.slag_repeat = 14;
 		list.push_back(s);
 
 		return list;

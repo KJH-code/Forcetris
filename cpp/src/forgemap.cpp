@@ -162,5 +162,132 @@ std::vector<MapNode> build_map (int chapter, unsigned seed) {
 	return nodes;
 }
 
+std::vector<MapNode> build_endless_map (int ring, unsigned seed) {
+	// One ring of the Endless Climb. The skeleton mirrors build_map -
+	// the same widths, the same tiling edges, the same stop scattering -
+	// but the battles draw from EVERY chapter's pool with the window
+	// sliding up as the rings stack, and the top row belongs to the
+	// gatekeeper rotation instead of one chapter's boss. Deliberately a
+	// sibling rather than a parameter soup: campaigncheck holds the two
+	// to the same promises.
+	std::vector<MapNode> nodes;
+	if (ring < 0) {
+		return nodes;
+	}
+	// Its own stream per ring, so every ring of one climb is a fresh map.
+	Roll roll(seed ^ (0x9e3779b9u * static_cast<unsigned>(ring + 1)), 61);
+
+	// The battle pool: every chapter's battle window, in road order - the
+	// road's own difficulty order - with each chapter's trailing duel
+	// block (miniboss, boss) left out. Skirmishes and raids ride along:
+	// the climb fields every kind of fight.
+	std::vector<int> pool;
+	int base = 0;
+	for (const Chapter& chapter : chapters()) {
+		int duels = 0;
+		while (duels < chapter.stages && stages()[static_cast<size_t>(
+			base + chapter.stages - 1 - duels)].mode == 5) {
+			++duels;
+		}
+		for (int i = 0; i < chapter.stages - duels; ++i) {
+			pool.push_back(base + i);
+		}
+		base += chapter.stages;
+	}
+	const int span = static_cast<int>(pool.size());
+
+	// The gatekeeper rotation: the road's six duels in order, then the
+	// White Heart's own two trading watches without end.
+	static const char* kKeepers[6]
+		= {"c1m1", "c1s8", "c2m1", "c2s8", "c3m1", "c3s9"};
+	const char* keeper_id = ring < 6 ? kKeepers[ring]
+		: (ring % 2 == 0 ? "c3m1" : "c3s9");
+	int keeper = 0;
+	for (size_t at = 0; at < stages().size(); ++at) {
+		if (std::string(stages()[at].id) == keeper_id) {
+			keeper = static_cast<int>(at);
+			break;
+		}
+	}
+	// A miniboss keeper is a kind-4 node, a boss keeper a kind-1: the map
+	// reads the watch the way it reads a chapter's own.
+	const bool is_boss = std::string(keeper_id) == "c1s8"
+		|| std::string(keeper_id) == "c2s8"
+		|| std::string(keeper_id) == "c3s9";
+
+	int widths[kMapDepth];
+	widths[0] = 2;
+	widths[kMapDepth - 1] = 1;
+	for (int r = 1; r < kMapDepth - 1; ++r) {
+		widths[r] = 2 + roll.below(2);
+	}
+
+	int row_at[kMapDepth];
+	for (int r = 0; r < kMapDepth; ++r) {
+		row_at[r] = static_cast<int>(nodes.size());
+		for (int lane = 0; lane < widths[r]; ++lane) {
+			MapNode node;
+			node.depth = r;
+			node.lane = lane;
+			if (r == kMapDepth - 1) {
+				node.kind = is_boss ? 1 : 4;
+				node.stage = keeper;
+			} else {
+				node.kind = 0;
+				// The window climbs with the ring and the row, and once
+				// it reaches the pool's top it stays there: past the
+				// taught road, every fight is a hard one.
+				const int centre = std::min(span - 1, ring * 2 + r);
+				const int lo = std::max(0, centre - 1);
+				const int hi = std::min(span - 1, centre + 1);
+				node.stage = pool[static_cast<size_t>(
+					lo + roll.below(hi - lo + 1))];
+			}
+			nodes.push_back(node);
+		}
+	}
+
+	// The stops, exactly as the chapters scatter them: one forge, one or
+	// two events, on distinct middle-row nodes.
+	{
+		std::vector<int> middle;
+		for (size_t at = 0; at < nodes.size(); ++at) {
+			if (nodes[at].depth > 0 && nodes[at].depth < kMapDepth - 1) {
+				middle.push_back(static_cast<int>(at));
+			}
+		}
+		const int stops = 2 + roll.below(2);
+		for (int s = 0; s < stops && !middle.empty(); ++s) {
+			const int pick = roll.below(static_cast<int>(middle.size()));
+			MapNode& node = nodes[static_cast<size_t>(middle[pick])];
+			node.kind = s == 0 ? 2 : 3;
+			node.stage = -1;
+			middle.erase(middle.begin() + pick);
+		}
+	}
+
+	// The edges: proportional intervals with the one braid diagonal on
+	// identity rows, byte for byte the chapters' own wiring.
+	for (int r = 0; r + 1 < kMapDepth; ++r) {
+		const int a = widths[r];
+		const int b = widths[r + 1];
+		for (int i = 0; i < a; ++i) {
+			MapNode& node = nodes[static_cast<size_t>(row_at[r] + i)];
+			const int lo = i * b / a;
+			const int hi = ((i + 1) * b - 1) / a;
+			for (int j = lo; j <= hi; ++j) {
+				node.next.push_back(row_at[r + 1] + j);
+			}
+		}
+		if (a == b && a > 1) {
+			const int i = roll.below(a - 1);
+			MapNode& node = nodes[static_cast<size_t>(row_at[r] + i)];
+			node.next.push_back(row_at[r + 1] + i + 1);
+			std::sort(node.next.begin(), node.next.end());
+		}
+	}
+	return nodes;
+}
+
 } // namespace campaign
 } // namespace forcetris

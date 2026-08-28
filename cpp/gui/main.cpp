@@ -1087,6 +1087,10 @@ void start_stage (App& app, int index, int run_node = -1) {
 	app.oil_frost = false;
 	if (run_node >= 0) {
 		mine = temper::tempered(mine, app.campaign.run.tempers);
+		if (app.campaign.run.endless) {
+			// The climb's tightening, on top of everything else.
+			mine = campaign::endless_scaled(mine, app.campaign.run.ring);
+		}
 		// The oils spend themselves as the doors close: hot lands on this
 		// config, frost is held for the duel wiring, and both are struck
 		// off the run and saved - one coat, one fight.
@@ -1116,9 +1120,17 @@ void start_stage (App& app, int index, int run_node = -1) {
 
 	if (stage.mode == 5) {
 		app.versus_bot_base = campaign::bot_config(stage, base);
+		int rank = stage.rank;
+		if (run_node >= 0 && app.campaign.run.endless) {
+			// The climb tightens the foe's side too: its board obeys the
+			// same squeeze, and its rank climbs half a rung a ring.
+			app.versus_bot_base = campaign::endless_scaled(
+				app.versus_bot_base, app.campaign.run.ring);
+			rank = campaign::endless_rank(rank, app.campaign.run.ring);
+		}
 		app.versus_blade = campaign::blade_of(stage);
 		app.session.emplace(mine, seed, meta);
-		app.versus.emplace(stage.rank, stage.first_to);
+		app.versus.emplace(rank, stage.first_to);
 		// A campaign boss fights with its own kit: telegraphed skills the
 		// trainer's plain duels never carry.
 		app.versus->arm_skills(stage.id);
@@ -1229,13 +1241,18 @@ void end_run (App& app) {
 // A new climb: the run keys written, the map stood up from its two
 // numbers, and - if the Anvil's Preheat is bought - the first spoils
 // dealt free at the door.
-void begin_run (App& app, int chapter, int difficulty, unsigned seed) {
+void begin_run (App& app, int chapter, int difficulty, unsigned seed,
+		bool endless = false) {
 	campaign::Run& run = app.campaign.run;
 	run = campaign::Run{};
 	run.active = true;
 	run.chapter = chapter;
 	run.seed = seed;
-	run.difficulty = difficulty;
+	// The Endless Climb is always white heat: one death ends it, the
+	// prestige pays double, and a mid-fight R is the same surrender it
+	// is anywhere at that heat.
+	run.endless = endless;
+	run.difficulty = endless ? campaign::kWhite : difficulty;
 	// The Anvil's send-off: Forged Lifeblood adds a life (felt only on
 	// forged fire), and the War Chest puts embers in the purse before the
 	// first fight.
@@ -1245,7 +1262,8 @@ void begin_run (App& app, int chapter, int difficulty, unsigned seed) {
 	};
 	run.lives += level("lifeblood");
 	run.embers += 20 * level("warchest");
-	app.run_map = campaign::build_map(chapter, seed);
+	app.run_map = endless ? campaign::build_endless_map(0, seed)
+		: campaign::build_map(chapter, seed);
 	app.run_ended = false;
 	app.map_reward = false;
 	campaign::save(campaign::path(app.root), app.campaign);
@@ -1650,9 +1668,28 @@ void end_game (App& app) {
 				run.embers += ember_balance(app);
 				run.path.push_back(app.run_node);
 				run.depth += 1;
+				if (run.endless) {
+					// The record moves with every node taken - written now,
+					// so a death or a walk-away later never loses it.
+					app.campaign.endless_best = std::max(
+						app.campaign.endless_best,
+						campaign::endless_rows(run));
+				}
 				if (run.depth >= campaign::kMapDepth) {
-					end_run(app);
-					app.run_ended = true;
+					if (run.endless) {
+						// The ring is climbed, not the run: the next one
+						// stands up on the spot, with the gatekeeper's
+						// spoils dealt between the floors.
+						run.ring += 1;
+						run.depth = 0;
+						run.path.clear();
+						app.run_map = campaign::build_endless_map(
+							run.ring, run.seed);
+						app.map_reward = true;
+					} else {
+						end_run(app);
+						app.run_ended = true;
+					}
 				} else {
 					app.map_reward = true;
 				}
@@ -4853,7 +4890,9 @@ void draw_career (App& app) {
 	if (run.active && app.run_map.empty()) {
 		// Resumed from the file: the graph stands back up from its two
 		// numbers, exactly as it stood when the run was put down.
-		app.run_map = campaign::build_map(run.chapter, run.seed);
+		app.run_map = run.endless
+			? campaign::build_endless_map(run.ring, run.seed)
+			: campaign::build_map(run.chapter, run.seed);
 	}
 	if (app.map_reward && app.offers.empty()) {
 		// The spoils owed from the last battle, dealt the moment the map
@@ -4928,19 +4967,58 @@ void draw_career (App& app) {
 			ImGui::PopID();
 			flat += chapter.stages;
 		}
+		// --- The Endless Climb, past the chapters. ----------------------
+		{
+			const bool open_climb = campaign::endless_open(app.campaign);
+			ImGui::PushFont(app.fonts.head);
+			ImGui::TextColored(open_climb
+				? ImVec4(0.93f, 0.87f, 0.8f, 1.f)
+				: ImVec4(0.45f, 0.42f, 0.4f, 1.f), "The Endless Climb");
+			ImGui::PopFont();
+			if (open_climb) {
+				ImGui::TextDisabled(
+					"Rings without end, at white heat. One death.");
+				if (app.campaign.endless_best > 0) {
+					char best[32];
+					std::snprintf(best, sizeof best, "BEST %d rows",
+						app.campaign.endless_best);
+					coin_stat("star", ImVec4(1.f, 0.84f, 0.38f, 1.f), best);
+					ImGui::SameLine();
+				}
+				if (ImGui::Button("Set out##endless", ImVec2(ui(100), 0))) {
+					begin_run(app, 0, campaign::kWhite, app.seeds(), true);
+				}
+			} else {
+				ImGui::TextDisabled("Locked - fell the Forgemaster first.");
+			}
+			ImGui::Dummy(ImVec2(0.f, ui(4)));
+		}
 	} else {
 		// --- The climb: the map, entrance at the bottom, boss at the top.
-		const campaign::Chapter& chapter
-			= campaign::chapters()[static_cast<size_t>(run.chapter)];
-		ImGui::Text("Chapter %d - %s", run.chapter + 1, chapter.name);
+		if (run.endless) {
+			ImGui::Text("The Endless Climb - Ring %d", run.ring + 1);
+		} else {
+			const campaign::Chapter& chapter
+				= campaign::chapters()[static_cast<size_t>(run.chapter)];
+			ImGui::Text("Chapter %d - %s", run.chapter + 1, chapter.name);
+		}
 		{
 			char coin[32];
 			std::snprintf(coin, sizeof coin, "EMBERS %d", run.embers);
 			coin_stat("ember", ImVec4(1.f, 0.76f, 0.42f, 1.f), coin);
 		}
 		ImGui::SameLine();
-		ImGui::TextDisabled("%s fire", campaign::difficulty_name(
-			run.difficulty));
+		if (run.endless) {
+			// The record, live: the rows under your feet against the most
+			// any climb has managed.
+			ImGui::TextColored(ImVec4(1.f, 0.84f, 0.38f, 1.f), "ROW %d",
+				campaign::endless_rows(run));
+			ImGui::SameLine();
+			ImGui::TextDisabled("BEST %d", app.campaign.endless_best);
+		} else {
+			ImGui::TextDisabled("%s fire", campaign::difficulty_name(
+				run.difficulty));
+		}
 		if (run.difficulty == campaign::kForged) {
 			ImGui::SameLine();
 			ImGui::TextColored(ImVec4(1.f, 0.6f, 0.4f, 1.f), "LIVES %d",
@@ -6467,15 +6545,22 @@ int run (bool smoke, long smoke_frames) {
 		if (mode == 4) {
 			app.config.cheese_period = 150;
 		}
-		if (std::getenv("FORCETRIS_SMOKE_RUN") != nullptr) {
+		if (std::getenv("FORCETRIS_SMOKE_RUN") != nullptr
+			|| std::getenv("FORCETRIS_SMOKE_ENDLESS") != nullptr) {
 			// The whole roguelite loop under the masher: resume the file's
 			// run if one is under way - resuming is part of what the mode
 			// promises - otherwise set out on chapter one at a fixed seed.
 			// The block at the loop's tail keeps picking nodes and spoils
-			// until the frame budget runs out.
+			// until the frame budget runs out. FORCETRIS_SMOKE_ENDLESS runs
+			// the same loop up the Endless Climb instead - one death ends
+			// the climb, so the tail's restart clause carries the smoke.
 			app.campaign = campaign::load(campaign::path(app.root));
-			if (!app.campaign.run.active) {
-				begin_run(app, 0, campaign::kMild, 20260827u);
+			const bool endless
+				= std::getenv("FORCETRIS_SMOKE_ENDLESS") != nullptr;
+			if (!app.campaign.run.active
+				|| app.campaign.run.endless != endless) {
+				begin_run(app, 0, endless ? campaign::kWhite : campaign::kMild,
+					20260827u, endless);
 			}
 			app.screen = Screen::Career;
 		} else if (const char* stage = std::getenv("FORCETRIS_SMOKE_STAGE")) {
@@ -6511,7 +6596,8 @@ int run (bool smoke, long smoke_frames) {
 	// each of those is its own whole test.
 	const bool touring = smoke
 		&& std::getenv("FORCETRIS_SMOKE_VIEW") == nullptr
-		&& std::getenv("FORCETRIS_SMOKE_RUN") == nullptr;
+		&& std::getenv("FORCETRIS_SMOKE_RUN") == nullptr
+		&& std::getenv("FORCETRIS_SMOKE_ENDLESS") == nullptr;
 	int toured = 0;
 	int tour_frames = 0;
 	bool game_ended = false;
@@ -6994,7 +7080,8 @@ int run (bool smoke, long smoke_frames) {
 
 		if (smoke) {
 			const bool run_smoke
-				= std::getenv("FORCETRIS_SMOKE_RUN") != nullptr;
+				= std::getenv("FORCETRIS_SMOKE_RUN") != nullptr
+				|| std::getenv("FORCETRIS_SMOKE_ENDLESS") != nullptr;
 			if (run_smoke) {
 				// The map run drives itself: every battle verdict walks back
 				// to the map, spoils are auto-picked by the block above, the
@@ -7033,7 +7120,14 @@ int run (bool smoke, long smoke_frames) {
 						}
 						}
 					} else if (!app.campaign.run.active) {
-						begin_run(app, 0, campaign::kMild, app.seeds());
+						// An endless smoke sets out again up the climb; the
+						// chapter smoke back onto chapter one.
+						if (std::getenv("FORCETRIS_SMOKE_ENDLESS") != nullptr) {
+							begin_run(app, 0, campaign::kWhite, app.seeds(),
+								true);
+						} else {
+							begin_run(app, 0, campaign::kMild, app.seeds());
+						}
 					} else {
 						// Prefer a stop when one is open, so the forge and
 						// event paths get walked too, not only fought past.
@@ -7123,7 +7217,8 @@ int run (bool smoke, long smoke_frames) {
 			SDL_Log("smoke: the screen tour did not finish");
 			return 1;
 		}
-		if (std::getenv("FORCETRIS_SMOKE_RUN") != nullptr) {
+		if (std::getenv("FORCETRIS_SMOKE_RUN") != nullptr
+			|| std::getenv("FORCETRIS_SMOKE_ENDLESS") != nullptr) {
 			SDL_Log("smoke: the map run settled %ld battles", run_battles);
 			if (run_battles == 0) {
 				// The whole point of the run smoke is the loop: node picked,

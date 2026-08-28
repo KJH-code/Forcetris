@@ -159,8 +159,8 @@ int main () {
 					&& stage.sealed == 0 && !stage.cold_iron;
 			}
 		}
-		check("one sealed stage, one cold iron stage, bosses plain",
-			sealed_stages == 1 && cold_stages == 1 && plain_bosses);
+		check("two sealed stages, three cold iron stages, bosses plain",
+			sealed_stages == 2 && cold_stages == 3 && plain_bosses);
 		int score_stages = 0;
 		bool score_sane = true;
 		for (const Stage& stage : campaign::stages()) {
@@ -173,7 +173,7 @@ int main () {
 			}
 		}
 		check("each chapter fields one score stage, sanely",
-			score_stages == 2 && score_sane);
+			score_stages == 3 && score_sane);
 		int watches = 0;
 		int raids = 0;
 		int skirmishes = 0;
@@ -203,8 +203,8 @@ int main () {
 				}
 			}
 		}
-		check("two watches, two skirmishes, one raid stand on the road",
-			watches == 2 && skirmishes == 2 && raids == 1);
+		check("three watches, three skirmishes, two raids stand on the road",
+			watches == 3 && skirmishes == 3 && raids == 2);
 		check("watch stars climb the line bar",
 			campaign::survive_stars(false, 30, 8) == 0
 				&& campaign::survive_stars(true, 3, 8) == 1
@@ -295,7 +295,7 @@ int main () {
 						return false;
 					}
 				}
-				return burns == 2;
+				return burns == 3;
 			}());
 
 		Stage points{};
@@ -740,6 +740,312 @@ int main () {
 		check("a chapter off the road builds no map",
 			campaign::build_map(-1, 1u).empty()
 				&& campaign::build_map(99, 1u).empty());
+	}
+
+	// --- The Endless Climb. -------------------------------------------------
+	{
+		using campaign::MapNode;
+		// The pool the climb draws from, mirrored here independently of the
+		// generator: every chapter's battle window in road order, each
+		// chapter's trailing duel block left out.
+		std::vector<int> pool;
+		{
+			int base = 0;
+			for (const auto& chapter : campaign::chapters()) {
+				int duels = 0;
+				while (duels < chapter.stages
+					&& campaign::stages()[static_cast<size_t>(
+						base + chapter.stages - 1 - duels)].mode == 5) {
+					++duels;
+				}
+				for (int i = 0; i < chapter.stages - duels; ++i) {
+					pool.push_back(base + i);
+				}
+				base += chapter.stages;
+			}
+		}
+		const int span = static_cast<int>(pool.size());
+		const char* keepers[6]
+			= {"c1m1", "c1s8", "c2m1", "c2s8", "c3m1", "c3s9"};
+		const auto stage_at = [] (const std::string& id) {
+			for (size_t at = 0; at < campaign::stages().size(); ++at) {
+				if (id == campaign::stages()[at].id) {
+					return static_cast<int>(at);
+				}
+			}
+			return -1;
+		};
+
+		// Shape, connectivity, honesty and the gatekeeper rotation, over the
+		// first rings and a spread of seeds - the same promises the chapter
+		// maps are held to, plus the climb's own.
+		bool shaped = true;
+		bool connected = true;
+		bool ranged = true;
+		bool kept = true;
+		bool crossed = false;
+		std::string detail;
+		for (int ring = 0; ring <= 9; ++ring) {
+			const std::string keeper_id = ring < 6 ? keepers[ring]
+				: (ring % 2 == 0 ? "c3m1" : "c3s9");
+			const bool keeper_boss = keeper_id == "c1s8"
+				|| keeper_id == "c2s8" || keeper_id == "c3s9";
+			for (unsigned seed = 1; seed <= 20; ++seed) {
+				const std::vector<MapNode> map
+					= campaign::build_endless_map(ring, seed * 977u);
+				int widths[campaign::kMapDepth] = {};
+				for (const MapNode& node : map) {
+					if (node.depth < 0 || node.depth >= campaign::kMapDepth) {
+						shaped = false;
+						continue;
+					}
+					++widths[node.depth];
+				}
+				shaped = shaped && widths[0] == 2
+					&& widths[campaign::kMapDepth - 1] == 1;
+				for (int r = 1; r < campaign::kMapDepth - 1; ++r) {
+					shaped = shaped && widths[r] >= 2 && widths[r] <= 3;
+				}
+				int forges = 0;
+				int events = 0;
+				for (const MapNode& node : map) {
+					const bool top = node.depth == campaign::kMapDepth - 1;
+					if (node.kind == 1 || node.kind == 4) {
+						// The top row is the gatekeeper's alone: the ring's
+						// own duel from the rotation, a boss kind for a boss
+						// recipe and a miniboss kind for a miniboss.
+						kept = kept && top
+							&& node.stage == stage_at(keeper_id)
+							&& node.kind == (keeper_boss ? 1 : 4);
+					} else if (node.kind == 0) {
+						// Every battle draws from the union pool - any
+						// chapter's window recipe, never a duel-block one.
+						ranged = ranged && !top
+							&& std::find(pool.begin(), pool.end(), node.stage)
+								!= pool.end();
+					} else if (node.kind == 2 || node.kind == 3) {
+						++(node.kind == 2 ? forges : events);
+						ranged = ranged && node.depth > 0 && !top
+							&& node.stage == -1;
+					} else {
+						ranged = false;
+					}
+				}
+				ranged = ranged && forges == 1 && events >= 1 && events <= 2;
+				std::vector<int> reach(map.size(), 0);
+				for (size_t at = 0; at < map.size(); ++at) {
+					if (map[at].depth == 0) {
+						reach[at] = 1;
+					}
+				}
+				for (size_t at = 0; at < map.size(); ++at) {
+					for (const int to : map[at].next) {
+						if (to < 0 || to >= static_cast<int>(map.size())
+							|| map[to].depth != map[at].depth + 1) {
+							shaped = false;
+							continue;
+						}
+						if (reach[at]) {
+							reach[to] = 1;
+						}
+						for (size_t other = 0; other < map.size(); ++other) {
+							if (map[other].depth != map[at].depth
+								|| other == at) {
+								continue;
+							}
+							for (const int their : map[other].next) {
+								if ((map[at].lane - map[other].lane)
+									* (map[to].lane - map[their].lane) < 0) {
+									crossed = true;
+								}
+							}
+						}
+					}
+				}
+				std::vector<int> climbs(map.size(), 0);
+				for (size_t at = map.size(); at-- > 0;) {
+					if (map[at].depth == campaign::kMapDepth - 1) {
+						climbs[at] = 1;
+						continue;
+					}
+					for (const int to : map[at].next) {
+						if (to >= 0 && to < static_cast<int>(map.size())
+							&& climbs[to]) {
+							climbs[at] = 1;
+						}
+					}
+				}
+				for (size_t at = 0; at < map.size(); ++at) {
+					connected = connected && reach[at] && climbs[at];
+				}
+				if ((!shaped || !connected || !ranged || !kept || crossed)
+					&& detail.empty()) {
+					detail = "ring " + std::to_string(ring) + " seed "
+						+ std::to_string(seed * 977u);
+				}
+			}
+		}
+		check("every ring is shaped 2 / 2..3 / 1 with honest kinds", shaped,
+			detail);
+		check("every climb battle draws from the union pool", ranged, detail);
+		check("the gatekeeper rotation holds the top row", kept, detail);
+		check("every ring node is reachable and reaches the gatekeeper",
+			connected, detail);
+		check("no two climb edges cross", !crossed, detail);
+		check("past the taught road every battle is a hard one",
+			[&] {
+				// Deep in the climb the window sits at the pool's top: every
+				// battle is one of the two hardest recipes on the road.
+				for (unsigned seed = 1; seed <= 8; ++seed) {
+					const auto map = campaign::build_endless_map(40, seed);
+					for (const MapNode& node : map) {
+						if (node.kind == 0
+							&& node.stage != pool[static_cast<size_t>(span - 1)]
+							&& node.stage
+								!= pool[static_cast<size_t>(span - 2)]) {
+							return false;
+						}
+					}
+				}
+				return true;
+			}());
+		check("the same ring and seed build the same layer",
+			[] {
+				const auto a = campaign::build_endless_map(3, 12345u);
+				const auto b = campaign::build_endless_map(3, 12345u);
+				if (a.size() != b.size()) {
+					return false;
+				}
+				for (size_t i = 0; i < a.size(); ++i) {
+					if (a[i].depth != b[i].depth || a[i].lane != b[i].lane
+						|| a[i].kind != b[i].kind || a[i].stage != b[i].stage
+						|| a[i].next != b[i].next) {
+						return false;
+					}
+				}
+				return true;
+			}());
+		check("each ring of one climb is a fresh layer",
+			[] {
+				for (unsigned seed = 1; seed <= 8; ++seed) {
+					const auto a = campaign::build_endless_map(0, seed);
+					const auto b = campaign::build_endless_map(1, seed);
+					for (size_t i = 0; i < a.size() && i < b.size(); ++i) {
+						if (a[i].stage != b[i].stage || a[i].next != b[i].next) {
+							return true;
+						}
+					}
+				}
+				return false;
+			}());
+		check("a ring below the ground builds no map",
+			campaign::build_endless_map(-1, 1u).empty());
+
+		// The tightening: rising rings never make a stage easier, and the
+		// floors hold. A knob a stage left off stays off.
+		{
+			SimConfig base;
+			base.fall_delay = 30;
+			base.line_quota = 10;
+			base.score_quota = 10000;
+			base.survive_ms = 60000;
+			base.cheese_period = 300;
+			bool monotone = true;
+			SimConfig before = campaign::endless_scaled(base, 0);
+			for (int ring = 1; ring <= 30; ++ring) {
+				const SimConfig now = campaign::endless_scaled(base, ring);
+				monotone = monotone
+					&& now.fall_delay <= before.fall_delay
+					&& now.fall_delay >= 8
+					&& now.line_quota >= before.line_quota
+					&& now.score_quota >= before.score_quota
+					&& now.survive_ms >= before.survive_ms
+					&& now.cheese_period <= before.cheese_period
+					&& now.cheese_period >= 120;
+				before = now;
+			}
+			SimConfig off;
+			off.line_quota = 0;
+			off.score_quota = 0;
+			off.survive_ms = 0;
+			const SimConfig still = campaign::endless_scaled(off, 12);
+			check("the climb only ever tightens, down to the floors",
+				monotone
+					&& campaign::endless_scaled(base, 0).fall_delay == 30
+					&& campaign::endless_scaled(base, 1).fall_delay == 28
+					&& campaign::endless_scaled(base, 1).line_quota == 12);
+			check("a finish line a stage left off stays off",
+				still.line_quota == 0 && still.score_quota == 0
+					&& still.survive_ms == 0);
+		}
+		check("a duel foe climbs half a rank per ring, capped at the top",
+			campaign::endless_rank(3, 0) == 3
+				&& campaign::endless_rank(3, 2) == 4
+				&& campaign::endless_rank(3, 4) == 5
+				&& campaign::endless_rank(7, 1) == 7
+				&& campaign::endless_rank(3, 40) == 7);
+
+		// The gate and the record's arithmetic.
+		{
+			campaign::State fresh;
+			campaign::State starless;
+			starless.stars["c2s8"] = 0;
+			campaign::State keyed;
+			keyed.stars["c2s8"] = 1;
+			check("the climb opens once the Deep Forge's master has fallen",
+				!campaign::endless_open(fresh)
+					&& !campaign::endless_open(starless)
+					&& campaign::endless_open(keyed));
+			campaign::Run run;
+			run.ring = 2;
+			run.depth = 3;
+			check("the record counts full rings plus the rows in progress",
+				campaign::endless_rows(run)
+					== 2 * campaign::kMapDepth + 3);
+		}
+
+		// The climb rides the save file: the run's ring and the record board
+		// round-trip, and a bent ring is clamped into sense.
+		{
+			namespace fs = std::filesystem;
+			std::error_code ignored;
+			const fs::path folder
+				= fs::temp_directory_path() / "forcetris-camp-endless";
+			fs::remove_all(folder, ignored);
+			fs::create_directories(folder, ignored);
+			const std::string file = (folder / "campaign.dat").string();
+			campaign::State state;
+			state.endless_best = 27;
+			state.run.active = true;
+			state.run.endless = true;
+			state.run.ring = 4;
+			state.run.seed = 0xF00Du;
+			state.run.difficulty = campaign::kWhite;
+			state.run.depth = 1;
+			state.run.path = {0};
+			check("a climb saves", campaign::save(file, state));
+			const campaign::State back = campaign::load(file);
+			check("and resumes on its ring with its record",
+				back.endless_best == 27 && back.run.active
+					&& back.run.endless && back.run.ring == 4
+					&& back.run.seed == 0xF00Du);
+			state.run.active = false;
+			check("the record outlives the run",
+				campaign::save(file, state)
+					&& campaign::load(file).endless_best == 27
+					&& !campaign::load(file).run.active
+					&& !campaign::load(file).run.endless);
+			{
+				std::ofstream out(file, std::ios::trunc);
+				out << "run_seed 7\nrun_endless 1\nrun_ring 12345\n"
+					<< "endless_best -9\n";
+			}
+			const campaign::State bent = campaign::load(file);
+			check("a bent climb is clamped into sense",
+				bent.run.active && bent.run.endless
+					&& bent.run.ring == 999 && bent.endless_best == 0);
+			fs::remove_all(folder, ignored);
+		}
 	}
 
 	// --- Difficulty and the chapter gate. -----------------------------------
