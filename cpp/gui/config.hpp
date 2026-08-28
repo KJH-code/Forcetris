@@ -65,11 +65,7 @@ struct Config {
 	int dcd = 17;
 	int sdf = 6;
 	int are = 0;
-	double forced_delay = 1.0;
-	bool kicks = true;
 	int finesse_rule = 1;   // 0 off, 1 count, 2 retry.
-	int spin_rule = 2;      // spins::Rule.
-	int cleartype = 0;      // 0 naive, 1 sticky cascade, 2 linked cascade.
 	// Animated clears, or resolved on the lock frame. Animated costs six
 	// frames plus a resume per clearing pass, and a naive quad is four passes:
 	// 580ms with no piece to control. The burn the board draws over a cleared
@@ -79,9 +75,6 @@ struct Config {
 	// Which shipped handling this file has seen, so a retune reaches a config
 	// that already exists instead of only a fresh one.
 	int handling_rev = kHandlingRev;
-	// The fuse ruleset - the variant's identity, on by default. Off plays
-	// the plain trainer rules with the flat forced-drop delay above.
-	bool fuse = true;
 	// The board's shudder on quads, spins and Overdrive. Purely cosmetic.
 	bool shake = true;
 	// Uncapped rendering: vsync off, the loop paced by a millisecond nap.

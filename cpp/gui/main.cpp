@@ -567,33 +567,19 @@ struct App {
 	bool quit = false;
 };
 
-// The one owner of the mode-to-name mapping. The fused axis matters: a
-// fuse-rules game and a trainer-rules game are different games, so their
-// records, tables and history keep different keys - and the legacy strings
-// are frozen forever, or old files would silently change meaning.
-const char* gametype_name (int mode, bool fused) {
-	if (fused) {
-		switch (mode) {
-			case 1: return "blaze";
-			case 2: return "inferno";
-			case 3: return "meltdown";
-			case 4: return "bunker";
-			case 5: return "duel";
-			case 6: return "temper";
-			default: return "ignition";
-		}
-	}
+// The one owner of the mode-to-name mapping. The names are the modes'
+// identities now, not a ruleset's: the board plays pure everywhere and
+// the fuse is the Forge's own gimmick, so every new record keys on the
+// mode alone. The old trainer strings (free/timed/arcade/...) survive
+// only inside files already written, read back as-is.
+const char* gametype_name (int mode) {
 	switch (mode) {
-		case 1: return "timed";
-		case 2: return "arcade";
-		case 3: return "cheese_race";
-		case 4: return "cheese_survival";
-		case 5: return "versus";
-		// Tempering is a fuse mode and nothing else: its drafts are the
-		// fuse's own numbers, so there is no trainer-rules version of it to
-		// name. A run started here is forced onto the variant's rules.
-		case 6: return "temper";
-		default: return "free";
+		case 1: return "blaze";
+		case 2: return "inferno";
+		case 3: return "meltdown";
+		case 4: return "bunker";
+		case 5: return "duel";
+		default: return "ignition";
 	}
 }
 
@@ -649,19 +635,19 @@ replay::Meta meta_for (const Config& config, int mode) {
 		std::strftime(stamp, sizeof stamp, "%Y-%m-%dT%H:%M:%S", local);
 	}
 	meta.played = stamp;
-	meta.forced_delay = config.forced_delay;
+	const SimConfig rules = config.sim();
+	meta.forced_delay = rules.forced_delay;
 	meta.finesse = config.finesse_rule;
-	meta.spinrule = config.spin_rule;
-	meta.cleartype = config.cleartype;
+	meta.spinrule = rules.spin_rule;
+	meta.cleartype = rules.cleartype;
 	meta.das = config.das;
 	meta.arr = config.arr;
 	meta.dcd = config.dcd;
 	meta.sdf = config.sdf;
 	meta.are = config.are;
-	// The fuse ruleset, tunables and all - a file must say which game its
-	// score belongs to. Duel fights under it too, both sides alike.
-	const SimConfig rules = config.sim();
-	meta.gametype = gametype_name(mode, rules.fuse);
+	// The rules are the game's own now; the file still says them in full,
+	// so a record from any build reads back honestly.
+	meta.gametype = gametype_name(mode);
 	stamp_fuse(meta, rules);
 	return meta;
 }
@@ -716,19 +702,9 @@ void start_game (App& app, int mode,
 	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = mode;
-	if (mode == 6) {
-		// Tempering is an endless game with a finish line and a draft. The
-		// fuse is not optional here: every temper in the pool is one of the
-		// fuse's own numbers, so a trainer-rules run would have nothing to
-		// draft. The sim is told it is game zero; the mode lives in the
-		// quota, the draft, and the table the score goes to.
-		config.gametype = 0;
-		config.fuse = true;
-		config.line_quota = temper::kQuota;
-	}
-	if (config.fuse && mode == 1) {
-		// Blaze burns three minutes, not the trainer's five. Its own table
-		// keeps its scores, so the shorter clock competes only with itself.
+	if (mode == 1) {
+		// Blaze burns three minutes, not the old trainer's five. Its own
+		// table keeps its scores, so the clock competes only with itself.
 		config.timer_ms = 3 * 60 * 1000;
 	}
 	config.cheese_total = app.config.cheese_total;
@@ -739,12 +715,6 @@ void start_game (App& app, int mode,
 	app.temper_seed = seed;
 	app.temper_start = config;
 	replay::Meta meta = meta_for(app.config, mode);
-	if (mode == 6) {
-		// meta_for reads the Rules tab; Tempering overrides it, so the file
-		// records the rules the run is actually starting from.
-		stamp_fuse(meta, config);
-		meta.gametype = gametype_name(mode, true);
-	}
 	app.session.emplace(config, seed, meta);
 	app.screen = Screen::Game;
 	app.paused = false;
@@ -798,9 +768,9 @@ void deal_versus_round (App& app) {
 	app.tempers.clear();
 	app.offers.clear();
 	const unsigned seed = app.seeds();
-	// The rules this round is played under were fixed by start_versus -
-	// meta_for reads the Rules tab, which the career stage overrides, so
-	// the recording is stamped from the config actually in force.
+	// The rules this round is played under were fixed by start_versus (a
+	// campaign duel overrides them), so the recording is stamped from the
+	// config actually in force.
 	replay::Meta meta = meta_for(app.config, 5);
 	stamp_fuse(meta, app.temper_start);
 	app.session.emplace(app.temper_start, seed, meta);
@@ -832,12 +802,11 @@ void start_versus (App& app, int career_stage = -1) {
 	int rank = app.config.bot_rank;
 	int first_to = app.config.first_to;
 	if (career_stage >= 0) {
-		// A ladder stage names its own terms: the stage's rank, longer
-		// matches up top, and a fuse that tightens one notch per rung.
+		// A ladder stage names its own terms: the stage's rank, and longer
+		// matches up top. The rungs climb the bot alone - the board plays
+		// pure here like everywhere off the Forge.
 		rank = career_stage;
 		first_to = career_stage >= 4 ? 2 : 1;
-		config.fuse_base = std::max(config.fuse_min,
-			config.fuse_base - 0.1 * career_stage);
 	}
 	// The round rules, tightened and all, kept for every round of the
 	// match. In a plain duel the bot builds from the same rules; its blade
@@ -1436,10 +1405,9 @@ void restart_stage (App& app) {
 // A heat has been forged if the run's counter has crossed another rung -
 // lines everywhere, dug rows in Meltdown. Put three cards on the table when
 // it has; the loop stops stepping the sim while they are there, so the fuse
-// waits with the player. This fires for every fuse-rules game: the draft is
-// part of the fuse ruleset, not one mode's gimmick. Only Tempering has a
-// ceiling, because only Tempering has a finish line; everywhere else the
-// forge keeps dealing until the pool runs dry.
+// waits with the player. Only a fuse-rules game off the Forge Road would
+// draft mid-game, and none is left - the guards keep the machinery honest
+// for whatever burn room ever wants it back.
 void offer_tempers (App& app) {
 	if (!app.session.has_value() || !app.session->sim().config().fuse) {
 		return;
@@ -1448,9 +1416,6 @@ void offer_tempers (App& app) {
 		// A stage never drafts mid-game: the map hands out its cards
 		// between battles, and the board on the Forge Road never stops.
 		// The heats still tighten the fuse - that is the sim's own.
-		return;
-	}
-	if (app.mode == 6 && app.heat >= temper::kHeats) {
 		return;
 	}
 	const Sim& sim = app.session->sim();
@@ -1712,14 +1677,14 @@ void end_game (App& app) {
 	// only happens if a name is entered and the score actually submitted.
 	// The loss-time counters: eval_loss probes before a still-resolving
 	// clear lands its points, so the snapshot does too.
-	const bool fused = app.session->sim().config().fuse;
 	if (app.campaign_stage >= 0) {
 		// A stage never enters a table: its rules carry the Anvil's metal,
 		// and its record already says "campaign" - a name no table owns.
 		app.hiscore_place = -1;
-	} else if (fused) {
-		// A fuse-rules game competes in the variant's own tables, every
-		// mode with a table of its own.
+	} else {
+		// Every Training Yard mode competes in its own named table. The
+		// trainer file - the Python game's, three tables, byte-compatible -
+		// is history now: still read, never written.
 		const Sim& sim = app.session->sim();
 		hiscore::Entry probe;
 		probe.score = static_cast<std::uint64_t>(
@@ -1728,22 +1693,7 @@ void end_game (App& app) {
 		probe.timer = static_cast<std::uint32_t>(std::max(0L, sim.timer_ms()));
 		const int at = hiscore::place_fuse(
 			hiscore::load_fuse(hiscore::folder(app.root)),
-			gametype_name(app.mode, true), probe);
-		app.hiscore_place = at < hiscore::kPerTable ? at : -1;
-	} else if (app.mode >= 3) {
-		// The cheese modes are this side's own; the trainer score file is
-		// the Python game's, three tables and no more, byte-compatible.
-		app.hiscore_place = -1;
-	} else {
-		const Sim& sim = app.session->sim();
-		hiscore::Entry probe;
-		probe.score = static_cast<std::uint64_t>(
-			std::max<long long>(0, sim.final_score()));
-		probe.lines = static_cast<std::uint32_t>(std::max(0, sim.final_lines()));
-		probe.timer = static_cast<std::uint32_t>(std::max(0L, sim.timer_ms()));
-		const int at = hiscore::place(
-			hiscore::load(hiscore::folder(app.root)),
-			gametype_name(app.mode, false), probe);
+			gametype_name(app.mode), probe);
 		app.hiscore_place = at < hiscore::kPerTable ? at : -1;
 	}
 	app.name_entry[0] = '\0';
@@ -2760,11 +2710,12 @@ void draw_board (App& app) {
 		}
 	}
 
-	// The fuse wick (or, on trainer rules, the flat forced-drop meter):
-	// how much of the piece's stay is left. Frozen solid cyan under
-	// Overdrive - the one moment the wick stops burning.
+	// The fuse wick: how much of the piece's stay is left. Only a burning
+	// room draws it - the Forge's burn recipes and campaign duels - the
+	// pure board has no clock to show. Frozen solid cyan under Overdrive,
+	// the one moment the wick stops burning.
 	const bool fused = sim.config().fuse;
-	const double limit = fused ? sim.fuse_total() : app.config.forced_delay;
+	const double limit = fused ? sim.fuse_total() : 0.;
 	if (limit > 0.) {
 		fill(renderer, kBoardX, kBoardY + kBoardH + px(10), kBoardW, px(8), {36, 27, 20, 255});
 		const auto elapsed = sim.piece_elapsed();
@@ -3012,24 +2963,24 @@ void note_lock (App& app) {
 // The cues' visible half: what the ear hears, the eye sees.
 void juice_cue (App& app, const std::string& cue) {
 	if (cue == "clear") {
+		// Sparks, no shudder: an ordinary clear happens every few seconds,
+		// and a field that jolts on every one of them reads as a seizure,
+		// not a reward. The big events below keep the quake.
 		spawn_sparks(app, {255, 150, 70, 255}, 3, 2.2f);
-		app.shake_until = std::max(app.shake_until,
-			app.session->sim().frame() + 2);
 	} else if (cue == "lock") {
 		note_lock(app);
 	} else if (cue == "drop") {
-		// The slam felt in the hands: a short jolt and dust off the
-		// landing cells.
+		// The slam felt in the hands: the piece's own pulse and dust off
+		// the landing cells - the field itself stays still.
 		note_lock(app);
 		spawn_sparks(app, {200, 170, 130, 255}, 1, 1.5f);
-		app.shake_until = std::max(app.shake_until,
-			app.session->sim().frame() + 2);
 	} else if (cue == "forced") {
-		// The accident hits harder than the choice.
+		// The accident hits harder than the choice - and only burn rooms
+		// have one, so the jolt stays rare.
 		note_lock(app);
 		spawn_sparks(app, {255, 120, 50, 255}, 2, 2.0f);
 		app.shake_until = std::max(app.shake_until,
-			app.session->sim().frame() + 4);
+			app.session->sim().frame() + 2);
 	} else if (cue == "tetris") {
 		spawn_sparks(app, {255, 214, 96, 255}, 6, 3.2f);
 		app.shake_until = app.session->sim().frame() + 8;
@@ -3546,16 +3497,6 @@ void draw_settings (App& app) {
 					"To the wall ~%dms - to the floor ~%dms - quad freeze %dms",
 					cross * 20, soft * 20, quad * 20);
 			}
-			ImGui::Spacing();
-			float forced = static_cast<float>(app.config.forced_delay);
-			if (ImGui::SliderFloat("Forced drop (s, 0 = off)", &forced,
-				0.f, 5.f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) {
-				// Stored to the hundredth, exactly - the sim compares this
-				// against a clock built from exact 0.02 steps, and a value
-				// laundered through float lands a frame late.
-				app.config.forced_delay
-					= std::round(forced * 100.f) / 100.;
-			}
 			ImGui::PopItemWidth();
 			ImGui::Spacing();
 			ImGui::TextDisabled("Handling applies from the next game.");
@@ -3563,26 +3504,14 @@ void draw_settings (App& app) {
 				"The engine runs 20ms frames; values land on that grid.");
 			ImGui::EndTabItem();
 		}
-		if (ImGui::BeginTabItem("Rules")) {
+		// Feel, not rules: the game's rules are its own now (spins, clears,
+		// kicks, the fuse are fixed or the Forge's gimmicks), and what is
+		// left to set is how the game trains and how it is presented.
+		if (ImGui::BeginTabItem("Feel")) {
 			ImGui::Spacing();
-			ImGui::Checkbox("Fuse rules", &app.config.fuse);
-			ImGui::SameLine();
-			ImGui::TextDisabled("%s", app.config.fuse
-				? "every piece burns; clears refuel; Flow ignites Overdrive"
-				: "plain rules with the flat forced-drop delay");
-			ImGui::Spacing();
-			const char* spin_rules[] = {
-				"Off", "T-spins", "All spins", "All spins + minis"};
-			ImGui::Combo("Spins", &app.config.spin_rule, spin_rules, 4);
-			const char* clear_styles[] = {
-				"Naive", "Sticky cascade", "Linked cascade"};
-			ImGui::Combo("Line clears", &app.config.cleartype, clear_styles, 3);
-			// The clear *delay* moved to Handling: it is a rule on paper and
-			// half a second of frozen board in the hand.
 			const char* finesse_rules[] = {
 				"Off", "Count faults", "Retry on fault"};
 			ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);
-			ImGui::Checkbox("Wall kicks", &app.config.kicks);
 			ImGui::Checkbox("Screen shake", &app.config.shake);
 			if (!kMobile && ImGui::Checkbox("Low-latency rendering",
 				&app.config.lowlatency)) {
@@ -4061,49 +3990,21 @@ void draw_help (App& app) {
 		ImGui::EndTable();
 	}
 	ImGui::Separator();
-	if (app.config.fuse) {
-		ImGui::TextUnformatted("The Fuse");
-		ImGui::TextUnformatted(
-			"Every piece burns. When its fuse runs out it is slammed down\n"
-			"where it stands - and the fuse gets shorter as the levels climb.");
-		ImGui::TextUnformatted(
-			"Clears refuel the pieces to come; spins, quads and perfect\n"
-			"clears refuel hardest. Holding does not stop the burn.");
-		ImGui::TextUnformatted("");
-		ImGui::TextUnformatted("Flow and Overdrive");
-		ImGui::TextUnformatted(
-			"The Flow rail climbs on quality: spins, quads, back-to-backs,\n"
-			"combos and perfect clears fill it - haste alone barely moves\n"
-			"it, though a lock inside the Flash window adds a little. Burn\n"
-			"a fuse to the end and it drains.");
-		ImGui::TextUnformatted(
-			"A full rail ignites Overdrive: the fuse freezes, everything\n"
-			"you send is multiplied, and every clear also burns a garbage\n"
-			"row off your own floor - until it gutters out.");
-		ImGui::TextUnformatted("");
-		ImGui::TextUnformatted("The draft");
-		ImGui::TextUnformatted(
-			"Every ten lines is a heat. The forge tightens and offers three\n"
-			"tempers; take one - the board waits while you choose. Fuel\n"
-			"survives, Flow presses, Risk trades, Rule rewrites. A duel\n"
-			"never stops: no drafts there - the bot brings a forged blade\n"
-			"of its rank instead.");
-		ImGui::TextDisabled(
-			"The plain trainer rules live under Settings, Rules, Fuse.");
-	} else {
-		ImGui::TextUnformatted("Forced Drop");
-		if (app.config.forced_delay > 0.) {
-			ImGui::Text("Every piece is hard dropped for you %.2fs after it spawns.",
-				app.config.forced_delay);
-			ImGui::Text("Holding gives the incoming piece a fresh %.2fs, once per piece.",
-				app.config.forced_delay);
-			ImGui::TextUnformatted("Soft dropping and wall kicks do not stop the clock.");
-			ImGui::TextUnformatted("Change the time under Settings.");
-		} else {
-			ImGui::TextUnformatted("Currently off, so this is plain Tetris.");
-			ImGui::TextUnformatted("Turn it on under Settings to train placement speed.");
-		}
-	}
+	ImGui::TextUnformatted("The Fuse");
+	ImGui::TextUnformatted(
+		"The board plays pure - no clock on your pieces. But a few rooms\n"
+		"of the Forge burn: in a burn room and in every campaign duel each\n"
+		"piece carries a fuse, and when it runs out the piece is slammed\n"
+		"down where it stands. Clears refuel the pieces to come; spins,\n"
+		"quads and perfect clears refuel hardest.");
+	ImGui::TextUnformatted("");
+	ImGui::TextUnformatted("Flow and Overdrive");
+	ImGui::TextUnformatted(
+		"In a burning room the Flow rail climbs on quality: spins, quads,\n"
+		"back-to-backs, combos and perfect clears fill it. A full rail\n"
+		"ignites Overdrive: the fuse freezes, everything you send is\n"
+		"multiplied, and every clear also burns a garbage row off your\n"
+		"own floor - until it gutters out.");
 	ImGui::Separator();
 	if (ImGui::Button("Back", ImVec2(ui(240), 0))) {
 		app.screen = app.help_back;
@@ -5296,7 +5197,7 @@ void draw_career (App& app) {
 	ImGui::PushFont(app.fonts.head);
 	ImGui::TextUnformatted("The Daily");
 	ImGui::PopFont();
-	ImGui::TextDisabled("One Ignition run a day, same fuse for everyone");
+	ImGui::TextDisabled("One Ignition run a day, same pieces for everyone");
 	ImGui::TextDisabled("who shares the date. Leaving still spends it.");
 	ImGui::Dummy(ImVec2(0.f, ui(2)));
 	if (app.career.daily_date == today()) {
@@ -5305,7 +5206,7 @@ void draw_career (App& app) {
 		} else {
 			ImGui::TextUnformatted("Today's run is spent.");
 		}
-	} else if (ImGui::Button("Run today's fuse", ImVec2(ui(200), 0))) {
+	} else if (ImGui::Button("Run today's seed", ImVec2(ui(200), 0))) {
 		start_daily(app);
 	}
 	ImGui::Separator();
@@ -5760,9 +5661,9 @@ void draw_menus (App& app) {
 			}
 			ImGui::End();
 		} else {
-			// Seven modes of button and blurb outgrow a short display; the
-			// cap turns the overflow into a scrollbar instead of running
-			// the last mode off the bottom edge.
+			// Five modes of button and blurb can still outgrow a short
+			// display; the cap turns the overflow into a scrollbar instead
+			// of running the last mode off the bottom edge.
 			ImGui::SetNextWindowSizeConstraints(ImVec2(ui(300), 0.f),
 				ImVec2(FLT_MAX, ImGui::GetIO().DisplaySize.y - ui(12)));
 			ImGui::Begin("mode select", nullptr, box);
@@ -5770,17 +5671,12 @@ void draw_menus (App& app) {
 			ImGui::PushFont(app.fonts.head);
 			ImGui::TextUnformatted("The Training Yard");
 			ImGui::PopFont();
-			ImGui::TextDisabled("Six fires, no map. Pick one and burn.");
+			ImGui::TextDisabled("Five fires, no map. Pick one and play.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
 			const float card_wide = ui(330);
 			const float card_tall = ui(54);
-			if (card_button(app, "em_temper", "Tempering",
-				"Twelve heats, a temper drafted at each.",
-				card_wide, card_tall)) {
-				start_game(app, 6);
-			}
 			if (card_button(app, "em_free", "Ignition",
-				"Endless. Burn for as long as you can.",
+				"Endless. Stack for as long as you can.",
 				card_wide, card_tall)) {
 				start_game(app, 0);
 			}
@@ -5790,7 +5686,7 @@ void draw_menus (App& app) {
 				start_game(app, 1);
 			}
 			if (card_button(app, "em_inferno", "Inferno",
-				"The floor rises and the fuse shrinks.",
+				"The floor rises, faster and faster.",
 				card_wide, card_tall)) {
 				start_game(app, 2);
 			}
@@ -5996,8 +5892,7 @@ void draw_menus (App& app) {
 			const char* verdict = app.versus.has_value()
 				? (app.versus->player_wins > app.versus->bot_wins
 					? "You win the match!" : "You lose the match")
-				: (app.mode == 6 ? (won ? "Forged!" : "Went cold")
-					: (won ? "Finished!" : "Game over"));
+				: (won ? "Finished!" : "Game over");
 			ImFont* font = app.fonts.head;
 			ImDrawList* draw = ImGui::GetWindowDrawList();
 			const ImVec2 at = ImGui::GetCursorScreenPos();
@@ -6028,11 +5923,6 @@ void draw_menus (App& app) {
 			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
 				"All the cheese in %d:%05.2f",
 				static_cast<int>(seconds) / 60, std::fmod(seconds, 60.));
-		}
-		if (app.mode == 6) {
-			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
-				won ? "All twelve heats" : "Heat %d of %d",
-				std::min(app.heat + 1, temper::kHeats), temper::kHeats);
 		}
 		if (app.campaign_stage >= 0) {
 			// The stage's receipt: its name, the stars this attempt earned
@@ -6142,13 +6032,8 @@ void draw_menus (App& app) {
 					? std::max(0L, (static_cast<long>(sim.config().timer_ms)
 						- sim.timer_ms()) / 10)
 					: std::max(0L, sim.timer_ms() / 10));
-				if (sim.config().fuse) {
-					hiscore::submit_fuse(hiscore::folder(app.root),
-						gametype_name(app.mode, true), entry);
-				} else {
-					hiscore::submit(hiscore::folder(app.root),
-						gametype_name(app.mode, false), entry);
-				}
+				hiscore::submit_fuse(hiscore::folder(app.root),
+					gametype_name(app.mode), entry);
 				app.score_saved = true;
 			}
 		} else if (app.score_saved) {
@@ -6260,7 +6145,7 @@ std::string screen_shot_key (const App& app) {
 	return "screen";
 }
 
-constexpr int kTour = 17;
+constexpr int kTour = 16;
 
 void tour_screen (App& app, int stop) {
 	switch (stop) {
@@ -6341,19 +6226,6 @@ void tour_screen (App& app, int stop) {
 			app.career = career::load(career::path(app.root));
 			app.campaign = campaign::load(campaign::path(app.root));
 			app.screen = Screen::Career;
-			break;
-		case 15:
-			// The draft, over a real game. The masher cannot reach this one
-			// on its own - random presses do not clear ten lines - so the
-			// tour starts a Tempering run and puts its first heat's cards
-			// on the table.
-			start_game(app, 6);
-			// The countdown goes: cards are only ever dealt on a board that
-			// is already running, and this stop must look like that too.
-			app.countdown = 0;
-			app.offers = temper::offer(app.temper_seed, 0, {});
-			app.offer_at = 0;
-			app.offer_shown = 0;
 			break;
 		default:
 			app.screen = Screen::Menu;
@@ -6540,7 +6412,7 @@ int run (bool smoke, long smoke_frames) {
 		// proven headlessly, not only free's.
 		int mode = 0;
 		if (const char* forced = std::getenv("FORCETRIS_SMOKE_MODE")) {
-			mode = std::clamp(std::atoi(forced), 0, 6);
+			mode = std::clamp(std::atoi(forced), 0, 5);
 		}
 		if (mode == 4) {
 			app.config.cheese_period = 150;
@@ -6952,21 +6824,15 @@ int run (bool smoke, long smoke_frames) {
 				}
 			}
 			if (app.session->sim().config().fuse) {
-				// How deep into the forge, over the well, where the clock
+				// How deep into the burn, over the well, where the clock
 				// would be in a mode that had one. Derived from the sim's
 				// own counters - a duel drafts nothing, but its fuse still
-				// tightens on the same rungs. Tempering counts to its
-				// finish line; everywhere else the count just climbs.
+				// tightens on the same rungs.
 				const Sim& sim = app.session->sim();
 				const int rung = 1 + temper::heats_done(sim.lines_cleared(),
 					sim.downstack(), app.mode == 3);
 				char heat[32];
-				if (app.mode == 6) {
-					std::snprintf(heat, sizeof heat, "HEAT %d / %d",
-						std::min(rung, temper::kHeats), temper::kHeats);
-				} else {
-					std::snprintf(heat, sizeof heat, "HEAT %d", rung);
-				}
+				std::snprintf(heat, sizeof heat, "HEAT %d", rung);
 				draw_label(heat, kBoardX + ui(4), kBoardY - ui(24),
 					IM_COL32(255, 196, 120, 255));
 			} else if (app.session->sim().config().line_quota > 0

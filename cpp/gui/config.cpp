@@ -49,13 +49,18 @@ SimConfig Config::sim () const {
 	config.dcd_ms = dcd;
 	config.sdf = sdf;
 	config.are_ms = are;
-	config.forced_delay = forced_delay;
-	config.kicks = kicks;
 	config.finesse_rule = finesse_rule;
-	config.spin_rule = spin_rule;
-	config.cleartype = cleartype;
 	config.clear_delay = clear_delay;
-	config.fuse = fuse;
+	// The game's own rules, fixed - the settings screen sells feel, never
+	// rulebook. The board plays pure: no forced drop, no fuse (the fuse is
+	// the Forge's gimmick, forced on by the burn recipes and campaign
+	// duels), kicks on, every spin honoured, plain clears (the cascades
+	// are stage gimmicks too).
+	config.forced_delay = 0.;
+	config.fuse = false;
+	config.kicks = true;
+	config.spin_rule = 2;
+	config.cleartype = 0;
 	return config;
 }
 
@@ -124,14 +129,12 @@ Config load_config (const std::string& path) {
 		else if (key == "dcd") in >> config.dcd;
 		else if (key == "sdf") in >> config.sdf;
 		else if (key == "are") in >> config.are;
-		else if (key == "forced_delay") in >> config.forced_delay;
-		else if (key == "kicks") { int flag = 1; in >> flag; config.kicks = flag != 0; }
+		// The rule knobs an older build wrote - forced_delay, kicks, spins,
+		// clears, fuse - are the game's own now; their lines fall through to
+		// the unknown pile and ride along unread.
 		else if (key == "finesse") in >> config.finesse_rule;
-		else if (key == "spins") in >> config.spin_rule;
-		else if (key == "clears") in >> config.cleartype;
 		else if (key == "cleardelay") { int flag = 1; in >> flag; config.clear_delay = flag != 0; }
 		else if (key == "handlingrev") in >> config.handling_rev;
-		else if (key == "fuse") { int flag = 1; in >> flag; config.fuse = flag != 0; }
 		else if (key == "shake") { int flag = 1; in >> flag; config.shake = flag != 0; }
 		else if (key == "lowlatency") { int flag = 1; in >> flag; config.lowlatency = flag != 0; }
 		else if (key == "smooth") { int flag = 1; in >> flag; config.smooth = flag != 0; }
@@ -212,7 +215,6 @@ Config load_config (const std::string& path) {
 	config.dcd = std::clamp(config.dcd, 0, 330);
 	config.sdf = std::clamp(config.sdf, 5, 40);
 	config.are = std::clamp(config.are, 0, 500);
-	config.forced_delay = std::clamp(config.forced_delay, 0., 5.);
 	// The picker's dials the same way: only values its own buttons offer.
 	config.cheese_total = std::clamp(config.cheese_total, 1, 400);
 	config.cheese_period = std::clamp(config.cheese_period, 30, 3000);
@@ -236,14 +238,9 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "dcd " << config.dcd << "\n";
 	out << "sdf " << config.sdf << "\n";
 	out << "are " << config.are << "\n";
-	out << "forced_delay " << config.forced_delay << "\n";
-	out << "kicks " << (config.kicks ? 1 : 0) << "\n";
 	out << "finesse " << config.finesse_rule << "\n";
-	out << "spins " << config.spin_rule << "\n";
-	out << "clears " << config.cleartype << "\n";
 	out << "cleardelay " << (config.clear_delay ? 1 : 0) << "\n";
 	out << "handlingrev " << config.handling_rev << "\n";
-	out << "fuse " << (config.fuse ? 1 : 0) << "\n";
 	out << "shake " << (config.shake ? 1 : 0) << "\n";
 	out << "lowlatency " << (config.lowlatency ? 1 : 0) << "\n";
 	out << "smooth " << (config.smooth ? 1 : 0) << "\n";

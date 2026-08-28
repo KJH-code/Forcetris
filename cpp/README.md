@@ -26,7 +26,7 @@ What is here:
 | `munch` | MinoMuncher's statistics re-derived over this game's own records (formulas from the MIT-licensed minomuncher-core): the nine clear buckets, spin efficiencies, the three-way attack-per-line split, burst and plonk PPS by Gaussian mixture, the four-deep well rule, the surge accounting and the cheesiness sigmoid - scored over raw attack, a trainer having no multiplayer wire |
 | `profile` | The history: one tolerant key=value line per finished game, appended forever, read back for the profile screen's aggregates and growth charts |
 | `bot` | The versus opponent: a full-reachability search over the real kick tables - so its tucks and spins are exactly the game's - an attack-and-shape evaluation, a rank ladder paced to TETR.IO's own per-rank speeds, and the driver that types the plan into a sim one key at a time |
-| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, forced drop meter, banners, sound, the generated furnace bed and Forge score, menus, settings, the stat layout editor, the replay browser and viewer, the game modes - versus included, with the bot's board beside yours - the high score screens, the how-to-play screen and the analysis of a finished run |
+| `gui/` | The SDL2 + Dear ImGui game: board, hold, queue, the burn rooms' fuse wick, banners, sound, the generated furnace bed and Forge score, menus, settings, the stat layout editor, the replay browser and viewer, the game modes - versus included, with the bot's board beside yours - the high score screens, the how-to-play screen and the analysis of a finished run |
 
 ## The GUI
 
@@ -64,10 +64,13 @@ Four presets (`tetrastats`, `battle`, `minimal`, `full`) are starting
 points; the arrangement and all settings persist in a plain text file under
 SDL's per-user pref directory (`FORCETRIS_GUI_CONFIG` overrides the path).
 
-Settings — DAS/ARR/DCD/SDF/ARE and the forced drop timer, the spin, clear
-and finesse rules, kicks, the volumes, the key bindings and the stat layout
-— sit in one tabbed screen and mirror the Python game's. Handling applies
-from the next game; keys, volumes and layout apply at once.
+Settings — DAS/ARR/DCD/SDF/ARE, the finesse trainer, the feel toggles
+(shake, low-latency, smooth motion), the volumes, the key bindings and
+the stat layout — sit in one tabbed screen. The rulebook knobs an older
+build offered (spins, clear style, kicks, the fuse, the flat forced-drop
+timer) are gone: the rules are the game's own, and the fuse is the
+Forge's gimmick. Handling applies from the next game; keys, volumes and
+layout apply at once.
 
 The handling the game *ships* with is TETR.IO's own defaults, digit for
 digit: DAS 167, ARR 33, DCD 17, SDF 6, ARE 0. Beginners arrive from the
@@ -195,7 +198,7 @@ fuse-rules replay writes every tunable into its meta, so a file always
 says which game its score belongs to (`fuse_check` pins the ruleset and
 the meta round trip both). On a desk the renderer runs uncapped by default - vsync off, the loop
 paced by a millisecond nap - which cuts a frame or two of input latency;
-the Rules tab's Low-latency toggle brings vsync back for tearing-averse
+the Feel tab's Low-latency toggle brings vsync back for tearing-averse
 displays, and phones keep vsync regardless. Three more shavings: the
 audio buffer is 256 samples (about 6ms), so the keypress cues land with
 the press instead of 23ms behind it; a game key lets the sim borrow its
@@ -231,14 +234,11 @@ diagnostics overlay - average and worst frame time, and how many engine
 ticks each drawn frame carried - so a stutter report can arrive with
 numbers attached.
 
-**The draft is the game's whole gimmick.** Every game played under the
-fuse rules climbs the forge in heats - ten cleared lines each, six dug
-rows in Meltdown - and crossing a heat is where the forge tightens the
-fuse *and* offers three tempers, of which one is taken. The board and the
-fuse wait while the cards are up; the pick is one press (`1` `2` `3`, the
-arrows and Enter, or a tap). The trainer rules never draft: the draft is
-part of the fuse ruleset, and turning the fuse off in Rules turns the
-whole forge off with it.
+**The draft is the campaign's gimmick now.** The Forge Map deals its
+cards between battles - the spoils of a won node - and the board never
+freezes mid-game for a hand of cards; the pick is one press (`1` `2`
+`3`, the arrows and Enter, or a tap). Inside a burning room the heats -
+ten cleared lines each - still tighten the fuse; that is the sim's own.
 
 The pool is ten cards in four families, and a card's face carries no
 numbers - a family word and glyph, a name, and one plain line, because a
@@ -254,27 +254,27 @@ sticky cascade), *Every Twist* (every spin scores, minis included). Fuel
 and Flow stack two or three deep; Risk and Rule are one each - nineteen
 stacks in all, and when they run out the forge simply stops dealing.
 
-**Tempering** is the flagship: the run with a finish line. Twelve heats,
-a draft at each, and clearing the twelfth forges the blade - **Forged** -
-while topping out leaves the run what it got to. Its score goes to its
-own table. The daily, being a fixed-seed run, offers everyone the same
-cards at the same heats.
+(The old **Tempering** mode - twelve heats, a draft at each, played as
+its own Training Yard card - retired in V2.2a: the campaign absorbed the
+draft, and the map run is the run now. Its score table stays on the
+scores screen, read-only history. The daily is a fixed-seed Ignition
+run, the same pieces for everyone who shares the date.)
 
 A **Duel never stops**. There are no drafts in versus, either side - the
-freeze that lets a hand read cards has no business in a real-time fight -
-and the heats only tighten the fuse there. The bot arrives *armed*
-instead: every rank carries a fixed blade (`temper::blade_for`, D's
-single thick wick escalating to X's overheat-and-gamble build, never
-Collapse - its planner searches naive clears), applied to its rules at
-round start and shown under its board, and written into its embedded
-recording the way a drafted build would have been.
+freeze that lets a hand read cards has no business in a real-time fight.
+The bot arrives *armed* instead: every rank carries a fixed blade
+(`temper::blade_for`, D's single thick wick escalating to X's
+overheat-and-gamble build, never Collapse - its planner searches naive
+clears), applied to its rules at round start and shown under its board,
+and written into its embedded recording the way a drafted build would
+have been.
 
-The draft screen is also where the run's coin is spent. Clears earn
+The spoils screen is also where the run's coin is spent. Clears earn
 **embers** - `embers_of`: two a line, three per point of attack, and
 nothing for haste - and the purse buys a **reroll** of the three cards
 (6) or a **second pick** off the same table (14). The balance is derived
 from the sim's own totals minus what was spent, so it cannot drift, and
-it dies with the run - which is where the campaign picks up.
+it dies with the run - the campaign's own economy.
 
 **The Forge Map** is what became of the career screen: a chapter played
 as one seeded climb. Setting out builds a branching graph six rows deep -
@@ -491,28 +491,27 @@ main menu's Profile screen reads it all back: lifetime totals, bests and
 the versus record on one tab, growth charts of PPS, APM, VS, estimated TR
 and finesse - each with a ten-game moving average - on the next, and the
 munch averages on the third, all filterable by mode.
-Play opens a mode picker in the variant's own names, Tempering - the run -
-leading it. Ignition (endless, the fuse shortening per level), Blaze
-(three burning minutes) and Inferno (the rising floor) start at a click,
-while Meltdown / Bunker and Duel each open their own window: the cheese
-one holds Meltdown's race at three lengths, Bunker's survival at three
-paces, and the holes-per-row and messiness dials; the duel one the bot's
-rank row, the first-to count and the Fight button - and every one of them
-drafts, because every one of them burns the fuse. A fuse-rules game
-scores into the variant's own seven tables (fusescore.dat, one per mode,
-Duel included for the day it fights fused); the trainer's three-table SFH
-file keeps its bytes and its meaning, and the scores screen shows all ten
-side by side. Game history and replays carry the matching keys - ignition,
-blaze, inferno, meltdown, bunker, duel, temper against the frozen legacy
-names - so no record ever changes game under your feet. A variant file
-written before a table was added is read as far as it goes and the new
-tables start empty, so adding a mode never costs anyone a score. Every dial is remembered in the config file, written the
-moment a game starts, so the next launch picks up where the last fight
-left off. Each entry carries a line on what it does, and Escape
-steps back out of anything - a detail window, the picker, the settings,
-the layout editor, a finished game's screen. How to Play lists every
-action against the keys bound to it right now, and explains the forced
-drop, in the Python screen's words.
+Play opens a mode picker of five fires, every one on pure rules.
+Ignition (endless), Blaze (three minutes) and Inferno (the rising
+floor) start at a click, while Meltdown / Bunker and Duel each open
+their own window: the cheese one holds Meltdown's race at three
+lengths, Bunker's survival at three paces, and the holes-per-row and
+messiness dials; the duel one the bot's rank row, the first-to count
+and the Fight button. Every Training Yard game scores into its mode's
+own table (fusescore.dat, one per mode name, the retired Tempering's
+kept as history); the trainer's three-table SFH file keeps its bytes
+and its meaning as read-only history, and the scores screen shows all
+ten side by side. Game history and replays carry the matching keys -
+ignition, blaze, inferno, meltdown, bunker, duel, temper against the
+frozen legacy names - so no record ever changes game under your feet. A
+variant file written before a table was added is read as far as it goes
+and the new tables start empty, so adding a mode never costs anyone a
+score. Every dial is remembered in the config file, written the moment
+a game starts, so the next launch picks up where the last fight left
+off. Each entry carries a line on what it does, and Escape steps back
+out of anything - a detail window, the picker, the settings, the layout
+editor, a finished game's screen. How to Play lists every action
+against the keys bound to it right now, and explains the Forge's fuse.
 
 The room is heard as well as seen. The cues are the synthesised WAVs out
 of sound/, fired by the cues the sim itself raises - which the trace
