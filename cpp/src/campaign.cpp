@@ -249,7 +249,12 @@ namespace {
 
 // The stage's own overrides, shared by both sides of a boss fight.
 SimConfig overridden (const Stage& stage, SimConfig config) {
-	config.fuse = true;   // A stage is a fuse game whatever the Rules say.
+	// The fuse is a stage gimmick, whatever the Rules tab says: most rooms
+	// play the board pure - the forced drop was the beginners' wall - and
+	// only the recipes that name the burn still burn. A duel always does:
+	// the fuse is the duel's own tension, Overdrive and heat pressure
+	// with it.
+	config.fuse = stage.fuse || stage.mode == 5;
 	config.fuse_base *= stage.fuse_scale;
 	config.fuse_base = std::max(config.fuse_min, config.fuse_base);
 	if (stage.fall_delay >= 1) {
@@ -283,6 +288,9 @@ SimConfig overridden (const Stage& stage, SimConfig config) {
 		config.cheese_total = stage.quota;
 	} else if (stage.mode != 5 && stage.quota > 0) {
 		config.line_quota = stage.quota;
+	}
+	if (stage.mode != 5 && stage.score_quota > 0) {
+		config.score_quota = stage.score_quota;
 	}
 	return config;
 }
@@ -332,7 +340,8 @@ std::vector<std::string> board_rows (const Stage& stage) {
 	return rows;
 }
 
-int solo_stars (bool won, double seconds, int par_seconds, int forced) {
+int solo_stars (bool won, double seconds, int par_seconds, int forced,
+		bool fused) {
 	if (!won) {
 		return 0;
 	}
@@ -340,7 +349,11 @@ int solo_stars (bool won, double seconds, int par_seconds, int forced) {
 	if (par_seconds > 0 && seconds <= static_cast<double>(par_seconds)) {
 		++stars;
 	}
-	if (forced == 0) {
+	// The third star: in a burn room, an untouched run - the fuse never
+	// once slammed a piece down. In a pure room there is no fuse to dodge,
+	// so the mastery mark is pace instead: well inside the par.
+	if (fused ? forced == 0
+		: par_seconds > 0 && seconds <= par_seconds * 0.75) {
 		++stars;
 	}
 	return stars;

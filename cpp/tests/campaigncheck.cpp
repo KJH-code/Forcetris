@@ -64,9 +64,11 @@ int main () {
 					&& stage.rank < static_cast<int>(bot::ranks().size())
 					&& stage.first_to >= 1;
 			} else {
+				// A solo room has exactly one finish line: rows, or points.
 				shaped = shaped && (stage.mode == 0 || stage.mode == 3
 						|| stage.mode == 4)
-					&& stage.quota > 0 && stage.par_seconds > 0;
+					&& (stage.quota > 0) != (stage.score_quota > 0)
+					&& stage.par_seconds > 0;
 			}
 			shaped = shaped && stage.slag_first > stage.slag_repeat
 				&& stage.slag_repeat > 0;
@@ -154,6 +156,19 @@ int main () {
 		}
 		check("one sealed stage, one cold iron stage, bosses plain",
 			sealed_stages == 1 && cold_stages == 1 && plain_bosses);
+		int score_stages = 0;
+		bool score_sane = true;
+		for (const Stage& stage : campaign::stages()) {
+			if (stage.score_quota > 0) {
+				++score_stages;
+				// A score room is a mode-0 room with no line quota: two
+				// finish lines at once would race each other.
+				score_sane = score_sane
+					&& stage.mode == 0 && stage.quota == 0;
+			}
+		}
+		check("each chapter fields one score stage, sanely",
+			score_stages == 2 && score_sane);
 		check("and no stage still hides behind bare no_kicks",
 			std::none_of(campaign::stages().begin(), campaign::stages().end(),
 				[] (const Stage& stage) { return stage.no_kicks; }));
@@ -197,10 +212,77 @@ int main () {
 		check("a quota stage's quota is the finish line",
 			campaign::stage_config(quota, raw, {}).line_quota == 20);
 
+		// The fuse is a stage gimmick now, whatever the Rules tab says: a
+		// plain room never burns, a recipe that names the burn always
+		// does, and a duel always does - the fuse is the duel's tension.
+		SimConfig lit = raw;
+		lit.fuse = true;
+		check("a plain stage never burns, even with Rules fuse on",
+			!campaign::stage_config(quota, lit, {}).fuse);
 		SimConfig off = raw;
 		off.fuse = false;
-		check("a stage is a fuse game whatever the Rules tab says",
-			campaign::stage_config(quota, off, {}).fuse);
+		Stage burning = quota;
+		burning.id = "b"; burning.fuse = true;
+		check("a burn recipe burns, even with Rules fuse off",
+			campaign::stage_config(burning, off, {}).fuse);
+		Stage duel{};
+		duel.id = "d"; duel.name = "d"; duel.blurb = "d";
+		duel.mode = 5; duel.rank = 0;
+		check("a duel always burns",
+			campaign::stage_config(duel, off, {}).fuse);
+		check("the road's burn rooms are exactly the ones that say so",
+			[] {
+				int burns = 0;
+				for (const campaign::Stage& stage : campaign::stages()) {
+					if (stage.fuse) {
+						++burns;
+					}
+					// Pressure without the fuse would be a dial with no
+					// meter: every pressure room must burn.
+					if (stage.pressure && !stage.fuse) {
+						return false;
+					}
+				}
+				return burns == 2;
+			}());
+
+		Stage points{};
+		points.id = "p"; points.name = "p"; points.blurb = "p";
+		points.mode = 0; points.quota = 0; points.score_quota = 9000;
+		check("a score stage's finish line is points",
+			campaign::stage_config(points, raw, {}).score_quota == 9000
+				&& campaign::stage_config(points, raw, {}).line_quota == 0);
+
+		check("a score finish line is crossed by scoring",
+			[] {
+				SimConfig config;
+				config.forced_delay = 0.;
+				config.finesse_rule = 0;
+				config.sdf = 40;
+				config.clear_delay = false;
+				config.score_quota = 400;
+				Sim sim(config, std::vector<int>{0, 0, 0, 0});
+				Board well;
+				for (int y = kHeight - 1; y < kHeight; ++y) {
+					for (int x = 0; x < kWidth; ++x) {
+						if (x != kSpawnX + 1) {
+							well.set(x, y, 3);
+						}
+					}
+				}
+				sim.seed(well);
+				for (int i = 0; i < 100 && !sim.entry(); ++i) {
+					sim.step(std::nullopt);
+				}
+				sim.step(Event{Key::Cw, true});
+				sim.step(Event{Key::Cw, false});
+				sim.step(Event{Key::Hard, true});
+				sim.step(Event{Key::Hard, false});
+				for (int i = 0; i < 20; ++i) {
+					sim.step(std::nullopt);
+				}
+				return sim.won() && sim.score() >= 400;
+			}());
 
 		check("the fuse never scales below its own floor",
 			[&] {
@@ -313,11 +395,15 @@ int main () {
 	// --- Stars and slag. ----------------------------------------------------
 	{
 		check("solo stars: clear, par, flawless",
-			campaign::solo_stars(false, 10., 100, 0) == 0
-				&& campaign::solo_stars(true, 150., 100, 3) == 1
-				&& campaign::solo_stars(true, 90., 100, 3) == 2
-				&& campaign::solo_stars(true, 150., 100, 0) == 2
-				&& campaign::solo_stars(true, 90., 100, 0) == 3);
+			campaign::solo_stars(false, 10., 100, 0, true) == 0
+				&& campaign::solo_stars(true, 150., 100, 3, true) == 1
+				&& campaign::solo_stars(true, 90., 100, 3, true) == 2
+				&& campaign::solo_stars(true, 150., 100, 0, true) == 2
+				&& campaign::solo_stars(true, 90., 100, 0, true) == 3);
+		check("pure-room stars: par is the second, three-quarter par the third",
+			campaign::solo_stars(true, 150., 100, 0, false) == 1
+				&& campaign::solo_stars(true, 90., 100, 0, false) == 2
+				&& campaign::solo_stars(true, 70., 100, 0, false) == 3);
 		check("boss stars: win, sweep, ignited sweep",
 			campaign::boss_stars(false, true, true) == 0
 				&& campaign::boss_stars(true, false, true) == 1

@@ -1031,6 +1031,14 @@ bool Sim::step_frame (const Event* events, size_t count) {
 		loss_frame_ = frame_;
 		piece_elapsed_.reset();
 	}
+	// The score finish line, same shape: a stage won by points rather than
+	// rows, so spins, quads and back-to-backs are the fast way through.
+	if (config_.score_quota > 0 && !won_ && !lost_ && !clearing_
+		&& score_ >= config_.score_quota) {
+		won_ = true;
+		loss_frame_ = frame_;
+		piece_elapsed_.reset();
+	}
 	// Overdrive burns down in real frames, clearing or not; when it gutters
 	// out the gauge starts over from empty.
 	if (overdrive_frames_ > 0 && --overdrive_frames_ == 0) {

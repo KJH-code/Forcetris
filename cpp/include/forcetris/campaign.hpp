@@ -35,7 +35,17 @@ struct Stage {
 	const char* blurb;       // The gimmick, in one line on the map.
 	int mode;                // The GUI gametype: 0 quota, 3 dig, 4 survive, 5 boss.
 	int quota;               // Lines (0/4) or rows of cheese (3); 0 for a boss.
+	// A finish line in points instead of rows (mode 0 only): the stage is
+	// won at this score, so spins and quads are the fast way through.
+	// Set alongside quota = 0.
+	long long score_quota = 0;
 	int par_seconds;         // The second star's clock; 0 for bosses.
+	// V2.1: the fuse - and its forced drop - is a stage gimmick now, not
+	// the campaign's default. A recipe that sets this burns like the old
+	// days; everything else plays the board pure, and the HUD's fuse
+	// chrome stays away. Duels (mode 5) always burn: the fuse is the
+	// duel's own tension. Named for the event the player sees.
+	bool fuse = false;
 	double fuse_scale = 1.;  // Multiplies fuse_base; under 1 burns faster.
 	int fall_delay = -1;     // Gravity, in frames per row.
 	int cheese_holes = -1;
@@ -191,7 +201,10 @@ std::vector<std::string> board_rows (const Stage& stage);
 // Stars for a finished solo stage: one for the clear, one under par, one
 // with no forced drops. Bosses count differently - the match verdict is
 // the star: win, sweep, sweep with Overdrive ignited.
-int solo_stars (bool won, double seconds, int par_seconds, int forced);
+// The third star reads the room: a burn room asks for zero forced drops,
+// a pure room asks for three quarters of the par.
+int solo_stars (bool won, double seconds, int par_seconds, int forced,
+	bool fused);
 int boss_stars (bool won, bool sweep, bool ignited);
 // Slag granted when a stage attempt ends. A win pays the stage's bounty
 // (first clear or repeat) plus a star bonus; a death renders the unspent

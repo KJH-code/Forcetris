@@ -286,9 +286,17 @@ non-crossing edges) across dozens of seeds without a window. Battle nodes
 draw from the chapter's recipe pool with the easy fires at the gate and
 the hard ones under the boss; each is a declarative recipe over the same
 engine - a line quota over preset rubble, a three-hole dig, cascade-only
-clears, a floor that rises, a stage that starts with Overheat already in
-your blood - and the boss duel carries its own blade (the Forgemaster
-fights two falls behind bellows, white heat, overheat and gamble).
+clears, a floor that rises, a stage won by points instead of rows, a
+forge narrowed by sealed columns, a cold room where every completed line
+freezes solid and shatters one lock later, a stage that starts with
+Overheat already in your blood - and the boss duel carries its own blade
+(the Forgemaster fights two falls behind bellows, white heat, overheat
+and gamble). One row under the boss a **miniboss** duel bars the risky
+branch. And the fuse is a stage gimmick now, not the campaign's default:
+most rooms play the board pure - the forced drop was the beginners' wall
+- and only Backdraft, the Overheated Wing and the duels still burn, the
+way the Dark Gallery is the room that goes dark. Above mild, a mid-fight
+restart is a surrender and costs what a death costs.
 
 The roguelite is that the build outlives the battle: a won node banks its
 embers into the run and deals **the spoils** on the map - three cards,

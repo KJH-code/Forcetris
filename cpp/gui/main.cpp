@@ -478,6 +478,10 @@ struct App {
 	std::array<Spark, 256> sparks{};
 	size_t spark_at = 0;
 	long shake_until = -1;
+	// The lock pulse: the piece that just landed flashes for a beat, so
+	// every placement has weight even when nothing clears.
+	Piece lock_piece{};
+	long lock_flash = -1000;
 	// The menu screens' ambient embers, drifting up behind the windows.
 	std::array<Spark, 48> embers{};
 	size_t ember_at = 0;
@@ -1291,6 +1295,25 @@ void restart_stage (App& app) {
 		app.screen = Screen::Career;
 		return;
 	}
+	// Above mild, a mid-fight restart is a surrender and costs what a
+	// death costs - otherwise R is a free undo and the lives mean
+	// nothing. A retry from the loss screen has already paid at the
+	// settlement, so only a fight still running is charged.
+	campaign::Run& run = app.campaign.run;
+	if (app.screen == Screen::Game && run.active && app.run_node >= 0
+		&& run.difficulty != campaign::kMild) {
+		if (run.difficulty == campaign::kWhite || --run.lives <= 0) {
+			end_run(app);
+			app.run_ended = false;
+			app.campaign_stage = -1;
+			app.run_node = -1;
+			app.versus.reset();
+			app.paused = false;
+			app.screen = Screen::Career;
+			return;
+		}
+		campaign::save(campaign::path(app.root), app.campaign);
+	}
 	start_stage(app, app.campaign_stage, app.run_node);
 }
 
@@ -1487,7 +1510,8 @@ void end_game (App& app) {
 			const Sim& sim = app.session->sim();
 			won = sim.won();
 			stars = campaign::solo_stars(won, sim.frame() * 0.02,
-				stage.par_seconds, app.session->forced());
+				stage.par_seconds, app.session->forced(),
+				sim.config().fuse);
 		}
 		const auto held = app.campaign.stars.find(stage.id);
 		const bool first_clear
@@ -2356,6 +2380,22 @@ void draw_board (App& app) {
 			}
 		}
 	}
+	// The lock pulse: the cells that just landed flash and settle in a
+	// few frames - weight the eye can feel even when nothing cleared.
+	{
+		const long age = sim.frame() - app.lock_flash;
+		if (age >= 0 && age < 5) {
+			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+			const Uint8 a = static_cast<Uint8>(140 - age * 28);
+			for (const Offset cell : cells_of(app.lock_piece)) {
+				if (cell.y >= 0) {
+					fill(renderer, kBoardX + cell.x * kCell + 1,
+						kBoardY + cell.y * kCell + 1, kCell - 2, kCell - 2,
+						{255, 240, 220, a});
+				}
+			}
+		}
+	}
 	// Cold Iron: a frozen row wears a steel-blue sheen and a frost line, so
 	// "why did my clear not clear" answers itself on sight.
 	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
@@ -2811,10 +2851,37 @@ void spawn_sparks (App& app, SDL_Color color, int per_cell, float kick) {
 	}
 }
 
+// Remember the just-locked piece for the pulse the board draws over it.
+void note_lock (App& app) {
+	if (!app.session.has_value() || app.session->sim().locked().empty()) {
+		return;
+	}
+	const Locked& lock = app.session->sim().locked().back();
+	app.lock_piece = Piece{lock.form, lock.state, lock.x, lock.y};
+	app.lock_flash = app.session->sim().frame();
+}
+
 // The cues' visible half: what the ear hears, the eye sees.
 void juice_cue (App& app, const std::string& cue) {
 	if (cue == "clear") {
 		spawn_sparks(app, {255, 150, 70, 255}, 3, 2.2f);
+		app.shake_until = std::max(app.shake_until,
+			app.session->sim().frame() + 2);
+	} else if (cue == "lock") {
+		note_lock(app);
+	} else if (cue == "drop") {
+		// The slam felt in the hands: a short jolt and dust off the
+		// landing cells.
+		note_lock(app);
+		spawn_sparks(app, {200, 170, 130, 255}, 1, 1.5f);
+		app.shake_until = std::max(app.shake_until,
+			app.session->sim().frame() + 2);
+	} else if (cue == "forced") {
+		// The accident hits harder than the choice.
+		note_lock(app);
+		spawn_sparks(app, {255, 120, 50, 255}, 2, 2.0f);
+		app.shake_until = std::max(app.shake_until,
+			app.session->sim().frame() + 4);
 	} else if (cue == "tetris") {
 		spawn_sparks(app, {255, 214, 96, 255}, 6, 3.2f);
 		app.shake_until = app.session->sim().frame() + 8;
@@ -5553,6 +5620,15 @@ void draw_menus (App& app) {
 				start_game(app, app.mode);
 			}
 		}
+		if (app.campaign_stage >= 0 && app.campaign.run.active
+			&& app.run_node >= 0) {
+			// Say what the R rule will charge before the finger commits.
+			if (app.campaign.run.difficulty == campaign::kForged) {
+				ImGui::TextDisabled("Restarting costs a life.");
+			} else if (app.campaign.run.difficulty == campaign::kWhite) {
+				ImGui::TextDisabled("Restarting ends a white-heat run.");
+			}
+		}
 		if (ImGui::Button("Edit stat layout", ImVec2(ui(240), 0))) {
 			open_layout_editor(app);
 		}
@@ -6528,6 +6604,24 @@ int run (bool smoke, long smoke_frames) {
 					std::snprintf(heat, sizeof heat, "HEAT %d", rung);
 				}
 				draw_label(heat, kBoardX + ui(4), kBoardY - ui(24),
+					IM_COL32(255, 196, 120, 255));
+			} else if (app.session->sim().config().line_quota > 0
+				|| app.session->sim().config().score_quota > 0) {
+				// A pure room has no heats to climb, but it still has a
+				// finish line - say it plainly over the well.
+				const Sim& sim = app.session->sim();
+				char goal[48];
+				if (sim.config().score_quota > 0) {
+					std::snprintf(goal, sizeof goal, "SCORE %lld / %lld",
+						std::min(sim.score(), sim.config().score_quota),
+						sim.config().score_quota);
+				} else {
+					std::snprintf(goal, sizeof goal, "LINES %d / %d",
+						std::min(sim.lines_cleared(),
+							sim.config().line_quota),
+						sim.config().line_quota);
+				}
+				draw_label(goal, kBoardX + ui(4), kBoardY - ui(24),
 					IM_COL32(255, 196, 120, 255));
 			}
 			if (!kPortrait) {

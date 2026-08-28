@@ -23,9 +23,9 @@ namespace campaign {
 const std::vector<Chapter>& chapters () {
 	static const std::vector<Chapter> road = {
 		{"c1", "The Outer Yard",
-			"The forge teaches one fire at a time.", 10},
+			"The forge teaches one fire at a time.", 11},
 		{"c2", "The Deep Forge",
-			"Every lesson, turned against you.", 10},
+			"Every lesson, turned against you.", 11},
 	};
 	return road;
 }
@@ -82,6 +82,17 @@ const std::vector<Stage>& stages () {
 		s.slag_first = 20; s.slag_repeat = 5;
 		list.push_back(s);
 
+		// V2.1: a stage won by points, not rows - the room where a spin or
+		// a quad is the fast way through instead of a flourish.
+		s = Stage{};
+		s.id = "c1s10"; s.name = "Trial of Sparks";
+		s.blurb = "Rows count for nothing here: 7,000 points in the pan."
+			" Spins and quads pay best.";
+		s.mode = 0; s.quota = 0; s.score_quota = 7000;
+		s.par_seconds = 150;
+		s.slag_first = 22; s.slag_repeat = 5;
+		list.push_back(s);
+
 		s = Stage{};
 		s.id = "c1s5"; s.name = "Rusted Joints";
 		s.blurb = "Rust has sealed the outer galleries shut. Fifteen lines"
@@ -112,9 +123,10 @@ const std::vector<Stage>& stages () {
 
 		s = Stage{};
 		s.id = "c1s7"; s.name = "Backdraft";
-		s.blurb = "The fuse burns hot the whole way. Twenty lines.";
+		s.blurb = "The one room that still burns: a lit fuse under every"
+			" piece. Twenty lines.";
 		s.mode = 0; s.quota = 20; s.par_seconds = 170;
-		s.pressure = true; s.fuse_scale = 0.9;
+		s.fuse = true; s.pressure = true; s.fuse_scale = 0.9;
 		s.slag_first = 24; s.slag_repeat = 6;
 		list.push_back(s);
 
@@ -140,9 +152,10 @@ const std::vector<Stage>& stages () {
 		// --- Chapter 2: The Deep Forge. --------------------------------
 		s = Stage{};
 		s.id = "c2s1"; s.name = "Heavier Air";
-		s.blurb = "Faster gravity, a shorter wick. Twenty lines.";
+		s.blurb = "The deep forge presses down: everything falls faster"
+			" here. Twenty lines.";
 		s.mode = 0; s.quota = 20; s.par_seconds = 160;
-		s.fuse_scale = 0.85; s.fall_delay = 20;
+		s.fall_delay = 20;
 		s.slag_first = 26; s.slag_repeat = 6;
 		list.push_back(s);
 
@@ -152,6 +165,16 @@ const std::vector<Stage>& stages () {
 		s.mode = 3; s.quota = 14; s.par_seconds = 150;
 		s.cheese_holes = 3; s.cheese_messiness = 100;
 		s.slag_first = 26; s.slag_repeat = 6;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c2s10"; s.name = "Weight in Gold";
+		s.blurb = "The deep forge pays by weight: 16,000 points, and the"
+			" floor falls fast.";
+		s.mode = 0; s.quota = 0; s.score_quota = 16000;
+		s.par_seconds = 190;
+		s.fall_delay = 24;
+		s.slag_first = 28; s.slag_repeat = 6;
 		list.push_back(s);
 
 		s = Stage{};
@@ -172,9 +195,10 @@ const std::vector<Stage>& stages () {
 
 		s = Stage{};
 		s.id = "c2s4"; s.name = "The Overheated Wing";
-		s.blurb = "Overheat is already in your blood. Twenty lines, hot.";
+		s.blurb = "Overheat is already in your blood, and the fuse burns"
+			" with you. Twenty lines, hot.";
 		s.mode = 0; s.quota = 20; s.par_seconds = 160;
-		s.pressure = true; s.fuse_scale = 0.8;
+		s.fuse = true; s.pressure = true; s.fuse_scale = 0.8;
 		s.tempers = "overheat";
 		s.slag_first = 30; s.slag_repeat = 7;
 		list.push_back(s);
@@ -185,9 +209,7 @@ const std::vector<Stage>& stages () {
 			" Eighteen lines.";
 		s.mode = 0; s.quota = 18; s.par_seconds = 180;
 		// V2.1 re-dress: the rubble is the event and stays; the invisible
-		// "no kicks" rider is gone, per the rulebook-gimmick purge. The
-		// wick tightens a touch so the room keeps its deep-chapter weight.
-		s.fuse_scale = 0.95;
+		// "no kicks" rider is gone, per the rulebook-gimmick purge.
 		s.board = "7.77777777\n77777.7777\n777.777777\n7777777.77\n77.7777777";
 		s.slag_first = 30; s.slag_repeat = 7;
 		list.push_back(s);
@@ -210,7 +232,7 @@ const std::vector<Stage>& stages () {
 		// freeze solid and shatter one lock later - and the dials relax to
 		// merely brisk so the gimmick is the fight.
 		s.cold_iron = true;
-		s.fuse_scale = 0.9; s.fall_delay = 22;
+		s.fall_delay = 22;
 		s.slag_first = 34; s.slag_repeat = 8;
 		list.push_back(s);
 

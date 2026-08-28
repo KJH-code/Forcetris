@@ -74,6 +74,10 @@ struct SimConfig {
 	// Tempering's run is twelve heats of ten lines and ends when they are
 	// forged; nothing else sets this.
 	int line_quota = 0;
+	// A finish line in points instead: a stage won by score, where spins,
+	// quads and back-to-backs are the fast way through rather than a
+	// flourish. Zero off; this side's own, no trace sets it.
+	long long score_quota = 0;
 	// The cheese race's quota of garbage rows, and survival's frames between
 	// one row rising and the next.
 	int cheese_total = 18;
