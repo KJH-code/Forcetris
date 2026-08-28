@@ -63,6 +63,11 @@ int main () {
 				shaped = shaped && stage.rank >= 0
 					&& stage.rank < static_cast<int>(bot::ranks().size())
 					&& stage.first_to >= 1;
+			} else if (stage.survive_seconds > 0) {
+				// A watch: the clock is the finish line, the quota is the
+				// star bar, and nothing else competes with either.
+				shaped = shaped && stage.mode == 4
+					&& stage.quota > 0 && stage.score_quota == 0;
 			} else {
 				// A solo room has exactly one finish line: rows, or points.
 				shaped = shaped && (stage.mode == 0 || stage.mode == 3
@@ -169,6 +174,53 @@ int main () {
 		}
 		check("each chapter fields one score stage, sanely",
 			score_stages == 2 && score_sane);
+		int watches = 0;
+		int raids = 0;
+		int skirmishes = 0;
+		{
+			// A skirmish is a mode-5 recipe ahead of its chapter's
+			// trailing duel block.
+			int at = 0;
+			for (const campaign::Chapter& chapter : campaign::chapters()) {
+				int duels = 0;
+				while (duels < chapter.stages && campaign::stages()[
+					static_cast<size_t>(at + chapter.stages - 1 - duels)]
+						.mode == 5) {
+					++duels;
+				}
+				for (int i = 0; i < chapter.stages - duels; ++i) {
+					const Stage& stage
+						= campaign::stages()[static_cast<size_t>(at + i)];
+					if (stage.mode == 5) {
+						++(stage.raid != nullptr ? raids : skirmishes);
+					}
+				}
+				at += chapter.stages;
+			}
+			for (const Stage& stage : campaign::stages()) {
+				if (stage.survive_seconds > 0) {
+					++watches;
+				}
+			}
+		}
+		check("two watches, two skirmishes, one raid stand on the road",
+			watches == 2 && skirmishes == 2 && raids == 1);
+		check("watch stars climb the line bar",
+			campaign::survive_stars(false, 30, 8) == 0
+				&& campaign::survive_stars(true, 3, 8) == 1
+				&& campaign::survive_stars(true, 9, 8) == 2
+				&& campaign::survive_stars(true, 16, 8) == 3);
+		check("a watch is won by outlasting the clock",
+			[] {
+				SimConfig config;
+				config.forced_delay = 0.;
+				config.survive_ms = 1000;
+				Sim sim(config, std::vector<int>{0, 1, 2, 3});
+				for (int i = 0; i < 60 && !sim.won(); ++i) {
+					sim.step(std::nullopt);
+				}
+				return sim.won();
+			}());
 		check("and no stage still hides behind bare no_kicks",
 			std::none_of(campaign::stages().begin(), campaign::stages().end(),
 				[] (const Stage& stage) { return stage.no_kicks; }));
@@ -568,11 +620,13 @@ int main () {
 						ranged = ranged && boss_row
 							&& node.stage == boss_stage;
 					} else if (node.kind == 0) {
+						// The battle window may hold skirmishes and raids
+						// (mode-5 recipes ahead of the trailing block) but
+						// never the miniboss or the boss themselves.
 						ranged = ranged && !boss_row
 							&& node.stage >= battle_lo
-							&& node.stage < boss_stage
-							&& campaign::stages()[static_cast<size_t>(
-								node.stage)].mode != 5;
+							&& node.stage
+								< (has_mini ? mini_stage : boss_stage);
 					} else if (node.kind == 2 || node.kind == 3) {
 						++(node.kind == 2 ? forges : events);
 						ranged = ranged && node.depth > 0 && !boss_row

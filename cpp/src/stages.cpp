@@ -23,9 +23,9 @@ namespace campaign {
 const std::vector<Chapter>& chapters () {
 	static const std::vector<Chapter> road = {
 		{"c1", "The Outer Yard",
-			"The forge teaches one fire at a time.", 11},
+			"The forge teaches one fire at a time.", 13},
 		{"c2", "The Deep Forge",
-			"Every lesson, turned against you.", 11},
+			"Every lesson, turned against you.", 14},
 	};
 	return road;
 }
@@ -82,6 +82,16 @@ const std::vector<Stage>& stages () {
 		s.slag_first = 20; s.slag_repeat = 5;
 		list.push_back(s);
 
+		// V2.1: a skirmish - a lesser foe met on an ordinary battle node,
+		// so not every duel is a boss. It sits inside the battle window,
+		// unlike the trailing miniboss/boss block.
+		s = Stage{};
+		s.id = "c1k1"; s.name = "Scrap Whelp";
+		s.blurb = "Something small guards the scrap. Put it down.";
+		s.mode = 5; s.rank = 0; s.first_to = 1;
+		s.slag_first = 24; s.slag_repeat = 5;
+		list.push_back(s);
+
 		// V2.1: a stage won by points, not rows - the room where a spin or
 		// a quad is the fast way through instead of a flourish.
 		s = Stage{};
@@ -103,6 +113,17 @@ const std::vector<Stage>& stages () {
 		// columns walled off, the whole stage fought eight wide.
 		s.sealed = (1 << 0) | (1 << 9);
 		s.slag_first = 20; s.slag_repeat = 5;
+		list.push_back(s);
+
+		// V2.1: a watch - the floor rises and the only job is to outlast
+		// it. The quota is not a finish line here but the star bar.
+		s = Stage{};
+		s.id = "c1s11"; s.name = "The Long Watch";
+		s.blurb = "Hold the yard while the floor climbs. Seventy-five"
+			" seconds on the watch.";
+		s.mode = 4; s.quota = 8; s.survive_seconds = 75;
+		s.cheese_period = 400;
+		s.slag_first = 24; s.slag_repeat = 5;
 		list.push_back(s);
 
 		s = Stage{};
@@ -168,6 +189,13 @@ const std::vector<Stage>& stages () {
 		list.push_back(s);
 
 		s = Stage{};
+		s.id = "c2k1"; s.name = "Ash Hound";
+		s.blurb = "Something fast hunts the lower halls. A skirmish.";
+		s.mode = 5; s.rank = 2; s.first_to = 1;
+		s.slag_first = 28; s.slag_repeat = 6;
+		list.push_back(s);
+
+		s = Stage{};
 		s.id = "c2s10"; s.name = "Weight in Gold";
 		s.blurb = "The deep forge pays by weight: 16,000 points, and the"
 			" floor falls fast.";
@@ -194,6 +222,15 @@ const std::vector<Stage>& stages () {
 		list.push_back(s);
 
 		s = Stage{};
+		s.id = "c2s11"; s.name = "The Flood Watch";
+		s.blurb = "The deep floor climbs fast. Ninety seconds on the"
+			" watch.";
+		s.mode = 4; s.quota = 12; s.survive_seconds = 90;
+		s.cheese_period = 300;
+		s.slag_first = 30; s.slag_repeat = 7;
+		list.push_back(s);
+
+		s = Stage{};
 		s.id = "c2s4"; s.name = "The Overheated Wing";
 		s.blurb = "Overheat is already in your blood, and the fuse burns"
 			" with you. Twenty lines, hot.";
@@ -212,6 +249,16 @@ const std::vector<Stage>& stages () {
 		// "no kicks" rider is gone, per the rulebook-gimmick purge.
 		s.board = "7.77777777\n77777.7777\n777.777777\n7777777.77\n77.7777777";
 		s.slag_first = 30; s.slag_repeat = 7;
+		list.push_back(s);
+
+		// V2.1: a raid - three lesser foes back to back, one loss and the
+		// gauntlet closes. first_to is the gauntlet's length.
+		s = Stage{};
+		s.id = "c2r1"; s.name = "The Kennel";
+		s.blurb = "The hounds come one after another. Down all three.";
+		s.mode = 5; s.rank = 0; s.first_to = 3;
+		s.raid = "0,1,2";
+		s.slag_first = 36; s.slag_repeat = 8;
 		list.push_back(s);
 
 		s = Stage{};

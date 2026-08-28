@@ -85,6 +85,12 @@ int kMiniX = 940;
 int kMiniY = 88;
 int kMiniCell = 13;
 int kPreviews = 5;   // Portrait trims the queue to make room.
+// The duel layout: during a versus game the opponent is not a mini panel
+// in the margin but a full-size board beside the player's - two boards,
+// same cells, side by side, so the fight is read at a glance. Portrait
+// has no width for two full wells, so there the opponent merely grows.
+bool kDuelSide = false;
+int kCenterDX = 0;   // The landscape centering shift, reapplied on top.
 
 void apply_ui_scale (float scale) {
 	kScale = scale;
@@ -97,6 +103,23 @@ void apply_ui_scale (float scale) {
 	kMiniY = kBoardY + px(40);
 	kMiniCell = px(13);
 	kPreviews = 5;
+	kCenterDX = 0;
+}
+
+void apply_duel_side (bool on) {
+	kDuelSide = on;
+	if (kMobile && kPortrait) {
+		// The essential column stays where it was; the opponent's board
+		// grows as far as the margin under the previews allows.
+		kMiniCell = on ? px(11) : px(8);
+		kMiniX = kBoardX + kBoardW + (on ? px(14) : px(18));
+		kMiniY = kBoardY + (on ? px(284) : px(348));
+		return;
+	}
+	kBoardX = px(on ? 150 : 300) + kCenterDX;
+	kMiniX = px(on ? 690 : 940) + kCenterDX;
+	kMiniY = kBoardY + (on ? 0 : px(40));
+	kMiniCell = on ? kCell : px(13);
 }
 
 // The phone layouts. Landscape is the desktop design fitted to the screen
@@ -111,6 +134,7 @@ void apply_mobile_layout (int w, int h) {
 		const int dx = std::max(0, (w - px(1180)) / 2);
 		kBoardX += dx;
 		kMiniX += dx;
+		kCenterDX = dx;
 	} else {
 		// Essential units across: 122 of hold, 264 of board, 122 of queue,
 		// margins - 540 in all, centred when the screen is wider.
@@ -1048,6 +1072,22 @@ void start_stage (App& app, int index, int run_node = -1) {
 		app.versus_blade = campaign::blade_of(stage);
 		app.session.emplace(mine, seed, meta);
 		app.versus.emplace(stage.rank, stage.first_to);
+		// A campaign boss fights with its own kit: telegraphed skills the
+		// trainer's plain duels never carry.
+		app.versus->arm_skills(stage.id);
+		if (stage.raid != nullptr) {
+			// A raid walks its rank list one foe per round.
+			int rank = 0;
+			for (const char* c = stage.raid; *c != '\0'; ++c) {
+				if (*c >= '0' && *c <= '9') {
+					rank = rank * 10 + (*c - '0');
+				} else if (*c == ',') {
+					app.versus->raid_ranks.push_back(rank);
+					rank = 0;
+				}
+			}
+			app.versus->raid_ranks.push_back(rank);
+		}
 		app.versus->begin_round(app.seeds(), meta, app.versus_bot_base,
 			app.versus_blade);
 		app.countdown = app.start_delay;
@@ -1506,6 +1546,14 @@ void end_game (App& app) {
 			won = app.versus->player_wins > app.versus->bot_wins;
 			const bool sweep = won && app.versus->bot_wins == 0;
 			stars = campaign::boss_stars(won, sweep, app.campaign_od);
+		} else if (app.session.has_value()
+			&& stage.survive_seconds > 0) {
+			// A watch's stars: the clock is fixed, so the marks are what
+			// was cleared while holding on.
+			const Sim& sim = app.session->sim();
+			won = sim.won();
+			stars = campaign::survive_stars(won, sim.lines_cleared(),
+				stage.quota);
 		} else if (app.session.has_value()) {
 			const Sim& sim = app.session->sim();
 			won = sim.won();
@@ -2991,8 +3039,9 @@ void draw_versus_panel (App& app) {
 			: IM_COL32(176, 158, 140, 255));
 	// What the bot has drafted, under its board - the same build line the
 	// player's pause screen shows, because an opponent's tempers are half
-	// of reading the fight.
-	if (!match.bot_tempers.empty()) {
+	// of reading the fight. Portrait has no width for the line there, so
+	// it rides in the scoreboard instead.
+	if (!match.bot_tempers.empty() && !kPortrait) {
 		draw_label(temper_line(match.bot_tempers).c_str(),
 			static_cast<float>(left), top + kHeight * cell + px(6),
 			IM_COL32(176, 158, 140, 255));
@@ -3025,11 +3074,16 @@ void draw_versus_panel (App& app) {
 		app.session->sim().pending_garbage(), kCell);
 	meter(left - px(10), top + kHeight * cell,
 		theirs.pending_garbage(), cell);
-	// The scoreboard: under the bot's board, except in portrait, where the
-	// right margin is too narrow for it - there it sits under the player's.
+	// The scoreboard: beside the opponent's full board in the duel layout,
+	// under the mini board otherwise - except in portrait, where the right
+	// margin is too narrow for it and it sits under the player's.
 	if (kPortrait) {
 		ImGui::SetNextWindowPos(ImVec2(static_cast<float>(kBoardX),
 			static_cast<float>(kBoardY + kBoardH) + ui(24)));
+	} else if (kDuelSide) {
+		ImGui::SetNextWindowPos(ImVec2(
+			static_cast<float>(left + kWidth * cell) + ui(16),
+			static_cast<float>(top) + ui(4)));
 	} else {
 		ImGui::SetNextWindowPos(ImVec2(static_cast<float>(left) - ui(4),
 			static_cast<float>(top + kHeight * cell) + ui(10)));
@@ -3039,7 +3093,16 @@ void draw_versus_panel (App& app) {
 		| ImGuiWindowFlags_NoSavedSettings);
 	ImGui::Text("You %d - %d Bot (%s)", match.player_wins, match.bot_wins,
 		bot::ranks()[match.rank_index].name);
-	ImGui::TextDisabled("first to %d  round %d", match.first_to, match.round);
+	if (match.raid()) {
+		ImGui::TextDisabled("foe %d of %d",
+			std::min(match.round, match.first_to), match.first_to);
+	} else {
+		ImGui::TextDisabled("first to %d  round %d",
+			match.first_to, match.round);
+	}
+	if (kPortrait && !match.bot_tempers.empty()) {
+		ImGui::TextDisabled("%s", temper_line(match.bot_tempers).c_str());
+	}
 	const int surge = app.session->sim().surge_charge();
 	if (surge > 0) {
 		ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
@@ -3057,6 +3120,21 @@ void draw_versus_panel (App& app) {
 			ImVec2(kBoardX + (kBoardW - extent.x) / 2,
 				kBoardY + kBoardH / 2.f - font->FontSize),
 			IM_COL32(255, 210, 74, 255), verdict);
+	}
+	// The skill telegraph: the boss's warning burning over the player's
+	// board from two seconds out until a beat after the blow lands.
+	if (app.session.has_value() && !match.skill_banner.empty()
+		&& app.session->sim().frame() < match.skill_banner_until) {
+		ImFont* font = app.fonts.head;
+		const float size = font->FontSize * 1.1f;
+		const ImVec2 warn = font->CalcTextSizeA(size, FLT_MAX, 0.f,
+			match.skill_banner.c_str());
+		const float beat = 0.6f
+			+ 0.4f * std::sin(app.backdrop_tick * 0.35f);
+		ImGui::GetForegroundDrawList()->AddText(font, size,
+			ImVec2(kBoardX + (kBoardW - warn.x) / 2, kBoardY + ui(40)),
+			IM_COL32(255, 96, 60, static_cast<int>(150 + 105 * beat)),
+			match.skill_banner.c_str());
 	}
 }
 
@@ -6415,6 +6493,14 @@ int run (bool smoke, long smoke_frames) {
 				juice_cue(app, cue);
 			}
 		}
+		if (app.versus.has_value() && !app.versus->skill_cues.empty()) {
+			// The boss's skills speak through the same pipe a session's
+			// cues do - warning and landing alike.
+			for (const std::string& cue : app.versus->skill_cues) {
+				app.audio.play(cue);
+			}
+			app.versus->skill_cues.clear();
+		}
 
 		if (app.relayout) {
 			// The screen rotated: re-derive the layout, the touch buttons
@@ -6424,6 +6510,7 @@ int run (bool smoke, long smoke_frames) {
 			int h = 0;
 			SDL_GetRendererOutputSize(app.renderer, &w, &h);
 			apply_mobile_layout(w, h);
+			apply_duel_side(kDuelSide);
 			layout_touch(app, w, h);
 			ImGui::GetIO().Fonts->Clear();
 			app.fonts = load_fonts(app.root);
@@ -6431,6 +6518,17 @@ int run (bool smoke, long smoke_frames) {
 			ImGui::GetStyle() = ImGuiStyle();
 			apply_theme();
 			app.place_panels = true;
+		}
+		// The duel layout follows the game on screen: two boards side by
+		// side while a versus game (or its loss screen) is up, the usual
+		// margins everywhere else.
+		{
+			const bool duel_now = app.versus.has_value()
+				&& (app.screen == Screen::Game || app.screen == Screen::Over);
+			if (duel_now != kDuelSide) {
+				apply_duel_side(duel_now);
+				app.place_panels = true;
+			}
 		}
 		ImGui_ImplSDLRenderer2_NewFrame();
 		ImGui_ImplSDL2_NewFrame();
@@ -6606,12 +6704,19 @@ int run (bool smoke, long smoke_frames) {
 				draw_label(heat, kBoardX + ui(4), kBoardY - ui(24),
 					IM_COL32(255, 196, 120, 255));
 			} else if (app.session->sim().config().line_quota > 0
-				|| app.session->sim().config().score_quota > 0) {
+				|| app.session->sim().config().score_quota > 0
+				|| app.session->sim().config().survive_ms > 0) {
 				// A pure room has no heats to climb, but it still has a
 				// finish line - say it plainly over the well.
 				const Sim& sim = app.session->sim();
 				char goal[48];
-				if (sim.config().score_quota > 0) {
+				if (sim.config().survive_ms > 0) {
+					const int left = std::max(0,
+						(sim.config().survive_ms
+							- static_cast<int>(sim.frame()) * 20) / 1000);
+					std::snprintf(goal, sizeof goal, "WATCH %d:%02d",
+						left / 60, left % 60);
+				} else if (sim.config().score_quota > 0) {
 					std::snprintf(goal, sizeof goal, "SCORE %lld / %lld",
 						std::min(sim.score(), sim.config().score_quota),
 						sim.config().score_quota);
@@ -6624,9 +6729,10 @@ int run (bool smoke, long smoke_frames) {
 				draw_label(goal, kBoardX + ui(4), kBoardY - ui(24),
 					IM_COL32(255, 196, 120, 255));
 			}
-			if (!kPortrait) {
-				// A phone held upright has no margin for the stat panels;
-				// the board and the fight are the screen.
+			if (!kPortrait && !app.versus.has_value()) {
+				// A phone held upright has no margin for the stat panels,
+				// and the duel layout spends that margin on the opponent's
+				// full board; the board and the fight are the screen.
 				draw_stat_panels(app);
 			}
 			draw_banner(app);

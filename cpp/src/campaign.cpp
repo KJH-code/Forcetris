@@ -286,11 +286,16 @@ SimConfig overridden (const Stage& stage, SimConfig config) {
 	}
 	if (stage.mode == 3) {
 		config.cheese_total = stage.quota;
-	} else if (stage.mode != 5 && stage.quota > 0) {
+	} else if (stage.mode != 5 && stage.quota > 0
+		&& stage.survive_seconds == 0) {
+		// Under a watch the quota is the star bar, not a finish line.
 		config.line_quota = stage.quota;
 	}
 	if (stage.mode != 5 && stage.score_quota > 0) {
 		config.score_quota = stage.score_quota;
+	}
+	if (stage.mode != 5 && stage.survive_seconds > 0) {
+		config.survive_ms = stage.survive_seconds * 1000;
 	}
 	return config;
 }
@@ -357,6 +362,17 @@ int solo_stars (bool won, double seconds, int par_seconds, int forced,
 		++stars;
 	}
 	return stars;
+}
+
+int survive_stars (bool won, int lines, int bar) {
+	// A watch has no par to race - the clock is fixed - so the mastery
+	// marks are what was cleared while holding on: the bar for the
+	// second star, twice the bar for the third.
+	if (!won) {
+		return 0;
+	}
+	return 1 + (bar > 0 && lines >= bar ? 1 : 0)
+		+ (bar > 0 && lines >= bar * 2 ? 1 : 0);
 }
 
 int boss_stars (bool won, bool sweep, bool ignited) {

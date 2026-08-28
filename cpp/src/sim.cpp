@@ -1039,6 +1039,13 @@ bool Sim::step_frame (const Event* events, size_t count) {
 		loss_frame_ = frame_;
 		piece_elapsed_.reset();
 	}
+	// The clock finish line: outlast the watch and the stage is won.
+	if (config_.survive_ms > 0 && !won_ && !lost_ && !clearing_
+		&& frame_ * 20 >= config_.survive_ms) {
+		won_ = true;
+		loss_frame_ = frame_;
+		piece_elapsed_.reset();
+	}
 	// Overdrive burns down in real frames, clearing or not; when it gutters
 	// out the gauge starts over from empty.
 	if (overdrive_frames_ > 0 && --overdrive_frames_ == 0) {

@@ -292,7 +292,14 @@ freezes solid and shatters one lock later, a stage that starts with
 Overheat already in your blood - and the boss duel carries its own blade
 (the Forgemaster fights two falls behind bellows, white heat, overheat
 and gamble). One row under the boss a **miniboss** duel bars the risky
-branch. And the fuse is a stage gimmick now, not the campaign's default:
+branch, and the battle pool itself now fields **skirmishes** (a lesser
+foe on an ordinary node), a **raid** (three hounds back to back - one
+loss closes the kennel), and **watches** (outlast the rising floor;
+the stars are the lines you cleared while holding on). A duel is fought
+face to face now - both boards full size, side by side - and a campaign
+boss fights with its own kit: telegraphed skills, two seconds of warning
+burning over your board before rust falls on it, a column seals shut,
+the iron cold-snaps, or a heat wave leans on your fuse. And the fuse is a stage gimmick now, not the campaign's default:
 most rooms play the board pure - the forced drop was the beginners' wall
 - and only Backdraft, the Overheated Wing and the duels still burn, the
 way the Dark Gallery is the room that goes dark. Above mild, a mid-fight

@@ -39,6 +39,15 @@ struct Stage {
 	// won at this score, so spins and quads are the fast way through.
 	// Set alongside quota = 0.
 	long long score_quota = 0;
+	// A finish line on the clock (mode 4 only): survive this many seconds
+	// of the rising floor and the stage is won. When set, `quota` is not
+	// a finish line but the star bar - lines cleared during the watch for
+	// the second star, twice that for the third.
+	int survive_seconds = 0;
+	// A raid (mode 5): a gauntlet of lesser foes fought back to back,
+	// comma-separated rank indices. The player must down them all; one
+	// loss ends the raid. first_to is the gauntlet's length.
+	const char* raid = nullptr;
 	int par_seconds;         // The second star's clock; 0 for bosses.
 	// V2.1: the fuse - and its forced drop - is a stage gimmick now, not
 	// the campaign's default. A recipe that sets this burns like the old
@@ -205,6 +214,9 @@ std::vector<std::string> board_rows (const Stage& stage);
 // a pure room asks for three quarters of the par.
 int solo_stars (bool won, double seconds, int par_seconds, int forced,
 	bool fused);
+// A watch's stars: the clock is fixed, so the marks are lines cleared
+// while holding on - the bar, then twice the bar.
+int survive_stars (bool won, int lines, int bar);
 int boss_stars (bool won, bool sweep, bool ignited);
 // Slag granted when a stage attempt ends. A win pays the stage's bounty
 // (first clear or repeat) plus a star bonus; a death renders the unspent

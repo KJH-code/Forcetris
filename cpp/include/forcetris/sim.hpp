@@ -78,6 +78,10 @@ struct SimConfig {
 	// quads and back-to-backs are the fast way through rather than a
 	// flourish. Zero off; this side's own, no trace sets it.
 	long long score_quota = 0;
+	// A finish line on the clock: survive this many milliseconds and the
+	// stage is won - the rising floor is the enemy and outlasting it is
+	// the job. Zero off; this side's own, no trace sets it.
+	int survive_ms = 0;
 	// The cheese race's quota of garbage rows, and survival's frames between
 	// one row rising and the next.
 	int cheese_total = 18;
@@ -317,6 +321,18 @@ public:
 	// wiring flips it each frame, and the fuse burns faster while it is up.
 	void set_pressure (bool on);
 	bool pressured () const { return pressured_; }
+
+	// A boss skill reaching in: the stage gimmicks imposed and lifted
+	// mid-game. Sealed columns and cold iron are config the sim reads
+	// live, so flipping them here takes effect on the next collision test
+	// and the next clearing pass. GUI-side only - nothing graded calls
+	// this - and the caller owns the safety of the moment (a column is
+	// never sealed under a piece that stands in it).
+	void impose_gimmick (int sealed, bool cold_iron) {
+		config_.sealed = sealed;
+		config_.cold_iron = cold_iron;
+		board_.set_sealed(sealed);
+	}
 
 private:
 	void eval_input (const std::optional<Event>& event);
