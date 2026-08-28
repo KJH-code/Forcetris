@@ -509,6 +509,19 @@ On Windows, install SDL2 through vcpkg (`vcpkg install sdl2`) or point
 commands. Dear ImGui is vendored in `third_party/imgui`, so there is nothing
 else to fetch.
 
+**The art is generated.** Every image the GUI ships - the furnace-hall
+backdrop, the nine-slice metal plates, the node and mode icons, the coin
+marks - lives in `gfx/` as PNGs that `tools/make_gfx.py` painted (PIL,
+drawn at 4x and downscaled, deterministic), so the look is versioned
+twice: as the pictures the game reads and as the code that made them.
+`gui/gfx.cpp` loads them through a vendored `stb_image` into a texture
+cache, with a nine-slice helper for the plates; two bundled OFL faces in
+`gfx/fonts` (Marcellus for headings, Cinzel Decorative for the wordmark
+and verdicts) carry the identity, the body text staying a system sans.
+Every drawing site falls back to the old procedural look when an asset
+is missing, so a checkout with no gfx directory still runs - and the
+smoke proves it.
+
 Headless machines can still prove the whole thing runs:
 `FORCETRIS_SMOKE=1500 SDL_VIDEODRIVER=dummy ./forcetris` plays that many
 frames of scripted-random input and exits (`FORCETRIS_SMOKE_STAGE=<n>`

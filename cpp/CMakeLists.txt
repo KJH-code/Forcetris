@@ -71,6 +71,7 @@ if (ANDROID)
 		gui/config.cpp
 		gui/audio.cpp
 		gui/versus.cpp
+		gui/gfx.cpp
 	)
 	target_link_libraries(main PRIVATE forcetris_core imgui SDL2::SDL2)
 	target_include_directories(main SYSTEM PRIVATE third_party/stb)
@@ -178,6 +179,7 @@ if (SDL2_FOUND)
 		gui/config.cpp
 		gui/audio.cpp
 		gui/versus.cpp
+		gui/gfx.cpp
 	)
 	target_link_libraries(forcetris PRIVATE forcetris_core imgui)
 	# stb_vorbis, vendored, for the music.

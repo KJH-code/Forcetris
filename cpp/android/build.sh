@@ -61,8 +61,8 @@ cp "$OUT/sdl2/lib/libSDL2.so" "$STAGE/lib/$ABI/"
 	"$STAGE/lib/$ABI/libmain.so" "$STAGE/lib/$ABI/libSDL2.so"
 cp "$ANDROID_NDK"/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so \
 	"$STAGE/lib/$ABI/"
-cp -r "$ROOT/sound" "$ROOT/music" "$STAGE/assets/"
-(cd "$STAGE/assets" && find sound music -type f | sort > assets.txt)
+cp -r "$ROOT/sound" "$ROOT/music" "$ROOT/gfx" "$STAGE/assets/"
+(cd "$STAGE/assets" && find sound music gfx -type f | sort > assets.txt)
 
 # --- 5. Package, align, sign. ---------------------------------------------
 aapt package -f -M "$HERE/AndroidManifest.xml" -I "$JAR" \

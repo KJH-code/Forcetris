@@ -36,6 +36,7 @@
 
 #include "audio.hpp"
 #include "config.hpp"
+#include "gfx.hpp"
 #include "forcetris/campaign.hpp"
 #include "forcetris/career.hpp"
 #include "forcetris/hiscore.hpp"
@@ -187,15 +188,25 @@ std::pair<std::string, std::string> find_font_files () {
 	return {regular, bold};
 }
 
-Fonts load_fonts () {
+Fonts load_fonts (const std::string& root) {
 	Fonts fonts;
 	ImGuiIO& io = ImGui::GetIO();
 	const auto [regular, bold] = find_font_files();
+	// The bundled display faces (OFL, in gfx/fonts): Marcellus carries the
+	// headings, Cinzel Decorative the wordmark and the big verdicts. The
+	// body stays a system sans - reading is its whole job - and a checkout
+	// without gfx/ falls back to the system bold for everything.
+	const std::string display = first_file(
+		{root + "/gfx/fonts/Marcellus-Regular.ttf"});
+	const std::string mark = first_file(
+		{root + "/gfx/fonts/CinzelDecorative-Bold.ttf"});
 	if (!regular.empty()) {
 		fonts.body = io.Fonts->AddFontFromFileTTF(regular.c_str(), ui(19.f));
 		const std::string& heavy = bold.empty() ? regular : bold;
-		fonts.head = io.Fonts->AddFontFromFileTTF(heavy.c_str(), ui(26.f));
-		fonts.title = io.Fonts->AddFontFromFileTTF(heavy.c_str(), ui(44.f));
+		fonts.head = io.Fonts->AddFontFromFileTTF(
+			(display.empty() ? heavy : display).c_str(), ui(26.f));
+		fonts.title = io.Fonts->AddFontFromFileTTF(
+			(mark.empty() ? heavy : mark).c_str(), ui(42.f));
 	}
 	if (fonts.body == nullptr) {
 		SDL_Log("no scalable font found - falling back to the bitmap font");
@@ -2608,13 +2619,29 @@ void draw_backdrop (App& app) {
 	int h = 0;
 	SDL_GetRendererOutputSize(app.renderer, &w, &h);
 	const float t = ++app.backdrop_tick * 0.01f;
-	const int bands = 12;
-	for (int i = 0; i < bands; ++i) {
-		const double part = static_cast<double>(i) / (bands - 1);
-		fill(app.renderer, 0, h * i / bands, w, h / bands + 1,
-			{static_cast<Uint8>(26 - 14 * part),
-			 static_cast<Uint8>(18 - 9 * part),
-			 static_cast<Uint8>(13 - 6 * part), 255});
+	// The hall itself is a painting now - gfx/backdrop.png, scaled to
+	// cover - with the living light drawn over it. A checkout without the
+	// art keeps the old banded gradient.
+	{
+		SDL_Rect cover{0, 0, w, h};
+		const float want = 1600.f / 900.f;
+		if (w < static_cast<int>(h * want)) {
+			cover.w = static_cast<int>(h * want);
+			cover.x = (w - cover.w) / 2;
+		} else {
+			cover.h = static_cast<int>(w / want);
+			cover.y = h - cover.h;   // Keep the furnace glow on the floor.
+		}
+		if (!gfx::draw("backdrop", cover)) {
+			const int bands = 12;
+			for (int i = 0; i < bands; ++i) {
+				const double part = static_cast<double>(i) / (bands - 1);
+				fill(app.renderer, 0, h * i / bands, w, h / bands + 1,
+					{static_cast<Uint8>(26 - 14 * part),
+					 static_cast<Uint8>(18 - 9 * part),
+					 static_cast<Uint8>(13 - 6 * part), 255});
+			}
+		}
 	}
 	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
 
@@ -4501,6 +4528,44 @@ void rank_badge (const char* name, ImU32 fill, ImU32 ink, float wide,
 	ImGui::Dummy(ImVec2(wide, tall));
 }
 
+// A nine-slice through ImGui's draw list, for art that has to live inside
+// a window (the SDL pass is under every window, so plates drawn there
+// would vanish behind the panel).
+void nine_patch (ImDrawList* dl, SDL_Texture* tex, ImVec2 a, ImVec2 b,
+		float src_border, float dst_border, ImU32 tint = IM_COL32_WHITE) {
+	int tw = 0;
+	int th = 0;
+	SDL_QueryTexture(tex, nullptr, nullptr, &tw, &th);
+	if (tw <= 0 || th <= 0) {
+		return;
+	}
+	const float u = src_border / tw;
+	const float v = src_border / th;
+	const float d = std::min({dst_border, (b.x - a.x) / 2, (b.y - a.y) / 2});
+	const float xs[4] = {a.x, a.x + d, b.x - d, b.x};
+	const float ys[4] = {a.y, a.y + d, b.y - d, b.y};
+	const float us[4] = {0.f, u, 1.f - u, 1.f};
+	const float vs[4] = {0.f, v, 1.f - v, 1.f};
+	for (int row = 0; row < 3; ++row) {
+		for (int col = 0; col < 3; ++col) {
+			dl->AddImage(reinterpret_cast<ImTextureID>(tex),
+				ImVec2(xs[col], ys[row]), ImVec2(xs[col + 1], ys[row + 1]),
+				ImVec2(us[col], vs[row]), ImVec2(us[col + 1], vs[row + 1]),
+				tint);
+		}
+	}
+}
+
+// A number with its coin: the icon when the art exists, then the figure.
+void coin_stat (const char* icon, const ImVec4& ink, const char* text) {
+	if (SDL_Texture* tex = gfx::get(icon)) {
+		ImGui::Image(reinterpret_cast<ImTextureID>(tex),
+			ImVec2(ui(18), ui(18)));
+		ImGui::SameLine(0.f, ui(5));
+	}
+	ImGui::TextColored(ink, "%s", text);
+}
+
 void draw_career (App& app) {
 	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(24)),
 		ImGuiCond_Always, ImVec2(0.5f, 0.f));
@@ -4515,8 +4580,11 @@ void draw_career (App& app) {
 	ImGui::PushFont(app.fonts.head);
 	ImGui::TextUnformatted("The Forge Map");
 	ImGui::PopFont();
-	ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f), "SLAG %d",
-		app.campaign.slag);
+	{
+		char coin[32];
+		std::snprintf(coin, sizeof coin, "SLAG %d", app.campaign.slag);
+		coin_stat("slag", ImVec4(1.f, 0.76f, 0.42f, 1.f), coin);
+	}
 	campaign::Run& run = app.campaign.run;
 	if (run.active && app.run_map.empty()) {
 		// Resumed from the file: the graph stands back up from its two
@@ -4577,8 +4645,12 @@ void draw_career (App& app) {
 			ImGui::PopFont();
 			if (open_chapter) {
 				ImGui::TextDisabled("%s", chapter.blurb);
-				ImGui::TextColored(ImVec4(1.f, 0.84f, 0.38f, 1.f),
-					"STARS %d / %d", stars, chapter.stages * 3);
+				{
+					char tally[32];
+					std::snprintf(tally, sizeof tally, "%d / %d", stars,
+						chapter.stages * 3);
+					coin_stat("star", ImVec4(1.f, 0.84f, 0.38f, 1.f), tally);
+				}
 				ImGui::SameLine();
 				if (ImGui::Button("Set out", ImVec2(ui(100), 0))) {
 					begin_run(app, static_cast<int>(c),
@@ -4597,8 +4669,11 @@ void draw_career (App& app) {
 		const campaign::Chapter& chapter
 			= campaign::chapters()[static_cast<size_t>(run.chapter)];
 		ImGui::Text("Chapter %d - %s", run.chapter + 1, chapter.name);
-		ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f), "EMBERS %d",
-			run.embers);
+		{
+			char coin[32];
+			std::snprintf(coin, sizeof coin, "EMBERS %d", run.embers);
+			coin_stat("ember", ImVec4(1.f, 0.76f, 0.42f, 1.f), coin);
+		}
 		ImGui::SameLine();
 		ImGui::TextDisabled("%s fire", campaign::difficulty_name(
 			run.difficulty));
@@ -4659,35 +4734,81 @@ void draw_career (App& app) {
 				ImGui::SetCursorPosX(x);
 				x += node_w + lane_gap;
 				ImGui::PushID(static_cast<int>(at));
-				// A fought node wears its ember gold, the boss its duel
-				// gold, a stop its cooler smith's-blue-grey; what cannot
-				// be reached goes ashen.
-				if (taken) {
-					ImGui::PushStyleColor(ImGuiCol_Button,
-						IM_COL32(122, 84, 40, 255));
-				} else if (node.kind == 1) {
-					ImGui::PushStyleColor(ImGuiCol_Button,
-						pickable ? IM_COL32(196, 132, 40, 255)
-						         : IM_COL32(70, 52, 34, 255));
-				} else if (!pickable) {
-					ImGui::PushStyleColor(ImGuiCol_Button,
-						IM_COL32(52, 42, 36, 255));
-				} else if (stop) {
-					ImGui::PushStyleColor(ImGuiCol_Button,
-						IM_COL32(72, 84, 96, 255));
-				} else {
-					ImGui::PushStyleColor(ImGuiCol_Button,
-						IM_COL32(120, 66, 30, 255));
-				}
+				// The node as a struck plate: the frame art, the kind's own
+				// icon, and the name beside it. A fought node wears warm
+				// gold, the boss burns, a stop cools toward steel, and what
+				// cannot be reached falls into shadow.
+				const ImVec2 pen = ImGui::GetCursorScreenPos();
+				ImGui::PushStyleColor(ImGuiCol_Button,
+					ImVec4(0.f, 0.f, 0.f, 0.f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+					ImVec4(0.f, 0.f, 0.f, 0.f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+					ImVec4(0.f, 0.f, 0.f, 0.f));
 				ImGui::BeginDisabled(!pickable || !app.offers.empty()
 					|| app.visiting >= 0);
-				if (ImGui::Button(label, ImVec2(node_w, node_h))) {
+				const bool went = ImGui::Button("##node",
+					ImVec2(node_w, node_h));
+				ImGui::EndDisabled();
+				ImGui::PopStyleColor(3);
+				const bool hot = ImGui::IsItemHovered(
+					ImGuiHoveredFlags_AllowWhenDisabled);
+				ImDrawList* pdl = ImGui::GetWindowDrawList();
+				const ImVec2 plow(pen.x + node_w, pen.y + node_h);
+				ImU32 tint = IM_COL32_WHITE;
+				if (taken) {
+					tint = IM_COL32(255, 214, 150, 255);
+				} else if (!pickable) {
+					tint = IM_COL32(105, 100, 95, 255);
+				} else if (node.kind == 1) {
+					tint = IM_COL32(255, 200, 120, 255);
+				} else if (stop) {
+					tint = IM_COL32(190, 205, 220, 255);
+				}
+				if (SDL_Texture* plate = gfx::get("plate")) {
+					nine_patch(pdl, plate, pen, plow, 14.f, ui(10), tint);
+				} else {
+					pdl->AddRectFilled(pen, plow, taken
+						? IM_COL32(122, 84, 40, 255)
+						: pickable ? IM_COL32(64, 48, 36, 255)
+						           : IM_COL32(42, 36, 32, 255), ui(5));
+				}
+				if (pickable) {
+					const float beat = 0.5f
+						+ 0.5f * std::sin(app.backdrop_tick * 0.06f);
+					pdl->AddRect(pen, plow, hot
+						? IM_COL32(255, 138, 58, 240)
+						: IM_COL32(255, 138, 58,
+							static_cast<int>(90 + 110 * beat)),
+						ui(5), 0, ui(2));
+				}
+				const char* face = node.kind == 1 ? "node_boss"
+					: node.kind == 2 ? "node_forge"
+					: node.kind == 3 ? "node_event" : "node_battle";
+				// The kind's icon shows on every node, reachable or not -
+				// seeing where the forge and the events wait is what picking
+				// a path is about.
+				float name_x = pen.x + ui(8);
+				if (SDL_Texture* mark = gfx::get(face)) {
+					const float s = node_h - ui(10);
+					pdl->AddImage(reinterpret_cast<ImTextureID>(mark),
+						ImVec2(pen.x + ui(5), pen.y + ui(5)),
+						ImVec2(pen.x + ui(5) + s, pen.y + ui(5) + s),
+						ImVec2(0, 0), ImVec2(1, 1), tint);
+					name_x = pen.x + ui(9) + s;
+				}
+				const ImU32 name_ink = !pickable && !taken
+					? IM_COL32(120, 112, 104, 255)
+					: node.kind == 1 ? IM_COL32(255, 214, 96, 255)
+					: IM_COL32(235, 223, 206, 255);
+				pdl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.84f,
+					ImVec2(name_x, pen.y
+						+ (node_h - ImGui::GetFontSize() * 0.84f) / 2),
+					name_ink, label);
+				if (went) {
 					enter_node(app, static_cast<int>(at));
 				}
-				ImGui::EndDisabled();
-				ImGui::PopStyleColor();
-				if (ImGui::IsItemHovered(
-					ImGuiHoveredFlags_AllowWhenDisabled)) {
+				if (hot) {
 					ImGui::SetTooltip("%s", promise);
 				}
 				tops[at] = ImVec2(
@@ -4713,17 +4834,26 @@ void draw_career (App& app) {
 			for (const int to : app.run_map[at].next) {
 				const bool to_taken = std::find(run.path.begin(),
 					run.path.end(), to) != run.path.end();
-				ImU32 ink = IM_COL32(90, 74, 60, 130);
+				ImU32 ink = IM_COL32(90, 74, 60, 120);
+				ImU32 halo = 0;
 				float thick = ui(1);
 				if (from_taken && to_taken) {
-					ink = IM_COL32(255, 214, 96, 220);
-					thick = ui(3);
+					ink = IM_COL32(255, 214, 96, 230);
+					halo = IM_COL32(255, 180, 70, 70);
+					thick = ui(2.5f);
 				} else if ((from_here
 						|| (run.path.empty()
 							&& app.run_map[at].depth == 0))
 					&& node_pickable(app, to)) {
-					ink = IM_COL32(232, 140, 60, 200);
+					ink = IM_COL32(240, 140, 58, 220);
+					halo = IM_COL32(240, 120, 50, 60);
 					thick = ui(2);
+				}
+				// The glow is a fat soft pass under a thin bright core -
+				// a lit chain, not a diagram's line.
+				if (halo != 0) {
+					draw->AddLine(tops[at],
+						bottoms[static_cast<size_t>(to)], halo, thick * 3.f);
 				}
 				draw->AddLine(tops[at], bottoms[static_cast<size_t>(to)],
 					ink, thick);
@@ -4892,68 +5022,64 @@ void draw_career (App& app) {
 	}
 }
 
-// A mode entry: the same button as before, with a coloured edge down its
-// left side and a small emblem struck into it. `mark` picks the shape -
-// 0 flame, 1 hourglass, 2 rising floor, 3 brick, 4 crossed blades.
-bool mode_button (const char* label, int mark, ImU32 tint, float width,
-		float height) {
+
+// A card: a metal plate, an emblem, a name and one line of promise - the
+// whole face one button. This is what the menu and the mode picker are
+// made of now; without the art it degrades to a clean flat card, so a
+// bare checkout still has a working menu.
+bool card_button (App& app, const char* icon, const char* name,
+		const char* note, float width, float height, bool primary = false) {
 	const ImVec2 at = ImGui::GetCursorScreenPos();
-	const bool clicked = ImGui::Button(label, ImVec2(width, height));
-	ImDrawList* draw = ImGui::GetWindowDrawList();
-	// The edge: a thick warm stripe that names the mode's family.
-	draw->AddRectFilled(ImVec2(at.x, at.y + ui(4)),
-		ImVec2(at.x + ui(4), at.y + height - ui(4)), tint, ui(2));
-	const float mid = at.y + height / 2.f;
-	const float cx = at.x + ui(24);
-	const float r = height * 0.26f;
-	switch (mark) {
-		case 0:   // A flame.
-			draw->AddTriangleFilled(ImVec2(cx, mid - r * 1.3f),
-				ImVec2(cx - r * 0.75f, mid + r * 0.7f),
-				ImVec2(cx + r * 0.75f, mid + r * 0.7f), tint);
-			draw->AddCircleFilled(ImVec2(cx, mid + r * 0.45f), r * 0.62f,
-				tint);
-			break;
-		case 1:   // An hourglass.
-			draw->AddTriangleFilled(ImVec2(cx - r, mid - r),
-				ImVec2(cx + r, mid - r), ImVec2(cx, mid), tint);
-			draw->AddTriangleFilled(ImVec2(cx - r, mid + r),
-				ImVec2(cx + r, mid + r), ImVec2(cx, mid), tint);
-			break;
-		case 2:   // A floor, rising.
-			draw->AddRectFilled(ImVec2(cx - r, mid + r * 0.5f),
-				ImVec2(cx + r, mid + r), tint);
-			draw->AddTriangleFilled(ImVec2(cx, mid - r),
-				ImVec2(cx - r * 0.7f, mid + r * 0.1f),
-				ImVec2(cx + r * 0.7f, mid + r * 0.1f), tint);
-			break;
-		case 3:   // Brickwork.
-			for (int row = 0; row < 2; ++row) {
-				for (int col = 0; col < 2; ++col) {
-					const float ox = (row % 2) * r * 0.4f;
-					draw->AddRectFilled(
-						ImVec2(cx - r + ox + col * r * 0.95f,
-							mid - r * 0.6f + row * r * 0.7f),
-						ImVec2(cx - r * 0.2f + ox + col * r * 0.95f,
-							mid - r * 0.05f + row * r * 0.7f), tint);
-				}
-			}
-			break;
-		case 5: {  // A hammer over an anvil: the blade being worked.
-			draw->AddRectFilled(ImVec2(cx - r, mid + r * 0.35f),
-				ImVec2(cx + r, mid + r * 0.8f), tint, ui(1));
-			draw->AddRectFilled(ImVec2(cx - r * 0.5f, mid - r),
-				ImVec2(cx + r * 0.95f, mid - r * 0.5f), tint, ui(1));
-			draw->AddLine(ImVec2(cx - r * 0.25f, mid - r * 0.5f),
-				ImVec2(cx - r * 0.6f, mid + r * 0.3f), tint, ui(3));
-			break;
-		}
-		default:  // Crossed blades.
-			draw->AddLine(ImVec2(cx - r, mid - r), ImVec2(cx + r, mid + r),
-				tint, ui(3));
-			draw->AddLine(ImVec2(cx + r, mid - r), ImVec2(cx - r, mid + r),
-				tint, ui(3));
-			break;
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.f, 0.f, 0.f, 0.f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.f, 0.f, 0.f, 0.f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.f, 0.f, 0.f, 0.f));
+	char id[96];
+	std::snprintf(id, sizeof id, "##card_%s", name);
+	const bool clicked = ImGui::Button(id, ImVec2(width, height));
+	ImGui::PopStyleColor(3);
+	const bool hot = ImGui::IsItemHovered();
+	const bool held = ImGui::IsItemActive();
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	const ImVec2 low(at.x + width, at.y + height);
+	SDL_Texture* plate = gfx::get("plate");
+	if (plate != nullptr) {
+		nine_patch(dl, plate, at, low, 14.f, ui(12),
+			held ? IM_COL32(255, 226, 200, 255)
+			     : hot ? IM_COL32(255, 210, 180, 255) : IM_COL32_WHITE);
+	} else {
+		dl->AddRectFilled(at, low, IM_COL32(32, 25, 20, 255), ui(6));
+	}
+	if (hot || primary) {
+		// The living edge: ember for the pointer, a steady gold breath for
+		// the one card the screen most wants pressed.
+		const float beat = hot ? 1.f
+			: 0.6f + 0.4f * std::sin(app.backdrop_tick * 0.05f);
+		dl->AddRect(at, low,
+			hot ? IM_COL32(255, 138, 58, 230)
+			    : IM_COL32(255, 214, 96, static_cast<int>(120 * beat)),
+			ui(6), 0, ui(2));
+	}
+	const float pad = ui(10);
+	float text_x = at.x + pad;
+	if (SDL_Texture* art = gfx::get(icon)) {
+		const float s = height - pad * 1.6f;
+		const float top = at.y + (height - s) / 2;
+		dl->AddImage(reinterpret_cast<ImTextureID>(art),
+			ImVec2(at.x + pad, top), ImVec2(at.x + pad + s, top + s));
+		text_x = at.x + pad * 1.8f + s;
+	}
+	const ImU32 name_ink = primary ? IM_COL32(255, 214, 96, 255)
+		: IM_COL32(235, 223, 206, 255);
+	if (note != nullptr && note[0] != '\0') {
+		dl->AddText(app.fonts.head, app.fonts.head->FontSize * 0.82f,
+			ImVec2(text_x, at.y + height * 0.16f), name_ink, name);
+		dl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.86f,
+			ImVec2(text_x, at.y + height * 0.55f),
+			IM_COL32(154, 138, 120, 255), note);
+	} else {
+		dl->AddText(app.fonts.head, app.fonts.head->FontSize * 0.78f,
+			ImVec2(text_x, at.y + (height
+				- app.fonts.head->FontSize * 0.78f) / 2), name_ink, name);
 	}
 	return clicked;
 }
@@ -5025,38 +5151,46 @@ void draw_menus (App& app) {
 		ImGui::PopFont();
 		ImGui::TextDisabled("every piece burns");
 		ImGui::Dummy(ImVec2(0.f, ui(10)));
-		if (ImGui::Button("Play", ImVec2(ui(260), ui(44)))) {
-			app.screen = Screen::Modes;
-			app.mode_popup = 0;
-		}
-		ImGui::Dummy(ImVec2(0.f, ui(2)));
-		if (ImGui::Button("Career", ImVec2(ui(260), ui(44)))) {
+		// The two doors, as cards: the campaign is the game, so it stands
+		// first and biggest with a gold breath on its edge.
+		if (card_button(app, "em_map", "The Forge Map",
+			"Climb the map, forge a build.",
+			ui(310), ui(62), true)) {
 			app.career = career::load(career::path(app.root));
 			app.campaign = campaign::load(campaign::path(app.root));
 			app.screen = Screen::Career;
 		}
-		ImGui::Dummy(ImVec2(0.f, ui(6)));
-		if (ImGui::Button("How to play", ImVec2(ui(260), 0))) {
-			app.help_back = Screen::Menu;
-			app.screen = Screen::Help;
+		ImGui::Dummy(ImVec2(0.f, ui(2)));
+		if (card_button(app, "em_free", "Quick Play",
+			"The yard: six fires, no map.",
+			ui(310), ui(54))) {
+			app.screen = Screen::Modes;
+			app.mode_popup = 0;
 		}
-		if (ImGui::Button("High scores", ImVec2(ui(260), 0))) {
-			app.score_page = 0;
-			app.screen = Screen::Scores;
-		}
-		if (ImGui::Button("Replays", ImVec2(ui(260), 0))) {
+		ImGui::Dummy(ImVec2(0.f, ui(8)));
+		if (card_button(app, "ic_replay", "Replays", "", ui(310), ui(38))) {
 			app.shelf = replay::listing(replay::folder(app.root));
 			app.screen = Screen::Replays;
 		}
-		if (ImGui::Button("Profile", ImVec2(ui(260), 0))) {
+		if (card_button(app, "ic_profile", "Profile", "", ui(310), ui(38))) {
 			app.history = profile::load(profile::path(app.root));
 			app.screen = Screen::Profile;
 		}
-		if (ImGui::Button("Settings", ImVec2(ui(260), 0))) {
+		if (card_button(app, "ic_scores", "High scores", "",
+			ui(310), ui(38))) {
+			app.score_page = 0;
+			app.screen = Screen::Scores;
+		}
+		if (card_button(app, "ic_help", "How to play", "", ui(310), ui(38))) {
+			app.help_back = Screen::Menu;
+			app.screen = Screen::Help;
+		}
+		if (card_button(app, "ic_settings", "Settings", "",
+			ui(310), ui(38))) {
 			app.show_settings = true;
 		}
 		ImGui::Dummy(ImVec2(0.f, ui(6)));
-		if (ImGui::Button("Quit", ImVec2(ui(260), 0))) {
+		if (ImGui::Button("Quit", ImVec2(ui(310), 0))) {
 			app.quit = true;
 		}
 		ImGui::End();
@@ -5180,46 +5314,44 @@ void draw_menus (App& app) {
 			ImGui::Begin("mode select", nullptr, box);
 			forge_panel(app);
 			ImGui::PushFont(app.fonts.head);
-			ImGui::TextUnformatted("Choose a mode");
+			ImGui::TextUnformatted("The Training Yard");
 			ImGui::PopFont();
+			ImGui::TextDisabled("Six fires, no map. Pick one and burn.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (mode_button("Tempering", 5, IM_COL32(214, 128, 62, 255), ui(280), ui(44))) {
+			const float card_wide = ui(330);
+			const float card_tall = ui(54);
+			if (card_button(app, "em_temper", "Tempering",
+				"Twelve heats, a temper drafted at each.",
+				card_wide, card_tall)) {
 				start_game(app, 6);
 			}
-			ImGui::TextDisabled("The run: twelve heats, a temper drafted");
-			ImGui::TextDisabled("at each. Forge the blade or go cold.");
-			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (mode_button("Ignition", 0, IM_COL32(255, 138, 58, 255), ui(280), ui(44))) {
+			if (card_button(app, "em_free", "Ignition",
+				"Endless. Burn for as long as you can.",
+				card_wide, card_tall)) {
 				start_game(app, 0);
 			}
-			ImGui::TextDisabled("Endless. The fuse shortens, the drafts");
-			ImGui::TextDisabled("keep coming; burn for as long as you can.");
-			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (mode_button("Blaze", 1, IM_COL32(255, 196, 78, 255), ui(280), ui(44))) {
+			if (card_button(app, "em_blaze", "Blaze",
+				"Three minutes; the multiplier climbs.",
+				card_wide, card_tall)) {
 				start_game(app, 1);
 			}
-			ImGui::TextDisabled("Three minutes on the clock; the multiplier");
-			ImGui::TextDisabled("climbs as it drains. Make them count.");
-			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (mode_button("Inferno", 2, IM_COL32(232, 96, 44, 255), ui(280), ui(44))) {
+			if (card_button(app, "em_inferno", "Inferno",
+				"The floor rises and the fuse shrinks.",
+				card_wide, card_tall)) {
 				start_game(app, 2);
 			}
-			ImGui::TextDisabled("The floor rises, the levels ramp, and the");
-			ImGui::TextDisabled("fuse keeps shrinking.");
-			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (mode_button("Meltdown / Bunker", 3, IM_COL32(196, 122, 70, 255), ui(280), ui(44))) {
+			if (card_button(app, "em_cheese", "Meltdown / Bunker",
+				"Dig the cheese down, or outlast it.",
+				card_wide, card_tall)) {
 				app.mode_popup = 1;
 			}
-			ImGui::TextDisabled("Race a stack of holey garbage down, or");
-			ImGui::TextDisabled("outlast the rising floor. Cut to taste.");
-			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			if (mode_button("Duel", 4, IM_COL32(255, 214, 96, 255), ui(280), ui(44))) {
+			if (card_button(app, "em_duel", "Duel",
+				"The bot, rank D through X, own blade.",
+				card_wide, card_tall)) {
 				app.mode_popup = 2;
 			}
-			ImGui::TextDisabled("Fight the bot, rank D through X.");
-			ImGui::TextDisabled("Every rank carries its own blade.");
 			ImGui::Dummy(ImVec2(0.f, ui(6)));
-			if (ImGui::Button("Back", ImVec2(ui(280), 0))) {
+			if (ImGui::Button("Back", ImVec2(card_wide, 0))) {
 				app.screen = Screen::Menu;
 			}
 			ImGui::End();
@@ -5911,6 +6043,7 @@ int run (bool smoke, long smoke_frames) {
 	}
 	app.glow = make_glow(app.renderer);
 	app.flames = make_flames(app.renderer);
+	gfx::init(app.renderer, app.root);
 	if (kMobile) {
 		int w = 0;
 		int h = 0;
@@ -5923,7 +6056,7 @@ int run (bool smoke, long smoke_frames) {
 	ImGui::CreateContext();
 	ImGui::GetIO().IniFilename = nullptr;
 	apply_theme();
-	app.fonts = load_fonts();
+	app.fonts = load_fonts(app.root);
 	ImGui_ImplSDL2_InitForSDLRenderer(app.window, app.renderer);
 	ImGui_ImplSDLRenderer2_Init(app.renderer);
 
@@ -6162,7 +6295,7 @@ int run (bool smoke, long smoke_frames) {
 			apply_mobile_layout(w, h);
 			layout_touch(app, w, h);
 			ImGui::GetIO().Fonts->Clear();
-			app.fonts = load_fonts();
+			app.fonts = load_fonts(app.root);
 			ImGui_ImplSDLRenderer2_DestroyDeviceObjects();
 			ImGui::GetStyle() = ImGuiStyle();
 			apply_theme();
@@ -6536,6 +6669,7 @@ int run (bool smoke, long smoke_frames) {
 	if (app.glow != nullptr) {
 		SDL_DestroyTexture(app.glow);
 	}
+	gfx::shutdown();
 	SDL_DestroyRenderer(app.renderer);
 	SDL_DestroyWindow(app.window);
 	SDL_Quit();
