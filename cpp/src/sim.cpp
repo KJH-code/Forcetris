@@ -73,6 +73,8 @@ Sim::Sim (const SimConfig& config, std::vector<int> pieces)
 	soft_delay_ = std::max(1, py_round(fall_delay_ / static_cast<double>(config.sdf)));
 	timer_ms_ = config.gametype == 1 ? config.timer_ms : 0;
 	lines_cleared_ = config.start_lines;
+	// Sealed Columns is terrain, so it lives on the board from the start.
+	board_.set_sealed(config.sealed);
 	piece_.form = GARBAGE;
 }
 
@@ -685,7 +687,8 @@ void Sim::clearing_step () {
 		if (clear_phase_ == 0) {
 			int base = 0;
 			int dug = 0;
-			const int rows = board_.clear_pass(config_.cleartype, base, dug);
+			const int rows = board_.clear_pass(
+				config_.cleartype, base, dug, config_.cold_iron);
 			downstack_ += dug;
 			if (rows > 0) {
 				// One yield with sprites: the pass's rows named and heard.
@@ -709,6 +712,13 @@ void Sim::clearing_step () {
 			// final - which is the moment the placement can be scored in full.
 			if (!last_cue.empty()) {
 				cue(last_cue);
+			}
+			// Cold Iron: only now, with every already-frozen row shattered
+			// and settled, do the rows this lock completed freeze - so a row
+			// never freezes and shatters inside the same lock. The cue is
+			// sim-side like the fuse cues: no graded trace runs cold iron.
+			if (config_.cold_iron && board_.freeze_full_rows() > 0) {
+				cue("freeze");
 			}
 			clearing_ = false;
 			resolve_score();

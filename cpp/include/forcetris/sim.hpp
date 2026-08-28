@@ -86,6 +86,17 @@ struct SimConfig {
 	// emptying column x, built by the session from these settings.
 	int cheese_holes = 1;
 	int cheese_messiness = 100;
+	// The V2.1 stage gimmicks, this side's own like the cheese knobs: no
+	// trace ever sets either, and at their defaults the sim is the graded
+	// engine unchanged.
+	// Sealed Columns: bit x walls column x off for the whole game - the
+	// forge narrows. Pieces cannot enter a sealed column, the spin rules
+	// read it as wall, and a row completes without it.
+	int sealed = 0;
+	// Cold Iron: a completed row does not clear - it freezes solid where it
+	// stands, and the first clearing pass of a later lock shatters it, with
+	// the line credit paid then. Every clear takes one extra beat.
+	bool cold_iron = false;
 
 	// The fuse ruleset - the variant's own core, this side only. With `fuse`
 	// false the sim is the graded engine unchanged, and no trace ever sets
@@ -186,7 +197,12 @@ public:
 
 	// Start from a board other than an empty one. Only sensible before the
 	// first step, which is when a seeded trace or a practice setup wants it.
-	void seed (const Board& board) { board_ = board; }
+	// The sealed mask is the config's, not the seed's: a preset board built
+	// by from_rows knows nothing about the stage's walls.
+	void seed (const Board& board) {
+		board_ = board;
+		board_.set_sealed(config_.sealed);
+	}
 
 	// The fuse, Flow and clearing rules replaced mid-run, which is what a
 	// Tempering draft does to a game already in progress. Only those fields

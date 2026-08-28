@@ -273,6 +273,12 @@ SimConfig overridden (const Stage& stage, SimConfig config) {
 	if (stage.spin_rule >= 0) {
 		config.spin_rule = stage.spin_rule;
 	}
+	if (stage.sealed != 0) {
+		config.sealed = stage.sealed;
+	}
+	if (stage.cold_iron) {
+		config.cold_iron = true;
+	}
 	if (stage.mode == 3) {
 		config.cheese_total = stage.quota;
 	} else if (stage.mode != 5 && stage.quota > 0) {

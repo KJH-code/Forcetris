@@ -239,6 +239,15 @@ def ic_boss(d, s):
         fill=GOLD)
 
 
+def ic_mini(d, s):
+    # The miniboss: the boss's anvil, uncrowned, with a single blade
+    # struck across it - a duel, but not yet the master's.
+    anvil(d, s, 0.8, 0.1)
+    stroke(d, [(s * 0.24, s * 0.14), (s * 0.76, s * 0.6)], int(s * 0.055))
+    stroke(d, [(s * 0.64, s * 0.5), (s * 0.58, s * 0.7)], int(s * 0.05))
+    stroke(d, [(s * 0.84, s * 0.54), (s * 0.68, s * 0.76)], int(s * 0.05))
+
+
 def ic_forge(d, s):
     anvil(d, s, 0.86, 0.14)
     flame(d, s, s * 0.5, s * 0.26, 0.3)
@@ -428,6 +437,7 @@ def main():
     icon("node_boss", 64, ic_boss)
     icon("node_forge", 64, ic_forge)
     icon("node_event", 64, ic_event)
+    icon("node_mini", 64, ic_mini)
     icon("lock", 64, ic_lock, glow=False)
     icon("ember", 28, ic_ember)
     icon("slag", 28, ic_slag, glow=False)

@@ -44,6 +44,9 @@ struct Stage {
 	bool no_kicks = false;
 	int cleartype = -1;
 	int spin_rule = -1;
+	// The V2.1 simmed gimmicks, wired through to SimConfig's own fields.
+	int sealed = 0;          // Sealed Columns: bit x walls column x off.
+	bool cold_iron = false;  // Cold Iron: clears freeze, then shatter.
 	bool pressure = false;   // The fuse burns hot all stage. Solo only.
 	// The seen-not-simmed gimmicks, read by the GUI the way preheat is:
 	// the sim's rules never change, only what the player is shown.
@@ -94,11 +97,12 @@ constexpr int kMapDepth = 6;
 // What a node holds. `kind` is written into no file yet, but its values
 // are frozen the way ids are: 0 battle, 1 boss, 2 forge (a draft, the
 // paid extras and the melting pot, no fight), 3 event (one card of
-// choice); rest arrives in a later version and takes the next number.
+// choice), 4 miniboss (a duel on the risky branch under the boss); rest
+// arrives in a later version and takes the next number.
 struct MapNode {
 	int depth = 0;             // Row, 0 entrance .. kMapDepth-1 boss.
 	int lane = 0;              // Position in the row, left to right.
-	int kind = 0;              // 0 battle, 1 boss, 2 forge, 3 event.
+	int kind = 0;              // 0 battle, 1 boss, 2 forge, 3 event, 4 miniboss.
 	int stage = 0;             // Flat index into stages(); -1 off-battle.
 	std::vector<int> next;     // Node indices in the row above.
 };

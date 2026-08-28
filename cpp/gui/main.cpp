@@ -2316,8 +2316,36 @@ void draw_board (App& app) {
 	}
 
 	const Board& board = sim.board();
+	// Sealed Columns: the walled-off files drawn as riveted steel plate,
+	// floor to sky, so the narrowed forge reads at a glance. board.at()
+	// reports these cells as wall for the rules; here they get their own
+	// dress instead of the garbage char.
+	const int sealed = board.sealed();
+	for (int x = 0; x < kWidth; ++x) {
+		if (!(sealed >> x & 1)) {
+			continue;
+		}
+		const int wx = kBoardX + x * kCell;
+		fill(renderer, wx, kBoardY, kCell, kBoardH, {46, 48, 54, 255});
+		fill(renderer, wx + 1, kBoardY, std::max(1, kCell / 10), kBoardH,
+			{78, 82, 92, 140});
+		fill(renderer, wx + kCell - 1 - std::max(1, kCell / 10), kBoardY,
+			std::max(1, kCell / 10), kBoardH, {22, 24, 28, 180});
+		// Plate seams every third row, a rivet centred on each seam.
+		for (int y = 0; y < kHeight; y += 3) {
+			const int wy = kBoardY + y * kCell;
+			fill(renderer, wx, wy, kCell, std::max(1, kCell / 12),
+				{28, 30, 34, 255});
+			fill(renderer, wx + kCell / 2 - std::max(1, kCell / 12), wy
+				+ kCell / 2, std::max(2, kCell / 6), std::max(2, kCell / 6),
+				{96, 100, 110, 200});
+		}
+	}
 	for (int y = 0; y < kHeight; ++y) {
 		for (int x = 0; x < kWidth; ++x) {
+			if (sealed >> x & 1) {
+				continue;
+			}
 			const int form = board.at(x, y);
 			if (form == GARBAGE) {
 				draw_char_cell(renderer, kBoardX + x * kCell,
@@ -2327,6 +2355,18 @@ void draw_board (App& app) {
 					kFormColors[std::min(form, 7)]);
 			}
 		}
+	}
+	// Cold Iron: a frozen row wears a steel-blue sheen and a frost line, so
+	// "why did my clear not clear" answers itself on sight.
+	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+	for (int y = 0; y < kHeight; ++y) {
+		if (!board.iron_row(y)) {
+			continue;
+		}
+		const int wy = kBoardY + y * kCell;
+		fill(renderer, kBoardX, wy, kBoardW, kCell, {150, 190, 230, 84});
+		fill(renderer, kBoardX, wy, kBoardW, std::max(1, kCell / 8),
+			{222, 240, 255, 150});
 	}
 
 	if (sim.entry() && sim.piece().form <= 6) {
@@ -2795,6 +2835,10 @@ void juice_cue (App& app, const std::string& cue) {
 		spawn_sparks(app, {214, 138, 82, 255}, 8, 3.6f);
 		spawn_sparks(app, {255, 150, 70, 255}, 4, 2.4f);
 		app.shake_until = app.session->sim().frame() + 8;
+	} else if (cue == "freeze") {
+		// Cold iron taking hold: frost motes, no violence - the shatter a
+		// lock later arrives as the clear it pays for.
+		spawn_sparks(app, {180, 216, 255, 255}, 5, 2.2f);
 	}
 }
 
@@ -4768,6 +4812,10 @@ void draw_career (App& app) {
 					tint = IM_COL32(105, 100, 95, 255);
 				} else if (node.kind == 1) {
 					tint = IM_COL32(255, 200, 120, 255);
+				} else if (node.kind == 4) {
+					// The miniboss: bloodied steel, hotter than a stop,
+					// colder than the boss's gold.
+					tint = IM_COL32(240, 165, 150, 255);
 				} else if (stop) {
 					tint = IM_COL32(190, 205, 220, 255);
 				}
@@ -4790,7 +4838,8 @@ void draw_career (App& app) {
 				}
 				const char* face = node.kind == 1 ? "node_boss"
 					: node.kind == 2 ? "node_forge"
-					: node.kind == 3 ? "node_event" : "node_battle";
+					: node.kind == 3 ? "node_event"
+					: node.kind == 4 ? "node_mini" : "node_battle";
 				// The kind's icon shows on every node, reachable or not -
 				// seeing where the forge and the events wait is what picking
 				// a path is about.
@@ -6614,9 +6663,13 @@ int run (bool smoke, long smoke_frames) {
 							if (!node_pickable(app, static_cast<int>(at))) {
 								continue;
 							}
-							if (app.run_map[at].kind >= 2) {
+							if (app.run_map[at].kind == 2
+								|| app.run_map[at].kind == 3) {
 								stop = static_cast<int>(at);
 							} else if (fight < 0) {
+								// Battles, the boss and the miniboss all
+								// launch a real game; any of them settles
+								// the run's fight quota.
 								fight = static_cast<int>(at);
 							}
 						}

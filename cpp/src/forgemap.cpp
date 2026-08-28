@@ -47,14 +47,22 @@ std::vector<MapNode> build_map (int chapter, unsigned seed) {
 	Roll roll(seed, chapter);
 
 	// Where this chapter's recipes live in the flat table, and how many
-	// of them are battles - everything but the boss at the end.
+	// of them are battles. A chapter's table ends with its duel recipes -
+	// the boss last, the miniboss (if it has one) just before - so the
+	// battle window is everything ahead of the trailing mode-5 block.
 	int base = 0;
 	for (int c = 0; c < chapter; ++c) {
 		base += chapters()[static_cast<size_t>(c)].stages;
 	}
 	const int count = chapters()[static_cast<size_t>(chapter)].stages;
-	const int battles = std::max(1, count - 1);
+	int duels = 0;
+	while (duels < count
+		&& stages()[static_cast<size_t>(base + count - 1 - duels)].mode == 5) {
+		++duels;
+	}
+	const int battles = std::max(1, count - duels);
 	const int boss = base + count - 1;
+	const int mini = duels >= 2 ? base + count - 2 : -1;
 
 	// The rows: two doors at the entrance, two or three lanes through the
 	// middle, the boss alone at the top.
@@ -92,6 +100,18 @@ std::vector<MapNode> build_map (int chapter, unsigned seed) {
 		}
 	}
 
+	// The miniboss, when the chapter fields one: a duel on exactly one
+	// lane of the row under the boss - the risky branch, priced in slag by
+	// its own recipe. Seated before the stops so a forge or an event never
+	// lands on top of it.
+	int mini_at = -1;
+	if (mini >= 0 && widths[kMapDepth - 2] > 1) {
+		const int lane = roll.below(widths[kMapDepth - 2]);
+		mini_at = row_at[kMapDepth - 2] + lane;
+		nodes[static_cast<size_t>(mini_at)].kind = 4;
+		nodes[static_cast<size_t>(mini_at)].stage = mini;
+	}
+
 	// The stops that are not fights: exactly one forge and one or two
 	// events, scattered over distinct middle-row nodes. The entrance rows
 	// stay battles - the first thing a run does is play - and the top row
@@ -99,7 +119,8 @@ std::vector<MapNode> build_map (int chapter, unsigned seed) {
 	{
 		std::vector<int> middle;
 		for (size_t at = 0; at < nodes.size(); ++at) {
-			if (nodes[at].depth > 0 && nodes[at].depth < kMapDepth - 1) {
+			if (nodes[at].depth > 0 && nodes[at].depth < kMapDepth - 1
+				&& static_cast<int>(at) != mini_at) {
 				middle.push_back(static_cast<int>(at));
 			}
 		}

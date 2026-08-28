@@ -123,6 +123,14 @@ add_executable(clearcheck tests/clearcheck.cpp)
 target_link_libraries(clearcheck PRIVATE forcetris_core)
 target_compile_options(clearcheck PRIVATE ${FORCETRIS_WARNINGS})
 
+add_executable(sealedcheck tests/sealedcheck.cpp)
+target_link_libraries(sealedcheck PRIVATE forcetris_core)
+target_compile_options(sealedcheck PRIVATE ${FORCETRIS_WARNINGS})
+
+add_executable(coldcheck tests/coldcheck.cpp)
+target_link_libraries(coldcheck PRIVATE forcetris_core)
+target_compile_options(coldcheck PRIVATE ${FORCETRIS_WARNINGS})
+
 add_executable(careercheck tests/careercheck.cpp)
 target_link_libraries(careercheck PRIVATE forcetris_core)
 target_compile_options(careercheck PRIVATE ${FORCETRIS_WARNINGS})
@@ -265,6 +273,8 @@ add_test(NAME opponent_check COMMAND opponentcheck)
 # The clear delay knob: the reference timing with it on, lock-frame
 # resolution with it off, and an outcome identical either way.
 add_test(NAME clear_check COMMAND clearcheck)
+add_test(NAME sealed_check COMMAND sealedcheck)
+add_test(NAME cold_check COMMAND coldcheck)
 add_test(NAME input_check COMMAND inputcheck)
 add_test(NAME fuse_check COMMAND fusecheck)
 add_test(NAME career_check COMMAND careercheck)

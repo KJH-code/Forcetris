@@ -356,6 +356,14 @@ SOUNDS.update({
         tone(196, 0.14, 0.16, 'saw', freq_end=88, release=0.5),
         sub(58, 0.16, 0.22, release=0.6),
     ), size=0.95, decay=0.72, wet=0.3, tail=0.45)), ms=13., spread=0.5),
+    # Cold iron taking hold: a high glassy ring with a frosted shimmer over
+    # it - unmistakably not a clear, because nothing fell. The line locked.
+    'freeze': lambda: widen(trim(room(mix(
+        metal(1568., 0.30, 0.20, BELL, release=0.5, strike=0.2),
+        after(0.05, metal(2093., 0.28, 0.13, BELL, release=0.55, strike=0.)),
+        highpass(tone(4200, 0.18, 0.05, 'noise', attack=0.02, release=0.6), 3000.),
+        tone(784., 0.12, 0.09, 'sine', release=0.5),
+    ), size=1.0, decay=0.78, wet=0.34, tail=0.6)), ms=12., spread=0.6),
     # A cascade: the stack giving way. Three blunt falls in quick succession,
     # each lower than the last, over a gritty rumble - rubble, not metal, so
     # it reads as the board collapsing rather than as something you struck.

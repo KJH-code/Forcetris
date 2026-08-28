@@ -26,6 +26,29 @@ void Board::clear () {
 	for (auto& row : fallen_) {
 		row.fill(false);
 	}
+	// The sealed mask survives: it is terrain, not cells. The iron marks do
+	// not - they belong to the rows that froze.
+	iron_.fill(false);
+}
+
+bool Board::row_full (int y) const {
+	for (int x = 0; x < kWidth; ++x) {
+		if (cells_[y][x] < 0 && !(sealed_ >> x & 1)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+int Board::freeze_full_rows () {
+	int frozen = 0;
+	for (int y = 0; y < kHeight; ++y) {
+		if (!iron_[y] && row_full(y)) {
+			iron_[y] = true;
+			++frozen;
+		}
+	}
+	return frozen;
 }
 
 Board Board::from_rows (const std::vector<std::string>& rows) {
@@ -105,9 +128,7 @@ bool Board::paste (const Piece& piece) {
 int Board::clear_lines () {
 	int taken = 0;
 	for (int y = kHeight - 1; y >= 0; --y) {
-		const bool full = std::all_of(
-			cells_[y].begin(), cells_[y].end(), [] (int cell) { return cell >= 0; });
-		if (!full) {
+		if (!row_full(y)) {
 			continue;
 		}
 		++taken;
@@ -115,10 +136,12 @@ int Board::clear_lines () {
 			cells_[above] = cells_[above - 1];
 			links_[above] = links_[above - 1];
 			fallen_[above] = fallen_[above - 1];
+			iron_[above] = iron_[above - 1];
 		}
 		cells_[0].fill(-1);
 		links_[0].fill(0);
 		fallen_[0].fill(false);
+		iron_[0] = false;
 		// The row that dropped into this one has not been looked at yet.
 		++y;
 	}
@@ -134,7 +157,9 @@ void Board::push_garbage_mask (int mask) {
 		cells_[y] = cells_[y + 1];
 		links_[y] = links_[y + 1];
 		fallen_[y] = fallen_[y + 1];
+		iron_[y] = iron_[y + 1];
 	}
+	iron_[kHeight - 1] = false;
 	const auto open = [mask] (int x) { return (mask >> x & 1) != 0; };
 	for (int x = 0; x < kWidth; ++x) {
 		const bool block = !open(x);
@@ -193,28 +218,29 @@ bool Board::burn_bottom_garbage () {
 		cells_[above] = cells_[above - 1];
 		links_[above] = links_[above - 1];
 		fallen_[above] = fallen_[above - 1];
+		iron_[above] = iron_[above - 1];
 	}
 	cells_[0].fill(-1);
 	links_[0].fill(0);
 	fallen_[0].fill(false);
+	iron_[0] = false;
 	return true;
 }
 
-int Board::clear_pass (int cleartype, int& base_row, int& downstacked) {
+int Board::clear_pass (int cleartype, int& base_row, int& downstacked,
+	bool iron_only) {
 	// One iteration of the clearer's `while cleared` loop: the bottom-up row
 	// scan, the link surgery, and either the in-place blanking the cascade
 	// styles use or the splice that naive rows and garbage rows always get.
 	int taken = 0;
 	base_row = 0;
 	for (int y = kHeight - 1; y >= 0; --y) {
-		bool full = true;
-		for (int x = 0; x < kWidth; ++x) {
-			if (cells_[y][x] < 0) {
-				full = false;
-				break;
-			}
+		if (!row_full(y)) {
+			continue;
 		}
-		if (!full) {
+		if (iron_only && !iron_[y]) {
+			// Cold Iron: a fresh full row does not clear - it is left for
+			// freeze_full_rows to turn to iron once the pass is done.
 			continue;
 		}
 		// The clearer's cheap garbage test: is either of the first two cells
@@ -242,6 +268,9 @@ int Board::clear_pass (int cleartype, int& base_row, int& downstacked) {
 				fallen_[y][x] = false;
 			}
 		}
+		if (cleartype > 0) {
+			iron_[y] = false;
+		}
 		if (cleartype < 1 || garbagerow) {
 			// Splice the row out and put a blank one on top. Under naive this
 			// is every row - one per pass - and under the cascade styles it is
@@ -250,10 +279,12 @@ int Board::clear_pass (int cleartype, int& base_row, int& downstacked) {
 				cells_[above] = cells_[above - 1];
 				links_[above] = links_[above - 1];
 				fallen_[above] = fallen_[above - 1];
+				iron_[above] = iron_[above - 1];
 			}
 			cells_[0].fill(-1);
 			links_[0].fill(0);
 			fallen_[0].fill(false);
+			iron_[0] = false;
 			return taken;
 		}
 	}

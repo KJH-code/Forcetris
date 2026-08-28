@@ -6,6 +6,7 @@
 // module decides - so everything a stage can do to a game is checkable here
 // without a window, and a rebalance that breaks the road's shape fails
 // before anyone plays it.
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -133,6 +134,30 @@ int main () {
 		check("the road carries a dim stage and a fog stage, bosses clear",
 			dimmed && fogged && clean_bosses);
 	}
+	{
+		// The V2.1 simmed gimmicks each have exactly one home on the road,
+		// and the bosses stay plain duels.
+		int sealed_stages = 0;
+		int cold_stages = 0;
+		bool plain_bosses = true;
+		for (const Stage& stage : campaign::stages()) {
+			if (stage.sealed != 0) {
+				++sealed_stages;
+			}
+			if (stage.cold_iron) {
+				++cold_stages;
+			}
+			if (stage.mode == 5) {
+				plain_bosses = plain_bosses
+					&& stage.sealed == 0 && !stage.cold_iron;
+			}
+		}
+		check("one sealed stage, one cold iron stage, bosses plain",
+			sealed_stages == 1 && cold_stages == 1 && plain_bosses);
+		check("and no stage still hides behind bare no_kicks",
+			std::none_of(campaign::stages().begin(), campaign::stages().end(),
+				[] (const Stage& stage) { return stage.no_kicks; }));
+	}
 
 	// --- Every override lands, and nothing else moves. ----------------------
 	{
@@ -149,6 +174,8 @@ int main () {
 		all.no_kicks = true;
 		all.cleartype = 2;
 		all.spin_rule = 1;
+		all.sealed = (1 << 0) | (1 << 9);
+		all.cold_iron = true;
 		all.tempers = "thick_wick,bellows";
 		const SimConfig raw = base();
 		const SimConfig built = campaign::stage_config(all, raw, {});
@@ -157,6 +184,7 @@ int main () {
 				&& built.fall_delay == 15 && built.cheese_holes == 3
 				&& built.cheese_messiness == 70 && built.cheese_period == 200
 				&& !built.kicks && built.cleartype == 2 && built.spin_rule == 1
+				&& built.sealed == ((1 << 0) | (1 << 9)) && built.cold_iron
 				&& built.cheese_total == 12
 				&& std::abs(built.overdrive_secs - (raw.overdrive_secs + 3.))
 					< 1e-9);
@@ -416,6 +444,11 @@ int main () {
 			}
 			const int boss_stage = battle_lo
 				+ campaign::chapters()[chapter].stages - 1;
+			// The chapter's trailing mode-5 block: the boss, and the
+			// miniboss just before it when the chapter fields one.
+			const int mini_stage = boss_stage - 1;
+			const bool has_mini = campaign::stages()[
+				static_cast<size_t>(mini_stage)].mode == 5;
 			for (unsigned seed = 1; seed <= 40; ++seed) {
 				const std::vector<MapNode> map
 					= campaign::build_map(chapter, seed * 977u);
@@ -434,11 +467,14 @@ int main () {
 					shaped = shaped && widths[r] >= 2 && widths[r] <= 3;
 				}
 				// Every node's kind and stage sit in its chapter's range:
-				// battles draw from the chapter, the boss is the boss, and
-				// the map's stops - exactly one forge, one or two events -
-				// live on middle rows with no stage at all.
+				// battles draw from the chapter's battle window - never a
+				// duel recipe - the boss is the boss, the miniboss is the
+				// chapter's own on the row under the boss, and the map's
+				// stops - exactly one forge, one or two events - live on
+				// middle rows with no stage at all.
 				int forges = 0;
 				int events = 0;
+				int minis = 0;
 				for (const MapNode& node : map) {
 					const bool boss_row
 						= node.depth == campaign::kMapDepth - 1;
@@ -448,17 +484,25 @@ int main () {
 					} else if (node.kind == 0) {
 						ranged = ranged && !boss_row
 							&& node.stage >= battle_lo
-							&& node.stage < boss_stage;
+							&& node.stage < boss_stage
+							&& campaign::stages()[static_cast<size_t>(
+								node.stage)].mode != 5;
 					} else if (node.kind == 2 || node.kind == 3) {
 						++(node.kind == 2 ? forges : events);
 						ranged = ranged && node.depth > 0 && !boss_row
 							&& node.stage == -1;
+					} else if (node.kind == 4) {
+						++minis;
+						ranged = ranged && has_mini
+							&& node.depth == campaign::kMapDepth - 2
+							&& node.stage == mini_stage;
 					} else {
 						ranged = false;
 					}
 				}
 				ranged = ranged && forges == 1
-					&& events >= 1 && events <= 2;
+					&& events >= 1 && events <= 2
+					&& minis == (has_mini ? 1 : 0);
 				// Edges point one row up and never cross; every node is
 				// reachable from the entrance and reaches the boss.
 				std::vector<int> reach(map.size(), 0);

@@ -23,9 +23,9 @@ namespace campaign {
 const std::vector<Chapter>& chapters () {
 	static const std::vector<Chapter> road = {
 		{"c1", "The Outer Yard",
-			"The forge teaches one fire at a time.", 9},
+			"The forge teaches one fire at a time.", 10},
 		{"c2", "The Deep Forge",
-			"Every lesson, turned against you.", 9},
+			"Every lesson, turned against you.", 10},
 	};
 	return road;
 }
@@ -84,9 +84,13 @@ const std::vector<Stage>& stages () {
 
 		s = Stage{};
 		s.id = "c1s5"; s.name = "Rusted Joints";
-		s.blurb = "The walls give nothing back: no kicks. Fifteen lines.";
+		s.blurb = "Rust has sealed the outer galleries shut. Fifteen lines"
+			" in a narrowed forge.";
 		s.mode = 0; s.quota = 15; s.par_seconds = 150;
-		s.no_kicks = true;
+		// V2.1 re-dress: "no kicks" was a rulebook gimmick nobody could see.
+		// Sealed Columns is the same room made visible - the two outer
+		// columns walled off, the whole stage fought eight wide.
+		s.sealed = (1 << 0) | (1 << 9);
 		s.slag_first = 20; s.slag_repeat = 5;
 		list.push_back(s);
 
@@ -112,6 +116,18 @@ const std::vector<Stage>& stages () {
 		s.mode = 0; s.quota = 20; s.par_seconds = 170;
 		s.pressure = true; s.fuse_scale = 0.9;
 		s.slag_first = 24; s.slag_repeat = 6;
+		list.push_back(s);
+
+		// V2.1: the chapter's miniboss - a duel on the risky branch, one
+		// row under the boss. By convention every chapter's table ends
+		// [battles..., miniboss, boss]: the map generator counts the
+		// trailing mode-5 recipes off the battle window and seats the
+		// second-to-last as the kind-4 node.
+		s = Stage{};
+		s.id = "c1m1"; s.name = "The Underwarden";
+		s.blurb = "The keeper's apprentice bars the short way up. A duel.";
+		s.mode = 5; s.rank = 0; s.first_to = 1;
+		s.slag_first = 30; s.slag_repeat = 6;
 		list.push_back(s);
 
 		s = Stage{};
@@ -165,9 +181,13 @@ const std::vector<Stage>& stages () {
 
 		s = Stage{};
 		s.id = "c2s5"; s.name = "The Buried Hall";
-		s.blurb = "Deep rubble and rigid walls. Eighteen lines out.";
+		s.blurb = "Dig the hall out from under five floors of rubble."
+			" Eighteen lines.";
 		s.mode = 0; s.quota = 18; s.par_seconds = 180;
-		s.no_kicks = true;
+		// V2.1 re-dress: the rubble is the event and stays; the invisible
+		// "no kicks" rider is gone, per the rulebook-gimmick purge. The
+		// wick tightens a touch so the room keeps its deep-chapter weight.
+		s.fuse_scale = 0.95;
 		s.board = "7.77777777\n77777.7777\n777.777777\n7777777.77\n77.7777777";
 		s.slag_first = 30; s.slag_repeat = 7;
 		list.push_back(s);
@@ -182,10 +202,23 @@ const std::vector<Stage>& stages () {
 
 		s = Stage{};
 		s.id = "c2s7"; s.name = "Cold Iron";
-		s.blurb = "The deepest room: fast, short, unforgiving. 25 lines.";
-		s.mode = 0; s.quota = 25; s.par_seconds = 200;
-		s.fuse_scale = 0.75; s.fall_delay = 15;
+		s.blurb = "The iron freezes as it lands: every line must be broken"
+			" twice. Eighteen lines.";
+		s.mode = 0; s.quota = 18; s.par_seconds = 210;
+		// V2.1 rebuild: the old dress was bare parameter extremes (gravity
+		// and wick cranked). Now the room is cold instead - completed rows
+		// freeze solid and shatter one lock later - and the dials relax to
+		// merely brisk so the gimmick is the fight.
+		s.cold_iron = true;
+		s.fuse_scale = 0.9; s.fall_delay = 22;
 		s.slag_first = 34; s.slag_repeat = 8;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c2m1"; s.name = "The Quenchguard";
+		s.blurb = "The master's second, cold and quick. A duel.";
+		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.slag_first = 45; s.slag_repeat = 9;
 		list.push_back(s);
 
 		s = Stage{};
