@@ -118,6 +118,20 @@ int main () {
 			++within;
 		}
 		check("spot_of agrees with the chapter table", spotted);
+		// The seen-not-simmed gimmicks exist on the road: at least one
+		// lantern stage and one smoked queue, and neither on a boss.
+		bool dimmed = false;
+		bool fogged = false;
+		bool clean_bosses = true;
+		for (const Stage& stage : campaign::stages()) {
+			dimmed = dimmed || stage.dim;
+			fogged = fogged || stage.fog;
+			if (stage.mode == 5) {
+				clean_bosses = clean_bosses && !stage.dim && !stage.fog;
+			}
+		}
+		check("the road carries a dim stage and a fog stage, bosses clear",
+			dimmed && fogged && clean_bosses);
 	}
 
 	// --- Every override lands, and nothing else moves. ----------------------
@@ -419,14 +433,32 @@ int main () {
 				for (int r = 1; r < campaign::kMapDepth - 1; ++r) {
 					shaped = shaped && widths[r] >= 2 && widths[r] <= 3;
 				}
-				// Every node's kind and stage sit in its chapter's range.
+				// Every node's kind and stage sit in its chapter's range:
+				// battles draw from the chapter, the boss is the boss, and
+				// the map's stops - exactly one forge, one or two events -
+				// live on middle rows with no stage at all.
+				int forges = 0;
+				int events = 0;
 				for (const MapNode& node : map) {
-					const bool boss = node.depth == campaign::kMapDepth - 1;
-					ranged = ranged && node.kind == (boss ? 1 : 0)
-						&& (boss ? node.stage == boss_stage
-							: node.stage >= battle_lo
-								&& node.stage < boss_stage);
+					const bool boss_row
+						= node.depth == campaign::kMapDepth - 1;
+					if (node.kind == 1) {
+						ranged = ranged && boss_row
+							&& node.stage == boss_stage;
+					} else if (node.kind == 0) {
+						ranged = ranged && !boss_row
+							&& node.stage >= battle_lo
+							&& node.stage < boss_stage;
+					} else if (node.kind == 2 || node.kind == 3) {
+						++(node.kind == 2 ? forges : events);
+						ranged = ranged && node.depth > 0 && !boss_row
+							&& node.stage == -1;
+					} else {
+						ranged = false;
+					}
 				}
+				ranged = ranged && forges == 1
+					&& events >= 1 && events <= 2;
 				// Edges point one row up and never cross; every node is
 				// reachable from the entrance and reaches the boss.
 				std::vector<int> reach(map.size(), 0);

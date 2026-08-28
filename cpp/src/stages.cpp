@@ -23,9 +23,9 @@ namespace campaign {
 const std::vector<Chapter>& chapters () {
 	static const std::vector<Chapter> road = {
 		{"c1", "The Outer Yard",
-			"The forge teaches one fire at a time.", 8},
+			"The forge teaches one fire at a time.", 9},
 		{"c2", "The Deep Forge",
-			"Every lesson, turned against you.", 8},
+			"Every lesson, turned against you.", 9},
 	};
 	return road;
 }
@@ -99,6 +99,14 @@ const std::vector<Stage>& stages () {
 		list.push_back(s);
 
 		s = Stage{};
+		s.id = "c1s9"; s.name = "The Dark Gallery";
+		s.blurb = "Only your lantern lights the well. Twelve lines.";
+		s.mode = 0; s.quota = 12; s.par_seconds = 140;
+		s.dim = true;
+		s.slag_first = 22; s.slag_repeat = 5;
+		list.push_back(s);
+
+		s = Stage{};
 		s.id = "c1s7"; s.name = "Backdraft";
 		s.blurb = "The fuse burns hot the whole way. Twenty lines.";
 		s.mode = 0; s.quota = 20; s.par_seconds = 170;
@@ -136,6 +144,14 @@ const std::vector<Stage>& stages () {
 		s.mode = 0; s.quota = 20; s.par_seconds = 170;
 		s.cleartype = 2; s.spin_rule = 3;
 		s.slag_first = 28; s.slag_repeat = 6;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c2s9"; s.name = "Smoke in the Rafters";
+		s.blurb = "The queue is smoked over: one piece ahead. Eighteen.";
+		s.mode = 0; s.quota = 18; s.par_seconds = 170;
+		s.fog = true;
+		s.slag_first = 30; s.slag_repeat = 7;
 		list.push_back(s);
 
 		s = Stage{};

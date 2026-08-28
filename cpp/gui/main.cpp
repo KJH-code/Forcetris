@@ -404,6 +404,21 @@ struct App {
 	int pick_difficulty = campaign::kMild;
 	// A reward hand on the map takes into the run's build, not a session's.
 	bool offer_reward = false;
+	// A forge or event node being visited: the node index (already spent -
+	// entering a stop consumes it, so quitting mid-visit can never farm
+	// it), and whether this forge visit has drawn its free hand.
+	int visiting = -1;
+	bool forge_hand_used = false;
+	// The seen-not-simmed stage gimmicks, read from the recipe at launch:
+	// dim lights only a lantern around the piece (the lantern glides after
+	// it), fog smokes the queue over past the first piece.
+	bool stage_dim = false;
+	bool stage_fog = false;
+	float lantern_x = 0.f;
+	float lantern_y = 0.f;
+	// How much garbage stood on the board last frame, so a survival rise
+	// lands as an event - a shudder and a thud - not a silent shift.
+	int last_garbage_cells = 0;
 	// Tempering: the rules the run started from, the tempers drafted since,
 	// how many heats have been forged, and the three cards on the table
 	// right now - which is also the flag for "the board is waiting".
@@ -693,6 +708,9 @@ void start_game (App& app, int mode,
 	app.hiscore_place = -1;
 	app.score_saved = false;
 	app.countdown = app.start_delay;
+	app.stage_dim = false;
+	app.stage_fog = false;
+	app.last_garbage_cells = 0;
 	reset_effects(app);
 	app.audio.start_music();
 }
@@ -724,6 +742,9 @@ void deal_versus_round (App& app) {
 	app.versus->begin_round(app.seeds(), meta, app.versus_bot_base,
 		app.versus_blade);
 	app.countdown = app.start_delay;
+	app.stage_dim = false;
+	app.stage_fog = false;
+	app.last_garbage_cells = 0;
 	reset_effects(app);
 }
 
@@ -961,7 +982,15 @@ void start_stage (App& app, int index, int run_node = -1) {
 	app.run_node = run_node;
 	app.run_ended = false;
 	app.node_done = false;
+	app.visiting = -1;
 	app.mode = stage.mode;
+	// The recipe's seen-not-simmed gimmicks, and the lantern starting over
+	// the spawn point so a dark stage does not open on a black well.
+	app.stage_dim = stage.dim;
+	app.stage_fog = stage.fog;
+	app.lantern_x = kBoardX + (kSpawnX + 0.5f) * kCell;
+	app.lantern_y = kBoardY + 2.5f * kCell;
+	app.last_garbage_cells = 0;
 	app.offers.clear();
 	app.offer_reward = false;
 	app.offer_at = 0;
@@ -1136,6 +1165,105 @@ void start_run_node (App& app, int node) {
 	if (node_pickable(app, node)) {
 		start_stage(app, app.run_map[static_cast<size_t>(node)].stage, node);
 	}
+}
+
+// One card of choice at an event node. Every effect is instant - nothing
+// lingers past the visit, so the save never needs a "next battle" field -
+// and which event waits at a node is a pure function of the run's seed,
+// the same promise the map itself makes.
+struct MapEvent {
+	const char* name;
+	const char* text;
+	const char* deed;   // The accept button's word.
+};
+const MapEvent kMapEvents[4] = {
+	{"The Scrap Dealer",
+		"A cart of old iron, and a hand that pays in embers.\n"
+		"Sell what you are not carrying anyway.", "Sell (+14 embers)"},
+	{"The Tithe",
+		"A slot in the wall, old as the forge. What goes in\n"
+		"does not come back - but the metal remembers.",
+		"Pay 10 embers (+8 slag)"},
+	{"A Stray Spark",
+		"Something glowing in the ash, still alive. It will\n"
+		"jump to whoever reaches first.", "Take it"},
+	{"The Quench Trough",
+		"Cold water, deep enough to unmake a temper. The last\n"
+		"one you picked would go quietly.", "Quench it"},
+};
+
+int event_of (const App& app, int node) {
+	return static_cast<int>((app.campaign.run.seed
+		^ (0x9e3779b9u * static_cast<unsigned>(node + 1))) % 4);
+}
+
+void apply_event (App& app, int id) {
+	campaign::Run& run = app.campaign.run;
+	switch (id) {
+		case 0:
+			run.embers += 14;
+			app.audio.play("hold");
+			break;
+		case 1:
+			if (run.embers >= 10) {
+				run.embers -= 10;
+				app.campaign.slag += 8;
+				app.audio.play("b2b");
+			}
+			break;
+		case 2: {
+			// The spark is whatever the forge would have offered here; a
+			// dry pool pays embers instead of nothing.
+			const std::vector<std::string> hand = temper::offer(
+				run.seed ^ 0x27d4eb2fu, run.depth, run.tempers);
+			if (!hand.empty()) {
+				run.tempers.push_back(hand.front());
+				app.tempers = run.tempers;
+				app.audio.play("b2b");
+			} else {
+				run.embers += 6;
+			}
+			break;
+		}
+		case 3:
+			if (!run.tempers.empty()) {
+				run.tempers.pop_back();
+				app.tempers = run.tempers;
+				app.audio.play("clear");
+			} else {
+				run.embers += 4;
+			}
+			break;
+		default:
+			break;
+	}
+}
+
+// A stop on the map, entered: the node is spent on the way in - path and
+// depth advance immediately and are saved, so quitting mid-visit can
+// never farm a forge twice - and the overlay stays up until Leave.
+void enter_node (App& app, int node) {
+	if (!node_pickable(app, node) || app.visiting >= 0) {
+		return;
+	}
+	const campaign::MapNode& at = app.run_map[static_cast<size_t>(node)];
+	if (at.kind != 2 && at.kind != 3) {
+		start_run_node(app, node);
+		return;
+	}
+	campaign::Run& run = app.campaign.run;
+	run.path.push_back(node);
+	run.depth += 1;
+	app.visiting = node;
+	app.forge_hand_used = false;
+	campaign::save(campaign::path(app.root), app.campaign);
+	app.audio.play("hold");
+}
+
+void leave_visit (App& app) {
+	app.visiting = -1;
+	app.forge_hand_used = false;
+	campaign::save(campaign::path(app.root), app.campaign);
 }
 
 // The retry, with the map in mind: a stage on a living run restarts as
@@ -2277,6 +2405,49 @@ void draw_board (App& app) {
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 	}
 
+	if (app.stage_dim) {
+		// The Dark Gallery: only a lantern around the falling piece lights
+		// the well. The lantern glides after the piece rather than jumping
+		// with it - and when there is no piece (a clear resolving, the
+		// countdown) it simply stays where it last stood, so the dark
+		// never blinks. Presentation only: the sim under it is unchanged,
+		// and the HUD outside the well stays lit.
+		if (sim.entry() && sim.piece().form <= 6) {
+			float cx = 0.f;
+			float cy = 0.f;
+			const auto cells = cells_of(sim.piece());
+			for (const Offset cell : cells) {
+				cx += cell.x + 0.5f;
+				cy += cell.y + 0.5f;
+			}
+			const float tx = kBoardX + cx / kCells * kCell;
+			const float ty = kBoardY + cy / kCells * kCell;
+			app.lantern_x += (tx - app.lantern_x) * 0.2f;
+			app.lantern_y += (ty - app.lantern_y) * 0.2f;
+		}
+		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+		const float lit = 3.2f * kCell;    // Full light inside this...
+		const float dark = 6.5f * kCell;   // ...and full dark past this.
+		for (int y = 0; y < kHeight; ++y) {
+			for (int x = 0; x < kWidth; ++x) {
+				const float dx
+					= kBoardX + (x + 0.5f) * kCell - app.lantern_x;
+				const float dy
+					= kBoardY + (y + 0.5f) * kCell - app.lantern_y;
+				const float span = std::sqrt(dx * dx + dy * dy);
+				const float gone
+					= std::clamp((span - lit) / (dark - lit), 0.f, 1.f);
+				const Uint8 shade = static_cast<Uint8>(gone * 232.f);
+				if (shade > 6) {
+					fill(renderer, kBoardX + x * kCell,
+						kBoardY + y * kCell, kCell, kCell,
+						{6, 4, 3, shade});
+				}
+			}
+		}
+		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+	}
+
 	// The hold box and the coming pieces.
 	// A slot in the furnace wall: sunk face, lit top edge, ember hairline.
 	const auto draw_slot = [renderer] (int x, int y, int w, int h,
@@ -2314,6 +2485,23 @@ void draw_board (App& app) {
 		const int x = kBoardX + kBoardW + px(18) + shrink / 2;
 		const int y = kBoardY + slot * px(92) + shrink / 2;
 		draw_slot(x, y, w, h, false);
+		if (app.stage_fog && slot > 0) {
+			// Smoke in the Rafters: everything past the first piece is
+			// smoked over - the slot stands, its contents do not read.
+			const int size = px(18) - shrink / 6;
+			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+			for (int cell = 0; cell < 3; ++cell) {
+				const float drift
+					= std::sin(sim.frame() * 0.05f + slot * 1.7f + cell);
+				fill(renderer,
+					x + px(24) + cell * size
+						+ static_cast<int>(drift * px(3)),
+					y + px(20) + (cell % 2) * (size / 2), size, size,
+					{92, 88, 84, static_cast<Uint8>(120 + 40 * drift)});
+			}
+			SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+			continue;
+		}
 		draw_preview(renderer, queue[slot], x + px(16) - shrink / 2,
 			y + px(12), px(18) - shrink / 6);
 	}
@@ -4449,8 +4637,17 @@ void draw_career (App& app) {
 				if (node.depth != r) {
 					continue;
 				}
-				const campaign::Stage& stage = campaign::stages()[
-					static_cast<size_t>(node.stage)];
+				// What the button says and promises, by kind: a battle
+				// carries its stage's name and gimmick, a stop its own.
+				const bool stop = node.kind == 2 || node.kind == 3;
+				const campaign::Stage* stage = stop ? nullptr
+					: &campaign::stages()[static_cast<size_t>(node.stage)];
+				const char* label = node.kind == 2 ? "The Forge"
+					: node.kind == 3 ? "? ? ?" : stage->name;
+				const char* promise = node.kind == 2
+					? "No fight here: draw a temper, melt one down."
+					: node.kind == 3 ? "Something waits. It never fights."
+					: stage->blurb;
 				const bool taken = std::find(run.path.begin(),
 					run.path.end(), static_cast<int>(at)) != run.path.end();
 				const bool pickable
@@ -4463,7 +4660,8 @@ void draw_career (App& app) {
 				x += node_w + lane_gap;
 				ImGui::PushID(static_cast<int>(at));
 				// A fought node wears its ember gold, the boss its duel
-				// gold; what cannot be reached goes ashen.
+				// gold, a stop its cooler smith's-blue-grey; what cannot
+				// be reached goes ashen.
 				if (taken) {
 					ImGui::PushStyleColor(ImGuiCol_Button,
 						IM_COL32(122, 84, 40, 255));
@@ -4474,21 +4672,23 @@ void draw_career (App& app) {
 				} else if (!pickable) {
 					ImGui::PushStyleColor(ImGuiCol_Button,
 						IM_COL32(52, 42, 36, 255));
+				} else if (stop) {
+					ImGui::PushStyleColor(ImGuiCol_Button,
+						IM_COL32(72, 84, 96, 255));
 				} else {
 					ImGui::PushStyleColor(ImGuiCol_Button,
 						IM_COL32(120, 66, 30, 255));
 				}
-				ImGui::BeginDisabled(!pickable || !app.offers.empty());
-				// The name alone: the boss says so by its gold and its row,
-				// and a prefix would only push the name off the button.
-				if (ImGui::Button(stage.name, ImVec2(node_w, node_h))) {
-					start_run_node(app, static_cast<int>(at));
+				ImGui::BeginDisabled(!pickable || !app.offers.empty()
+					|| app.visiting >= 0);
+				if (ImGui::Button(label, ImVec2(node_w, node_h))) {
+					enter_node(app, static_cast<int>(at));
 				}
 				ImGui::EndDisabled();
 				ImGui::PopStyleColor();
 				if (ImGui::IsItemHovered(
 					ImGuiHoveredFlags_AllowWhenDisabled)) {
-					ImGui::SetTooltip("%s", stage.blurb);
+					ImGui::SetTooltip("%s", promise);
 				}
 				tops[at] = ImVec2(
 					(ImGui::GetItemRectMin().x
@@ -4530,9 +4730,11 @@ void draw_career (App& app) {
 			}
 		}
 		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		ImGui::BeginDisabled(app.visiting >= 0 || !app.offers.empty());
 		if (ImGui::SmallButton("Abandon the climb")) {
 			ImGui::OpenPopup("abandon");
 		}
+		ImGui::EndDisabled();
 		if (ImGui::BeginPopup("abandon")) {
 			ImGui::TextUnformatted("Put the run down? The embers render");
 			ImGui::TextUnformatted("to slag; the map is lost.");
@@ -4599,6 +4801,95 @@ void draw_career (App& app) {
 		app.screen = Screen::Menu;
 	}
 	ImGui::End();
+
+	if (app.visiting >= 0 && app.offers.empty()
+		&& app.visiting < static_cast<int>(app.run_map.size())) {
+		// A stop's own room, over the map. While a forge hand is on the
+		// table the spoils overlay (drawn later) covers this window; it
+		// comes back when the cards are gone.
+		const campaign::MapNode& node
+			= app.run_map[static_cast<size_t>(app.visiting)];
+		campaign::Run& visited = app.campaign.run;
+		ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2,
+			ImGui::GetIO().DisplaySize.y / 2), ImGuiCond_Always,
+			ImVec2(0.5f, 0.5f));
+		ImGui::Begin("visit", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+			| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+			| ImGuiWindowFlags_NoTitleBar
+			| ImGuiWindowFlags_NoSavedSettings);
+		forge_panel(app);
+		if (node.kind == 2) {
+			ImGui::PushFont(app.fonts.head);
+			ImGui::TextUnformatted("The Forge");
+			ImGui::PopFont();
+			ImGui::TextDisabled("No fight in this room. The smith deals a");
+			ImGui::TextDisabled("free hand, and melts what you regret.");
+			ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f), "EMBERS %d",
+				visited.embers);
+			ImGui::Spacing();
+			ImGui::BeginDisabled(app.forge_hand_used);
+			if (ImGui::Button(app.forge_hand_used
+				? "Hand drawn" : "Draw a hand (free)", ImVec2(ui(200), 0))) {
+				app.forge_hand_used = true;
+				deal_reward(app);
+			}
+			ImGui::EndDisabled();
+			if (!visited.tempers.empty()) {
+				ImGui::Spacing();
+				ImGui::TextUnformatted("Melt down");
+				int melted = -1;
+				for (size_t i = 0; i < visited.tempers.size(); ++i) {
+					const temper::Temper* card
+						= temper::find(visited.tempers[i]);
+					ImGui::PushID(static_cast<int>(i));
+					ImGui::TextUnformatted(card != nullptr
+						? card->name : visited.tempers[i].c_str());
+					ImGui::SameLine();
+					ImGui::BeginDisabled(
+						visited.embers < temper::kRemoveCost);
+					char label[32];
+					std::snprintf(label, sizeof label, "Remove (%d)",
+						temper::kRemoveCost);
+					if (ImGui::SmallButton(label)) {
+						melted = static_cast<int>(i);
+					}
+					ImGui::EndDisabled();
+					ImGui::PopID();
+				}
+				if (melted >= 0) {
+					visited.embers -= temper::kRemoveCost;
+					visited.tempers.erase(visited.tempers.begin() + melted);
+					app.tempers = visited.tempers;
+					app.audio.play("clear");
+					campaign::save(campaign::path(app.root), app.campaign);
+				}
+			}
+			ImGui::Spacing();
+			if (ImGui::Button("Leave", ImVec2(ui(140), 0))) {
+				leave_visit(app);
+			}
+		} else {
+			const int id = event_of(app, app.visiting);
+			const MapEvent& event = kMapEvents[id];
+			ImGui::PushFont(app.fonts.head);
+			ImGui::TextUnformatted(event.name);
+			ImGui::PopFont();
+			ImGui::TextDisabled("%s", event.text);
+			ImGui::Spacing();
+			// The Tithe asks for coin it may not have; the button stays
+			// readable but quiet rather than promising what cannot happen.
+			ImGui::BeginDisabled(id == 1 && visited.embers < 10);
+			if (ImGui::Button(event.deed, ImVec2(ui(220), 0))) {
+				apply_event(app, id);
+				leave_visit(app);
+			}
+			ImGui::EndDisabled();
+			if (ImGui::Button("Walk away", ImVec2(ui(220), 0))) {
+				leave_visit(app);
+			}
+		}
+		ImGui::End();
+	}
 }
 
 // A mode entry: the same button as before, with a coloured edge down its
@@ -5358,8 +5649,10 @@ std::string screen_shot_key (const App& app) {
 		case Screen::Viewer: return "viewer";
 		case Screen::Scores: return "scores";
 		case Screen::Career:
-			// The map with the spoils on it is its own picture.
-			return !app.offers.empty() ? "spoils" : "career";
+			// The map with the spoils on it, or with a stop's room open,
+			// is its own picture.
+			return !app.offers.empty() ? "spoils"
+				: app.visiting >= 0 ? "visit" : "career";
 		case Screen::Help: return "help";
 		case Screen::Analysis:
 			return app.studying.has_value() ? "analysis" : "analysis_empty";
@@ -5653,11 +5946,15 @@ int run (bool smoke, long smoke_frames) {
 			app.config.cheese_period = 150;
 		}
 		if (std::getenv("FORCETRIS_SMOKE_RUN") != nullptr) {
-			// The whole roguelite loop under the masher: set out on chapter
-			// one at a fixed seed, and the block at the loop's tail keeps
-			// picking nodes and spoils until the frame budget runs out.
+			// The whole roguelite loop under the masher: resume the file's
+			// run if one is under way - resuming is part of what the mode
+			// promises - otherwise set out on chapter one at a fixed seed.
+			// The block at the loop's tail keeps picking nodes and spoils
+			// until the frame budget runs out.
 			app.campaign = campaign::load(campaign::path(app.root));
-			begin_run(app, 0, campaign::kMild, 20260827u);
+			if (!app.campaign.run.active) {
+				begin_run(app, 0, campaign::kMild, 20260827u);
+			}
 			app.screen = Screen::Career;
 		} else if (const char* stage = std::getenv("FORCETRIS_SMOKE_STAGE")) {
 			// A Forge Road stage under the masher, so every recipe's whole
@@ -5938,6 +6235,27 @@ int run (bool smoke, long smoke_frames) {
 					}
 				}
 				app.last_pending = pending;
+				// A survival floor rising is an event, not a silent shift:
+				// count the garbage standing in the well, and let a rise
+				// land with a shudder and a thud - the quake the recipe
+				// promises, made audible.
+				if (app.mode == 4) {
+					int standing = 0;
+					for (int y = 0; y < kHeight; ++y) {
+						for (int x = 0; x < kWidth; ++x) {
+							standing += sim.board().at(x, y) == GARBAGE
+								? 1 : 0;
+						}
+					}
+					if (standing > app.last_garbage_cells
+						&& sim.frame() > 1) {
+						app.audio.play("hit");
+						if (app.config.shake) {
+							app.shake_until = sim.frame() + 4;
+						}
+					}
+					app.last_garbage_cells = standing;
+				}
 				// The wire's traffic becomes streaks between the boards.
 				if (app.versus.has_value()) {
 					if (app.versus->wire_to_bot > 0) {
@@ -6124,16 +6442,46 @@ int run (bool smoke, long smoke_frames) {
 					app.node_done = false;
 					app.screen = Screen::Career;
 				} else if (app.screen == Screen::Career
-					&& app.offers.empty() && !app.map_reward) {
-					if (!app.campaign.run.active) {
+					&& app.offers.empty() && !app.map_reward
+					&& frames % 8 == 0) {
+					// Acting only every so often leaves the map and the
+					// stops' rooms on screen long enough to be drawn - and
+					// shot - instead of flickering past in a frame.
+					if (app.visiting >= 0) {
+						{
+						// A stop resolves itself: the forge draws its free
+						// hand (the auto-pick above takes it), an event
+						// accepts its card, and either way the visit ends.
+						const campaign::MapNode& stop = app.run_map[
+							static_cast<size_t>(app.visiting)];
+						if (stop.kind == 2 && !app.forge_hand_used) {
+							app.forge_hand_used = true;
+							deal_reward(app);
+						} else if (stop.kind == 3) {
+							apply_event(app, event_of(app, app.visiting));
+							leave_visit(app);
+						} else {
+							leave_visit(app);
+						}
+						}
+					} else if (!app.campaign.run.active) {
 						begin_run(app, 0, campaign::kMild, app.seeds());
 					} else {
+						// Prefer a stop when one is open, so the forge and
+						// event paths get walked too, not only fought past.
+						int fight = -1;
+						int stop = -1;
 						for (size_t at = 0; at < app.run_map.size(); ++at) {
-							if (node_pickable(app, static_cast<int>(at))) {
-								start_run_node(app, static_cast<int>(at));
-								break;
+							if (!node_pickable(app, static_cast<int>(at))) {
+								continue;
+							}
+							if (app.run_map[at].kind >= 2) {
+								stop = static_cast<int>(at);
+							} else if (fight < 0) {
+								fight = static_cast<int>(at);
 							}
 						}
+						enter_node(app, stop >= 0 ? stop : fight);
 					}
 				}
 			} else if (app.screen == Screen::Over) {

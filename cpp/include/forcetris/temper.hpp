@@ -95,7 +95,9 @@ std::vector<std::string> blade_for (int rank_index);
 // live totals on the sim.
 int embers_of (int lines, int attack);
 constexpr int kRerollCost = 6;      // Deal this heat's three again.
-constexpr int kExtraPickCost = 14;  // Take a second card from the offer.
+constexpr int kExtraPickCost = 14;
+// Melting a picked temper back down at a forge node on the map.
+constexpr int kRemoveCost = 8;  // Take a second card from the offer.
 
 // The shape of a heat, and of the one mode that is a complete run of them:
 // ten lines to a heat (six dug rows in Meltdown), twelve heats to a

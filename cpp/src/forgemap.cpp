@@ -92,6 +92,27 @@ std::vector<MapNode> build_map (int chapter, unsigned seed) {
 		}
 	}
 
+	// The stops that are not fights: exactly one forge and one or two
+	// events, scattered over distinct middle-row nodes. The entrance rows
+	// stay battles - the first thing a run does is play - and the top row
+	// stays the boss's alone.
+	{
+		std::vector<int> middle;
+		for (size_t at = 0; at < nodes.size(); ++at) {
+			if (nodes[at].depth > 0 && nodes[at].depth < kMapDepth - 1) {
+				middle.push_back(static_cast<int>(at));
+			}
+		}
+		const int stops = 2 + roll.below(2);
+		for (int s = 0; s < stops && !middle.empty(); ++s) {
+			const int pick = roll.below(static_cast<int>(middle.size()));
+			MapNode& node = nodes[static_cast<size_t>(middle[pick])];
+			node.kind = s == 0 ? 2 : 3;
+			node.stage = -1;
+			middle.erase(middle.begin() + pick);
+		}
+	}
+
 	// The edges, rows joined by proportional intervals: node i of a row
 	// with `a` lanes reaches nodes floor(i*b/a) through ((i+1)*b-1)/a of
 	// the `b`-lane row above. The intervals tile, so every node is

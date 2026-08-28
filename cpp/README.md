@@ -290,7 +290,18 @@ take one or take nothing, reroll or a second pick paid from the run's
 purse - and every temper picked rides into every later battle of the
 climb, forged into the player's rules before the first piece falls. A
 stage never drafts mid-game any more; on the Forge Map the board never
-stops. What death costs is picked at the door: **mild** re-offers the
+stops. Not every node fights, either: each map scatters **one forge**
+(a free hand, and the melting pot - eight embers unmakes a temper you
+regret) and **one or two events** (a single card of choice, seeded like
+everything else: sell scrap, tithe embers into slag, catch a stray
+spark, quench your last pick) through the middle rows; entering a stop
+spends it, so it can never be farmed. And two stages carry gimmicks the
+sim never sees: The Dark Gallery lights only a lantern that glides after
+the falling piece, and Smoke in the Rafters smokes the queue over past
+one piece - presentation only, the graded engine untouched, which is
+the pattern every "seen, not simmed" gimmick follows. A survival floor
+rising now lands with a shudder and a thud, so the recipe's quake is
+heard as well as suffered. What death costs is picked at the door: **mild** re-offers the
 node, **forged** spends one of three lives, **white-hot** ends the climb
 outright - and heavier fires pay 150 / 200 percent slag. Death always
 renders unspent embers down to slag - the prestige loop, "the run's coin
@@ -504,11 +515,12 @@ frames of scripted-random input and exits (`FORCETRIS_SMOKE_STAGE=<n>`
 points the run at a Forge Road stage instead, so every recipe's launch,
 overrides and settlement can be proven headlessly - the campaign file is
 loaded first, the way the Career screen loads it, so the file's Anvil
-upgrades ride along; `FORCETRIS_SMOKE_RUN=1` sets out on chapter one's
-map instead and drives the whole roguelite loop - node picked, battle
-fought, verdict settled, spoils taken, next node - failing if not a
-single battle settles; `FORCETRIS_CAMPAIGN` redirects campaign.dat the
-way the other data files redirect);
+upgrades ride along; `FORCETRIS_SMOKE_RUN=1` resumes the file's run or
+sets out on chapter one's map and drives the whole roguelite loop -
+node picked, stops visited, battle fought, verdict settled, spoils
+taken, next node - failing if not a single battle settles;
+`FORCETRIS_CAMPAIGN` redirects campaign.dat the way the other data
+files redirect);
 `FORCETRIS_SHOT=/path/out.bmp`
 saves the final frame. Between games it tours the screens a game never
 opens - how to play, both high score pages, the replay browser, the

@@ -45,6 +45,10 @@ struct Stage {
 	int cleartype = -1;
 	int spin_rule = -1;
 	bool pressure = false;   // The fuse burns hot all stage. Solo only.
+	// The seen-not-simmed gimmicks, read by the GUI the way preheat is:
+	// the sim's rules never change, only what the player is shown.
+	bool dim = false;        // A lantern around the piece; darkness beyond.
+	bool fog = false;        // The NEXT queue smoked over past one piece.
 	const char* board = nullptr;    // Preset rows for Board::from_rows,
 	                                // newline-separated, top row first.
 	const char* tempers = nullptr;  // Pre-applied temper ids, comma-separated.
@@ -88,13 +92,14 @@ Spot spot_of (size_t stage_index);
 // rebuilt from the save file's two numbers and graded without a window.
 constexpr int kMapDepth = 6;
 // What a node holds. `kind` is written into no file yet, but its values
-// are frozen the way ids are: 0 battle, 1 boss (forge, event and rest
-// arrive in later versions and take the next numbers).
+// are frozen the way ids are: 0 battle, 1 boss, 2 forge (a draft, the
+// paid extras and the melting pot, no fight), 3 event (one card of
+// choice); rest arrives in a later version and takes the next number.
 struct MapNode {
 	int depth = 0;             // Row, 0 entrance .. kMapDepth-1 boss.
 	int lane = 0;              // Position in the row, left to right.
-	int kind = 0;              // 0 battle, 1 boss.
-	int stage = 0;             // Flat index into stages().
+	int kind = 0;              // 0 battle, 1 boss, 2 forge, 3 event.
+	int stage = 0;             // Flat index into stages(); -1 off-battle.
 	std::vector<int> next;     // Node indices in the row above.
 };
 std::vector<MapNode> build_map (int chapter, unsigned seed);

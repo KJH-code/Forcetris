@@ -510,6 +510,9 @@ int main () {
 		check("a reroll is cheaper than a second card",
 			temper::kRerollCost > 0
 				&& temper::kExtraPickCost > temper::kRerollCost);
+		check("melting a card down sits between the two",
+			temper::kRemoveCost > temper::kRerollCost
+				&& temper::kRemoveCost < temper::kExtraPickCost);
 	}
 
 	// --- The blades. --------------------------------------------------------
