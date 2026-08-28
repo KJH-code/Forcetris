@@ -46,6 +46,12 @@ const std::vector<Upgrade>& anvil () {
 		{"bellows", "Great Bellows", "Overdrive lasts longer in stages", 2, 30},
 		{"sense", "Ember Sense", "earn more embers in stages", 2, 35},
 		{"preheat", "Preheat", "start every stage with a free draft", 1, 60},
+		// The V2.1d pair, read by begin_run: a life for the forged runs,
+		// and coin in the purse before the first fight.
+		{"lifeblood", "Forged Lifeblood",
+			"forged runs carry one more life", 1, 70},
+		{"warchest", "War Chest",
+			"runs set out with embers in the purse", 2, 40},
 	};
 	return forge;
 }

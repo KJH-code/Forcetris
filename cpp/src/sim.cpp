@@ -99,6 +99,15 @@ void Sim::retune (const SimConfig& rules) {
 	config_.flow_burn_loss = rules.flow_burn_loss;
 	config_.overdrive_secs = rules.overdrive_secs;
 	config_.overdrive_mult = rules.overdrive_mult;
+	// The card effects, and the gimmicks a card may now carry: cold iron
+	// rides a rule card, and the sealed mask must land on the board the
+	// moment the rules do.
+	config_.attack_scale = rules.attack_scale;
+	config_.crit_every = rules.crit_every;
+	config_.hold_churn = rules.hold_churn;
+	config_.cold_iron = rules.cold_iron;
+	config_.sealed = rules.sealed;
+	board_.set_sealed(config_.sealed);
 	// The bank may now hold less than it is holding; a temper that shrinks
 	// the reservoir takes the overflow with it rather than leaving a value
 	// the sim's own ceiling says is impossible.
@@ -836,6 +845,27 @@ void Sim::resolve_score () {
 				cue("burn");
 			}
 		}
+	}
+	// The card effects on the blow going out: a heavy hand scales it, and
+	// loaded dice land every Nth attacking clear double. The crit counter
+	// only ticks on clears that actually carry attack, so the promise on
+	// the card face - every third strike - is literally what happens.
+	if (total > 0 && boosted > 0) {
+		if (config_.attack_scale != 1.0) {
+			boosted = py_round(boosted * config_.attack_scale);
+		}
+		if (config_.crit_every > 0
+			&& ++crit_count_ >= config_.crit_every) {
+			crit_count_ = 0;
+			boosted *= 2;
+			cue("crit");
+		}
+	}
+	// The turning rack: every clear stirs the hold. A real state change,
+	// heard as the hold it is.
+	if (config_.hold_churn && total > 0 && stored_ >= 0 && !queue_.empty()) {
+		std::swap(stored_, queue_.front());
+		cue("hold");
 	}
 	attack_sent_ += boosted;
 	if (config_.gametype == 5) {

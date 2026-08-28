@@ -104,6 +104,13 @@ std::vector<Reading> reading_of (const SimConfig& c) {
 		{"overdrive_secs", c.overdrive_secs},
 		{"overdrive_mult", c.overdrive_mult},
 		{"fuse_pressure", c.fuse_pressure},
+		{"sealed", static_cast<double>(c.sealed)},
+		{"cold_iron", c.cold_iron ? 1. : 0.},
+		{"attack_scale", c.attack_scale},
+		{"crit_every", static_cast<double>(c.crit_every)},
+		{"hold_churn", c.hold_churn ? 1. : 0.},
+		{"score_quota", static_cast<double>(c.score_quota)},
+		{"survive_ms", static_cast<double>(c.survive_ms)},
 	};
 }
 
@@ -123,6 +130,14 @@ std::vector<std::string> claimed (const std::string& id) {
 	if (id == "gamble") return {"overdrive_mult", "flow_burn_loss"};
 	if (id == "collapse") return {"cleartype"};
 	if (id == "every_twist") return {"spin_rule"};
+	if (id == "heavy_hand") return {"attack_scale"};
+	if (id == "loaded_dice") return {"crit_every"};
+	if (id == "cold_forge") return {"cold_iron", "attack_scale"};
+	if (id == "turning_rack") return {"hold_churn"};
+	// The brands land on the FOE's board through the duel wiring, so by
+	// design they move no field of this config - the claim names the foe
+	// so the no-claim gate can tell "versus-only" from "forgotten".
+	if (id == "frostbrand" || id == "hobnails") return {"(the foe)"};
 	return {};
 }
 
@@ -261,6 +276,116 @@ int main () {
 		}
 		check("Overheat never burns the wick below the schedule's own floor",
 			hot.fuse_base >= hot.fuse_min - 1e-9, number(hot.fuse_base));
+	}
+
+	// --- The V2.1d cards' arithmetic. ---------------------------------------
+	{
+		SimConfig config = rules();
+		temper::apply(config, "heavy_hand");
+		check("Heavy Hand weighs in",
+			std::abs(config.attack_scale - 1.25) < 1e-9);
+		temper::apply(config, "heavy_hand");
+		check("and stacks", std::abs(config.attack_scale - 1.5) < 1e-9);
+
+		SimConfig dice = rules();
+		temper::apply(dice, "loaded_dice");
+		check("Loaded Dice land every third strike", dice.crit_every == 3);
+		temper::apply(dice, "loaded_dice");
+		check("and every other with the second copy", dice.crit_every == 2);
+
+		SimConfig cold = rules();
+		temper::apply(cold, "cold_forge");
+		check("Cold Forge freezes your iron and arms your hand",
+			cold.cold_iron && std::abs(cold.attack_scale - 1.75) < 1e-9);
+
+		SimConfig rack = rules();
+		temper::apply(rack, "turning_rack");
+		check("The Turning Rack stirs the hold", rack.hold_churn);
+	}
+
+	// --- The dice and the rack, through a live sim. -------------------------
+	{
+		// Two identical games of three quads, one with loaded dice: the
+		// first two strikes match, the third lands double.
+		const auto quads = [] (int crit_every) {
+			SimConfig config;
+			config.forced_delay = 0.;
+			config.finesse_rule = 0;
+			config.sdf = 40;
+			config.das_ms = 330;
+			config.clear_delay = false;
+			config.crit_every = crit_every;
+			Sim sim(config, std::vector<int>{0, 0, 0, 0, 0});
+			// A twelve-deep well: each upright I fills four rows of the
+			// gap, so three drops are three quads back to back.
+			Board board;
+			for (int y = kHeight - 12; y < kHeight; ++y) {
+				for (int x = 0; x < kWidth; ++x) {
+					if (x != kSpawnX + 1) {
+						board.set(x, y, 3);
+					}
+				}
+			}
+			sim.seed(board);
+			std::vector<int> attacks;
+			for (int piece = 0; piece < 3; ++piece) {
+				for (int i = 0; i < 100 && !sim.entry(); ++i) {
+					sim.step(std::nullopt);
+				}
+				sim.step(Event{Key::Cw, true});
+				sim.step(Event{Key::Cw, false});
+				sim.step(Event{Key::Hard, true});
+				sim.step(Event{Key::Hard, false});
+				for (int i = 0; i < 20; ++i) {
+					sim.step(std::nullopt);
+				}
+				attacks.push_back(sim.locked().back().attack);
+			}
+			return attacks;
+		};
+		const std::vector<int> plain = quads(0);
+		const std::vector<int> diced = quads(3);
+		check("the first two strikes are honest",
+			plain.size() == 3 && diced.size() == 3
+				&& plain[0] == diced[0] && plain[1] == diced[1]
+				&& plain[0] > 0);
+		check("the third lands double", diced[2] == plain[2] * 2,
+			number(diced[2]));
+
+		// The rack: hold a piece, clear a line, and the held piece has
+		// been traded for the queue's front.
+		SimConfig config;
+		config.forced_delay = 0.;
+		config.finesse_rule = 0;
+		config.sdf = 40;
+		config.das_ms = 330;
+		config.clear_delay = false;
+		config.hold_churn = true;
+		Sim sim(config, std::vector<int>{3, 0, 4, 5, 6});
+		Board board;
+		for (int x = 0; x < kWidth; ++x) {
+			if (x != kSpawnX + 1) {
+				board.set(x, kHeight - 1, 3);
+			}
+		}
+		sim.seed(board);
+		for (int i = 0; i < 100 && !sim.entry(); ++i) {
+			sim.step(std::nullopt);
+		}
+		sim.step(Event{Key::Hold, true});    // S away; the I comes out.
+		sim.step(Event{Key::Hold, false});
+		for (int i = 0; i < 100 && !sim.entry(); ++i) {
+			sim.step(std::nullopt);
+		}
+		sim.step(Event{Key::Cw, true});
+		sim.step(Event{Key::Cw, false});
+		sim.step(Event{Key::Hard, true});
+		sim.step(Event{Key::Hard, false});
+		for (int i = 0; i < 20; ++i) {
+			sim.step(std::nullopt);
+		}
+		check("the rack trades the hold on a clear",
+			sim.stored() == 4, number(sim.stored()));
 	}
 
 	// --- The roll. ----------------------------------------------------------

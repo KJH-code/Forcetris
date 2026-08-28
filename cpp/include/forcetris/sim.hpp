@@ -105,6 +105,16 @@ struct SimConfig {
 	// stands, and the first clearing pass of a later lock shatters it, with
 	// the line credit paid then. Every clear takes one extra beat.
 	bool cold_iron = false;
+	// The card effects, this side's own like the gimmicks above: no trace
+	// sets any of them, and at the defaults nothing changes.
+	// A heavy hand: outgoing attack scaled after Overdrive's boost.
+	double attack_scale = 1.0;
+	// Loaded dice: every Nth attacking clear lands double. Deterministic -
+	// the sim rolls no dice of its own - and zero is off.
+	int crit_every = 0;
+	// The turning rack: every clear stirs the hold, swapping the held
+	// piece with the queue's front. Chaos, priced as a rule card.
+	bool hold_churn = false;
 
 	// The fuse ruleset - the variant's own core, this side only. With `fuse`
 	// false the sim is the graded engine unchanged, and no trace ever sets
@@ -465,6 +475,8 @@ private:
 	int pending_garbage_ = 0;
 	int outgoing_ = 0;
 	int surge_charge_ = 0;
+	// Loaded dice: attacking clears since the last doubled one.
+	int crit_count_ = 0;
 
 	// The forced drop clock, in the same arithmetic Python runs.
 	double now_ = 0.;

@@ -42,16 +42,29 @@ const std::vector<Temper>& pool () {
 			"Overdrive hits harder", Family::Flow, 2},
 		{"spark", "Spark",
 			"Flow charges faster", Family::Flow, 2},
+		{"heavy_hand", "Heavy Hand",
+			"your attacks hit harder", Family::Flow, 2},
+		{"frostbrand", "Frostbrand",
+			"duels: the foe's clears freeze", Family::Flow, 1},
+		{"hobnails", "Hobnails",
+			"duels open with rust on the foe's floor", Family::Flow, 1},
 		// --- Risk: a gain with a price on it. ----------------------------
 		{"overheat", "Overheat",
 			"double Flow - shorter fuse", Family::Risk, 1},
 		{"gamble", "Gamble",
 			"huge Overdrive - burns cost Flow", Family::Risk, 1},
+		{"loaded_dice", "Loaded Dice",
+			"every third strike lands double", Family::Risk, 2},
+		{"cold_forge", "Cold Forge",
+			"your iron freezes - your hand strikes far harder",
+			Family::Risk, 1},
 		// --- Rule: the run becomes a different game. ----------------------
 		{"collapse", "Collapse",
 			"clears cascade", Family::Rule, 1},
 		{"every_twist", "Every Twist",
 			"every spin scores", Family::Rule, 1},
+		{"turning_rack", "The Turning Rack",
+			"every clear stirs the hold", Family::Rule, 1},
 	};
 	return all;
 }
@@ -94,7 +107,23 @@ void apply (SimConfig& rules, const std::string& id) {
 		rules.cleartype = 1;
 	} else if (id == "every_twist") {
 		rules.spin_rule = 3;
+	} else if (id == "heavy_hand") {
+		rules.attack_scale += 0.25;
+	} else if (id == "loaded_dice") {
+		// The first copy lands every third strike double; the second
+		// tightens it to every other.
+		rules.crit_every = rules.crit_every == 0 ? 3
+			: std::max(2, rules.crit_every - 1);
+	} else if (id == "cold_forge") {
+		// The price is your own iron: every clear freezes first and
+		// shatters a lock later - and the hand behind it hits far harder.
+		rules.cold_iron = true;
+		rules.attack_scale += 0.75;
+	} else if (id == "turning_rack") {
+		rules.hold_churn = true;
 	}
+	// frostbrand and hobnails touch the FOE's board, not this config: the
+	// versus wiring reads them off the run's build at every round start.
 	// An id this build does not know - a card from a newer build's replay,
 	// or one that has since been retired - is read rather than refused, so
 	// there is deliberately no terminal else.
@@ -175,7 +204,15 @@ int bot_pick (const std::vector<std::string>& offers, int rank_index,
 	std::vector<int> takeable;
 	for (size_t at = 0; at < offers.size(); ++at) {
 		const Temper* card = find(offers[at]);
-		if (card == nullptr || std::string(card->id) == "collapse") {
+		if (card == nullptr) {
+			continue;
+		}
+		// Never a card that rewrites what the planner searches with:
+		// collapse changes the clearing rule, cold forge freezes the
+		// clears, and the turning rack churns the hold under a plan
+		// already typed.
+		const std::string id = card->id;
+		if (id == "collapse" || id == "cold_forge" || id == "turning_rack") {
 			continue;
 		}
 		int weight = 0;

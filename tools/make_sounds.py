@@ -356,6 +356,14 @@ SOUNDS.update({
         tone(196, 0.14, 0.16, 'saw', freq_end=88, release=0.5),
         sub(58, 0.16, 0.22, release=0.6),
     ), size=0.95, decay=0.72, wet=0.3, tail=0.45)), ms=13., spread=0.5),
+    # Loaded dice landing: the same anvil struck twice, fast, the second
+    # blow harder and brighter - a doubled hit that sounds doubled.
+    'crit': lambda: widen(trim(room(mix(
+        metal(587.33, 0.10, 0.26, ANVIL, release=0.7, strike=0.5),
+        after(0.09, metal(880., 0.30, 0.34, ANVIL, release=0.45, strike=0.7)),
+        after(0.09, tone(1760., 0.16, 0.08, 'sine', release=0.5)),
+        after(0.08, sub(73.4, 0.22, 0.28, release=0.5)),
+    ), size=1.1, decay=0.8, wet=0.34, tail=0.7)), ms=11., spread=0.55),
     # Cold iron taking hold: a high glassy ring with a frosted shimmer over
     # it - unmistakably not a clear, because nothing fell. The line locked.
     'freeze': lambda: widen(trim(room(mix(

@@ -762,6 +762,29 @@ void start_game (App& app, int mode,
 // the career stage's tightened fuse included - can never quietly differ
 // between round one and round two, which is exactly the bug the old
 // duplicated construction had.
+// The player's own brands land on the foe at every round start: a
+// frostbrand freezes the foe's iron so its clears take an extra beat,
+// and hobnails open the round with rust already headed for its floor.
+// Run cards only - a trainer duel carries no build - and read from the
+// run itself, because the duel screen scrubs the display list.
+void apply_brands (App& app) {
+	if (app.campaign_stage < 0 || !app.versus.has_value()
+		|| !app.versus->bot.has_value()) {
+		return;
+	}
+	const std::vector<std::string>& worn = app.campaign.run.tempers;
+	const auto has = [&worn] (const char* id) {
+		return std::find(worn.begin(), worn.end(), std::string(id))
+			!= worn.end();
+	};
+	if (has("frostbrand")) {
+		app.versus->bot->sim_mutable().impose_gimmick(0, true);
+	}
+	if (has("hobnails")) {
+		app.versus->bot->receive_attack(2);
+	}
+}
+
 void deal_versus_round (App& app) {
 	// A duel never drafts, so the temper state is scrubbed rather than
 	// re-dealt: a leftover solo build would print on the pause screen, and
@@ -780,6 +803,7 @@ void deal_versus_round (App& app) {
 	// boss overrides both its base rules and its blade.
 	app.versus->begin_round(app.seeds(), meta, app.versus_bot_base,
 		app.versus_blade);
+	apply_brands(app);
 	app.countdown = app.start_delay;
 	app.stage_dim = false;
 	app.stage_fog = false;
@@ -1090,6 +1114,7 @@ void start_stage (App& app, int index, int run_node = -1) {
 		}
 		app.versus->begin_round(app.seeds(), meta, app.versus_bot_base,
 			app.versus_blade);
+		apply_brands(app);
 		app.countdown = app.start_delay;
 		reset_effects(app);
 	} else {
@@ -1188,6 +1213,15 @@ void begin_run (App& app, int chapter, int difficulty, unsigned seed) {
 	run.chapter = chapter;
 	run.seed = seed;
 	run.difficulty = difficulty;
+	// The Anvil's send-off: Forged Lifeblood adds a life (felt only on
+	// forged fire), and the War Chest puts embers in the purse before the
+	// first fight.
+	const auto level = [&app] (const char* id) {
+		const auto found = app.campaign.forge.find(id);
+		return found != app.campaign.forge.end() ? found->second : 0;
+	};
+	run.lives += level("lifeblood");
+	run.embers += 20 * level("warchest");
 	app.run_map = campaign::build_map(chapter, seed);
 	app.run_ended = false;
 	app.map_reward = false;
@@ -2954,6 +2988,12 @@ void juice_cue (App& app, const std::string& cue) {
 		// Cold iron taking hold: frost motes, no violence - the shatter a
 		// lock later arrives as the clear it pays for.
 		spawn_sparks(app, {180, 216, 255, 255}, 5, 2.2f);
+	} else if (cue == "crit") {
+		// Loaded dice landing: a white-gold burst and a jolt, so the
+		// doubled blow is felt going out.
+		spawn_sparks(app, {255, 244, 190, 255}, 7, 3.4f);
+		app.shake_until = std::max(app.shake_until,
+			app.session->sim().frame() + 5);
 	}
 }
 

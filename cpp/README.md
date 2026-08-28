@@ -309,7 +309,17 @@ The roguelite is that the build outlives the battle: a won node banks its
 embers into the run and deals **the spoils** on the map - three cards,
 take one or take nothing, reroll or a second pick paid from the run's
 purse - and every temper picked rides into every later battle of the
-climb, forged into the player's rules before the first piece falls. A
+climb, forged into the player's rules before the first piece falls. The
+pool is sixteen cards now, and the newer half plays with the fight
+itself: a heavy hand that scales your attack, loaded dice that land
+every third strike double (a counter, not a die - the sim never rolls),
+a cold forge that freezes your own iron in exchange for a far harder
+hand, a turning rack that trades the hold for the queue's front on every
+clear, and two brands that land on the foe - a frostbrand that freezes
+its clears, hobnails that open every duel round with rust already headed
+for its floor. The Anvil grew too: Forged Lifeblood buys a forged run
+one more life, and the War Chest sets a run out with embers in the
+purse. A
 stage never drafts mid-game any more; on the Forge Map the board never
 stops. Not every node fights, either: each map scatters **one forge**
 (a free hand, and the melting pot - eight embers unmakes a temper you
