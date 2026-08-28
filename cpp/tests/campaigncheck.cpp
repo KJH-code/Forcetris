@@ -524,6 +524,7 @@ int main () {
 		climbing.run.depth = 2;
 		climbing.run.path = {1, 3};
 		climbing.run.tempers = {"thick_wick", "bellows", "thick_wick"};
+		climbing.run.oils = {"hot", "frost"};
 		climbing.run.embers = 27;
 		climbing.run.lives = 2;
 		check("a run saves", campaign::save(file, climbing));
@@ -535,6 +536,7 @@ int main () {
 				&& resumed.run.depth == 2
 				&& resumed.run.path == climbing.run.path
 				&& resumed.run.tempers == climbing.run.tempers
+				&& resumed.run.oils == climbing.run.oils
 				&& resumed.run.embers == 27 && resumed.run.lives == 2);
 		climbing.run.active = false;
 		check("ending a run erases its keys",

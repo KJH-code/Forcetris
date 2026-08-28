@@ -444,6 +444,12 @@ struct App {
 	// it), and whether this forge visit has drawn its free hand.
 	int visiting = -1;
 	bool forge_hand_used = false;
+	// A life can be bought back once per forge visit, not farmed.
+	bool forge_life_used = false;
+	// The oils painted on the map, carried into the battle being launched:
+	// consumed by the launch - one coat, one fight.
+	bool oil_hot = false;
+	bool oil_frost = false;
 	// The seen-not-simmed stage gimmicks, read from the recipe at launch:
 	// dim lights only a lantern around the piece (the lantern glides after
 	// it), fog smokes the queue over past the first piece.
@@ -777,7 +783,7 @@ void apply_brands (App& app) {
 		return std::find(worn.begin(), worn.end(), std::string(id))
 			!= worn.end();
 	};
-	if (has("frostbrand")) {
+	if (has("frostbrand") || app.oil_frost) {
 		app.versus->bot->sim_mutable().impose_gimmick(0, true);
 	}
 	if (has("hobnails")) {
@@ -1077,8 +1083,25 @@ void start_stage (App& app, int index, int run_node = -1) {
 		base.cheese_messiness = 30;
 	}
 	SimConfig mine = campaign::stage_config(stage, base, app.campaign.forge);
+	app.oil_hot = false;
+	app.oil_frost = false;
 	if (run_node >= 0) {
 		mine = temper::tempered(mine, app.campaign.run.tempers);
+		// The oils spend themselves as the doors close: hot lands on this
+		// config, frost is held for the duel wiring, and both are struck
+		// off the run and saved - one coat, one fight.
+		campaign::Run& oiled = app.campaign.run;
+		if (!oiled.oils.empty()) {
+			for (const std::string& oil : oiled.oils) {
+				app.oil_hot = app.oil_hot || oil == "hot";
+				app.oil_frost = app.oil_frost || oil == "frost";
+			}
+			oiled.oils.clear();
+			campaign::save(campaign::path(app.root), app.campaign);
+		}
+		if (app.oil_hot) {
+			mine.attack_scale += 0.5;
+		}
 	}
 	const unsigned seed = app.seeds();
 	app.temper_seed = seed;
@@ -1345,6 +1368,7 @@ void enter_node (App& app, int node) {
 	run.depth += 1;
 	app.visiting = node;
 	app.forge_hand_used = false;
+	app.forge_life_used = false;
 	campaign::save(campaign::path(app.root), app.campaign);
 	app.audio.play("hold");
 }
@@ -1491,6 +1515,11 @@ void take_temper (App& app, int at) {
 void skip_reward (App& app) {
 	if (!app.offer_reward) {
 		return;
+	}
+	// Walking past the spoils untaken pays a small solace: skipping is a
+	// real choice now, not just a refusal.
+	if (app.campaign.run.active) {
+		app.campaign.run.embers += temper::kSkipSolace;
 	}
 	app.offers.clear();
 	app.offer_reward = false;
@@ -4917,6 +4946,41 @@ void draw_career (App& app) {
 			ImGui::TextColored(ImVec4(1.f, 0.6f, 0.4f, 1.f), "LIVES %d",
 				run.lives);
 		}
+		{
+			// The oils: coin spent here on the map, felt in the next battle
+			// entered, consumed as the doors close. One coat of each at a
+			// time - painting twice would just run off.
+			const auto holds = [&run] (const char* id) {
+				return std::find(run.oils.begin(), run.oils.end(),
+					std::string(id)) != run.oils.end();
+			};
+			const auto oil_button = [&] (const char* id, const char* name,
+					int cost, const char* promise) {
+				char label[48];
+				if (holds(id)) {
+					std::snprintf(label, sizeof label, "%s (painted)", name);
+				} else {
+					std::snprintf(label, sizeof label, "%s (%d)", name, cost);
+				}
+				ImGui::BeginDisabled(holds(id) || run.embers < cost);
+				if (ImGui::SmallButton(label)) {
+					run.embers -= cost;
+					run.oils.emplace_back(id);
+					app.audio.play("hold");
+					campaign::save(campaign::path(app.root), app.campaign);
+				}
+				ImGui::EndDisabled();
+				if (ImGui::IsItemHovered(
+					ImGuiHoveredFlags_AllowWhenDisabled)) {
+					ImGui::SetTooltip("%s", promise);
+				}
+			};
+			oil_button("hot", "Hot Oil", temper::kHotOilCost,
+				"Next battle: your attacks hit harder.");
+			ImGui::SameLine();
+			oil_button("frost", "Frost Oil", temper::kFrostOilCost,
+				"Next duel: the foe's clears freeze solid.");
+		}
 		if (!run.tempers.empty()) {
 			ImGui::PushTextWrapPos(0.f);
 			ImGui::TextDisabled("%s", temper_line(run.tempers).c_str());
@@ -5233,6 +5297,78 @@ void draw_career (App& app) {
 					app.audio.play("clear");
 					campaign::save(campaign::path(app.root), app.campaign);
 				}
+			}
+			{
+				// Strike again: a second copy of a card already carried,
+				// for the builds that live on stacking - offered only
+				// where the card's own stack cap leaves room.
+				std::vector<std::string> forgeable;
+				for (const std::string& id : visited.tempers) {
+					const temper::Temper* card = temper::find(id);
+					if (card == nullptr) {
+						continue;
+					}
+					const long held = std::count(visited.tempers.begin(),
+						visited.tempers.end(), id);
+					const bool listed = std::find(forgeable.begin(),
+						forgeable.end(), id) != forgeable.end();
+					if (held < card->stacks && !listed) {
+						forgeable.push_back(id);
+					}
+				}
+				if (!forgeable.empty()) {
+					ImGui::Spacing();
+					ImGui::TextUnformatted("Strike again");
+					std::string struck;
+					for (size_t i = 0; i < forgeable.size(); ++i) {
+						const temper::Temper* card
+							= temper::find(forgeable[i]);
+						ImGui::PushID(static_cast<int>(i + 100));
+						ImGui::TextUnformatted(card->name);
+						ImGui::SameLine();
+						ImGui::BeginDisabled(
+							visited.embers < temper::kDuplicateCost);
+						char label[32];
+						std::snprintf(label, sizeof label,
+							"Duplicate (%d)", temper::kDuplicateCost);
+						if (ImGui::SmallButton(label)) {
+							struck = forgeable[i];
+						}
+						ImGui::EndDisabled();
+						ImGui::PopID();
+					}
+					if (!struck.empty()) {
+						visited.embers -= temper::kDuplicateCost;
+						visited.tempers.push_back(struck);
+						app.tempers = visited.tempers;
+						app.audio.play("crit");
+						campaign::save(campaign::path(app.root),
+							app.campaign);
+					}
+				}
+			}
+			if (visited.difficulty == campaign::kForged) {
+				// A life bought back on forged fire - once a visit, and
+				// priced so it is a decision, not an errand.
+				ImGui::Spacing();
+				ImGui::BeginDisabled(app.forge_life_used
+					|| visited.embers < temper::kLifeCost
+					|| visited.lives >= 9);
+				char label[40];
+				if (app.forge_life_used) {
+					std::snprintf(label, sizeof label, "Life bought");
+				} else {
+					std::snprintf(label, sizeof label,
+						"A life for the fire (%d)", temper::kLifeCost);
+				}
+				if (ImGui::Button(label, ImVec2(ui(200), 0))) {
+					visited.embers -= temper::kLifeCost;
+					visited.lives += 1;
+					app.forge_life_used = true;
+					app.audio.play("perfect");
+					campaign::save(campaign::path(app.root), app.campaign);
+				}
+				ImGui::EndDisabled();
 			}
 			ImGui::Spacing();
 			if (ImGui::Button("Leave", ImVec2(ui(140), 0))) {
@@ -5707,8 +5843,12 @@ void draw_menus (App& app) {
 		ImGui::TextDisabled("%s", kMobile
 			? "Tap one." : "1 2 3, or the arrows and Enter.");
 		if (app.offer_reward) {
-			// The map does not insist: the climb can walk past its spoils.
-			if (ImGui::Button("Take nothing", ImVec2(ui(140), 0))) {
+			// The map does not insist: the climb can walk past its spoils,
+			// and the walk itself pays a little.
+			char pass[32];
+			std::snprintf(pass, sizeof pass, "Take nothing (+%d)",
+				temper::kSkipSolace);
+			if (ImGui::Button(pass, ImVec2(ui(170), 0))) {
 				skip_reward(app);
 			}
 		}

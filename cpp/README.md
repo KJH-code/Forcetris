@@ -319,7 +319,13 @@ clear, and two brands that land on the foe - a frostbrand that freezes
 its clears, hobnails that open every duel round with rust already headed
 for its floor. The Anvil grew too: Forged Lifeblood buys a forged run
 one more life, and the War Chest sets a run out with embers in the
-purse. A
+purse. And the coin itself has more to do than reroll a hand: the forge
+strikes a second copy of a card you carry (where its stack leaves room)
+and sells a life back on forged fire, once a visit; the map sells two
+oils good for the next battle entered - Hot Oil for a heavier hand,
+Frost Oil to freeze a duel foe's clears - painted on the map, spent as
+the doors close; and walking past the spoils untaken pays a small
+solace, so skipping is a choice instead of a refusal. A
 stage never drafts mid-game any more; on the Forge Map the board never
 stops. Not every node fights, either: each map scatters **one forge**
 (a free hand, and the melting pot - eight embers unmakes a temper you

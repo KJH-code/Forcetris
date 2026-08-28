@@ -142,6 +142,10 @@ struct Run {
 	int depth = 0;                     // The next row to fight.
 	std::vector<int> path;             // The node picked at each row done.
 	std::vector<std::string> tempers;  // The build, in pick order.
+	// Oils bought on the map, spent on the next battle entered: "hot"
+	// (the hand strikes harder) and "frost" (a duel foe's clears freeze).
+	// Consumed - and saved consumed - the moment the battle launches.
+	std::vector<std::string> oils;
 	int embers = 0;
 	int lives = kForgedLives;          // Meaningful under kForged only.
 };

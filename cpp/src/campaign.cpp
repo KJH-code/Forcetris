@@ -141,6 +141,10 @@ State load (const std::string& path) {
 			std::string csv;
 			in >> csv;
 			state.run.tempers = split_ids(csv.c_str());
+		} else if (key == "run_oils") {
+			std::string csv;
+			in >> csv;
+			state.run.oils = split_ids(csv.c_str());
 		} else if (key == "run_embers") {
 			in >> state.run.embers;
 			state.run.embers = std::max(0, state.run.embers);
@@ -198,6 +202,13 @@ bool save (const std::string& path, const State& state) {
 			out << "run_tempers ";
 			for (size_t i = 0; i < state.run.tempers.size(); ++i) {
 				out << (i > 0 ? "," : "") << state.run.tempers[i];
+			}
+			out << "\n";
+		}
+		if (!state.run.oils.empty()) {
+			out << "run_oils ";
+			for (size_t i = 0; i < state.run.oils.size(); ++i) {
+				out << (i > 0 ? "," : "") << state.run.oils[i];
 			}
 			out << "\n";
 		}

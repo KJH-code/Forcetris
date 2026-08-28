@@ -98,6 +98,15 @@ constexpr int kRerollCost = 6;      // Deal this heat's three again.
 constexpr int kExtraPickCost = 14;
 // Melting a picked temper back down at a forge node on the map.
 constexpr int kRemoveCost = 8;  // Take a second card from the offer.
+// The rest of what the coin buys (V2.1e): a second copy of a held card
+// struck at the forge, a life bought back on forged fire, the two oils
+// painted on before a battle, and the small solace for walking past the
+// spoils untaken.
+constexpr int kDuplicateCost = 16;
+constexpr int kLifeCost = 25;
+constexpr int kHotOilCost = 10;
+constexpr int kFrostOilCost = 12;
+constexpr int kSkipSolace = 4;
 
 // The shape of a heat, and of the one mode that is a complete run of them:
 // ten lines to a heat (six dug rows in Meltdown), twelve heats to a
