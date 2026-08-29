@@ -249,6 +249,93 @@ bool open (const State& state, size_t stage) {
 	return before != state.stars.end() && before->second > 0;
 }
 
+// --- Reading the road by role. ------------------------------------------
+// The table used to be read by position - the chapter's last recipe was
+// its boss, the one before it the miniboss - which meant a chapter could
+// hold exactly one of each. These five ask the recipes what they are
+// instead, so a chapter can field as many concept pairs as it likes.
+int chapter_base (int chapter) {
+	int base = 0;
+	for (int c = 0; c < chapter && c < static_cast<int>(chapters().size());
+		++c) {
+		base += chapters()[static_cast<size_t>(c)].stages;
+	}
+	return base;
+}
+
+namespace {
+
+// Every flat index of one chapter, in table order.
+std::vector<int> chapter_span (int chapter) {
+	std::vector<int> span;
+	if (chapter < 0 || chapter >= static_cast<int>(chapters().size())) {
+		return span;
+	}
+	const int base = chapter_base(chapter);
+	const int count = chapters()[static_cast<size_t>(chapter)].stages;
+	for (int i = 0; i < count; ++i) {
+		span.push_back(base + i);
+	}
+	return span;
+}
+
+} // namespace
+
+std::vector<int> chapter_rooms (int chapter) {
+	std::vector<int> rooms;
+	for (const int at : chapter_span(chapter)) {
+		if (stages()[static_cast<size_t>(at)].role == kRoom) {
+			rooms.push_back(at);
+		}
+	}
+	return rooms;
+}
+
+std::vector<int> chapter_pairs (int chapter) {
+	std::vector<int> pairs;
+	for (const int at : chapter_span(chapter)) {
+		const Stage& stage = stages()[static_cast<size_t>(at)];
+		if (stage.role != kBoss) {
+			continue;
+		}
+		if (std::find(pairs.begin(), pairs.end(), stage.pair)
+			== pairs.end()) {
+			pairs.push_back(stage.pair);
+		}
+	}
+	return pairs;
+}
+
+int pair_miniboss (int chapter, int pair) {
+	for (const int at : chapter_span(chapter)) {
+		const Stage& stage = stages()[static_cast<size_t>(at)];
+		if (stage.role == kMiniboss && stage.pair == pair) {
+			return at;
+		}
+	}
+	return -1;
+}
+
+int pair_boss (int chapter, int pair) {
+	for (const int at : chapter_span(chapter)) {
+		const Stage& stage = stages()[static_cast<size_t>(at)];
+		if (stage.role == kBoss && stage.pair == pair) {
+			return at;
+		}
+	}
+	return -1;
+}
+
+std::vector<int> chapter_bosses (int chapter) {
+	std::vector<int> bosses;
+	for (const int at : chapter_span(chapter)) {
+		if (stages()[static_cast<size_t>(at)].role == kBoss) {
+			bosses.push_back(at);
+		}
+	}
+	return bosses;
+}
+
 bool chapter_open (const State& state, int chapter) {
 	if (chapter < 0 || chapter >= static_cast<int>(chapters().size())) {
 		return false;
@@ -256,14 +343,17 @@ bool chapter_open (const State& state, int chapter) {
 	if (chapter == 0) {
 		return true;
 	}
-	// The previous chapter's boss is its last flat recipe; a star on it -
-	// any star - opens the door.
-	int boss = -1;
-	for (int c = 0; c < chapter; ++c) {
-		boss += chapters()[static_cast<size_t>(c)].stages;
+	// A star on ANY of the previous chapter's bosses opens the door: a run
+	// only ever meets the one its map rolled, so beating that one is
+	// beating the chapter.
+	for (const int boss : chapter_bosses(chapter - 1)) {
+		const auto held
+			= state.stars.find(stages()[static_cast<size_t>(boss)].id);
+		if (held != state.stars.end() && held->second > 0) {
+			return true;
+		}
 	}
-	const auto held = state.stars.find(stages()[static_cast<size_t>(boss)].id);
-	return held != state.stars.end() && held->second > 0;
+	return false;
 }
 
 int slag_percent (int difficulty) {
@@ -389,11 +479,18 @@ std::vector<std::string> board_rows (const Stage& stage) {
 }
 
 bool endless_open (const State& state) {
-	// The Deep Forge's master must have fallen at least once: the climb
-	// draws on every chapter's rooms, so it waits for the shipped road's
-	// end - not the White Heart's, which is late-game of its own.
-	const auto held = state.stars.find("c2s8");
-	return held != state.stars.end() && held->second > 0;
+	// The Deep Forge's master must have fallen at least once - whichever of
+	// its masters the run happened to climb to. The climb draws on every
+	// chapter's rooms, so it waits for the shipped road's end, not the
+	// White Heart's, which is late-game of its own.
+	for (const int boss : chapter_bosses(1)) {
+		const auto held
+			= state.stars.find(stages()[static_cast<size_t>(boss)].id);
+		if (held != state.stars.end() && held->second > 0) {
+			return true;
+		}
+	}
+	return false;
 }
 
 int endless_rows (const Run& run) {

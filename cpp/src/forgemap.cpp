@@ -46,23 +46,33 @@ std::vector<MapNode> build_map (int chapter, unsigned seed) {
 	}
 	Roll roll(seed, chapter);
 
-	// Where this chapter's recipes live in the flat table, and how many
-	// of them are battles. A chapter's table ends with its duel recipes -
-	// the boss last, the miniboss (if it has one) just before - so the
-	// battle window is everything ahead of the trailing mode-5 block.
-	int base = 0;
-	for (int c = 0; c < chapter; ++c) {
-		base += chapters()[static_cast<size_t>(c)].stages;
+	// The chapter's rooms, in table order - the road's own difficulty
+	// order - are what the battle rows draw from. Asking by role rather
+	// than counting a trailing block means new duel recipes never move
+	// the window, so a seed's map keeps the fights it always had.
+	const std::vector<int> rooms = chapter_rooms(chapter);
+	const int battles = static_cast<int>(rooms.size());
+	if (battles == 0) {
+		return nodes;
 	}
-	const int count = chapters()[static_cast<size_t>(chapter)].stages;
-	int duels = 0;
-	while (duels < count
-		&& stages()[static_cast<size_t>(base + count - 1 - duels)].mode == 5) {
-		++duels;
+
+	// Which watch stands at the top. The chapter fields several concept
+	// pairs - a miniboss and a boss who belong together - and a run
+	// climbs to exactly one of them. Rolled from its own stream so the
+	// choice of face never shifts the skeleton the main stream draws.
+	const std::vector<int> pairs = chapter_pairs(chapter);
+	int boss = -1;
+	int mini = -1;
+	if (!pairs.empty()) {
+		Roll pick(seed ^ 0x5bf03635u, chapter);
+		const int pair = pairs[static_cast<size_t>(
+			pick.below(static_cast<int>(pairs.size())))];
+		boss = pair_boss(chapter, pair);
+		mini = pair_miniboss(chapter, pair);
 	}
-	const int battles = std::max(1, count - duels);
-	const int boss = base + count - 1;
-	const int mini = duels >= 2 ? base + count - 2 : -1;
+	if (boss < 0) {
+		boss = rooms.back();
+	}
 
 	// The rows: two doors at the entrance, two or three lanes through the
 	// middle, the boss alone at the top.
@@ -94,7 +104,8 @@ std::vector<MapNode> build_map (int chapter, unsigned seed) {
 					? r * (battles - 1) / (kMapDepth - 2) : 0;
 				const int lo = std::max(0, centre - 1);
 				const int hi = std::min(battles - 1, centre + 1);
-				node.stage = base + lo + roll.below(hi - lo + 1);
+				node.stage = rooms[static_cast<size_t>(
+					lo + roll.below(hi - lo + 1))];
 			}
 			nodes.push_back(node);
 		}
@@ -177,43 +188,41 @@ std::vector<MapNode> build_endless_map (int ring, unsigned seed) {
 	// Its own stream per ring, so every ring of one climb is a fresh map.
 	Roll roll(seed ^ (0x9e3779b9u * static_cast<unsigned>(ring + 1)), 61);
 
-	// The battle pool: every chapter's battle window, in road order - the
-	// road's own difficulty order - with each chapter's trailing duel
-	// block (miniboss, boss) left out. Skirmishes and raids ride along:
-	// the climb fields every kind of fight.
+	// The battle pool: every chapter's rooms, in road order - the road's
+	// own difficulty order - with the watch (miniboss, boss) left out.
+	// Skirmishes and raids ride along: the climb fields every kind of
+	// fight.
 	std::vector<int> pool;
-	int base = 0;
-	for (const Chapter& chapter : chapters()) {
-		int duels = 0;
-		while (duels < chapter.stages && stages()[static_cast<size_t>(
-			base + chapter.stages - 1 - duels)].mode == 5) {
-			++duels;
+	for (int c = 0; c < static_cast<int>(chapters().size()); ++c) {
+		for (const int at : chapter_rooms(c)) {
+			pool.push_back(at);
 		}
-		for (int i = 0; i < chapter.stages - duels; ++i) {
-			pool.push_back(base + i);
-		}
-		base += chapter.stages;
 	}
 	const int span = static_cast<int>(pool.size());
+	if (span == 0) {
+		return nodes;
+	}
 
-	// The gatekeeper rotation: the road's six duels in order, then the
-	// White Heart's own two trading watches without end.
-	static const char* kKeepers[6]
-		= {"c1m1", "c1s8", "c2m1", "c2s8", "c3m1", "c3s9"};
-	const char* keeper_id = ring < 6 ? kKeepers[ring]
-		: (ring % 2 == 0 ? "c3m1" : "c3s9");
-	int keeper = 0;
-	for (size_t at = 0; at < stages().size(); ++at) {
-		if (std::string(stages()[at].id) == keeper_id) {
-			keeper = static_cast<int>(at);
-			break;
+	// The gatekeeper rotation: the road's watch in order - chapter one's
+	// miniboss, chapter one's boss, and on up - then the White Heart's
+	// own two trading watches without end. Which concept pair supplies
+	// the face is rolled from the ring's own stream, so a long climb
+	// meets different keepers than the one before it.
+	const int watch = ring < 6 ? ring : (ring % 2 == 0 ? 4 : 5);
+	const int keeper_chapter = watch / 2;
+	const bool is_boss = watch % 2 == 1;
+	const std::vector<int> keeper_pairs = chapter_pairs(keeper_chapter);
+	int keeper = pool.back();
+	if (!keeper_pairs.empty()) {
+		Roll pick(seed ^ 0x5bf03635u, 61 + ring);
+		const int pair = keeper_pairs[static_cast<size_t>(
+			pick.below(static_cast<int>(keeper_pairs.size())))];
+		const int at = is_boss ? pair_boss(keeper_chapter, pair)
+			: pair_miniboss(keeper_chapter, pair);
+		if (at >= 0) {
+			keeper = at;
 		}
 	}
-	// A miniboss keeper is a kind-4 node, a boss keeper a kind-1: the map
-	// reads the watch the way it reads a chapter's own.
-	const bool is_boss = std::string(keeper_id) == "c1s8"
-		|| std::string(keeper_id) == "c2s8"
-		|| std::string(keeper_id) == "c3s9";
 
 	int widths[kMapDepth];
 	widths[0] = 2;

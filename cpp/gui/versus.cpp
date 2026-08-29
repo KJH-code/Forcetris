@@ -27,7 +27,10 @@ void VersusMatch::arm_skills (const std::string& stage_id) {
 		skill.next_fire = skill.period;
 		skills.push_back(std::move(skill));
 	};
-	// The kit reads the room: a miniboss carries one trick, a boss two.
+	// The kit reads the room. A Warden miniboss carries one trick and a
+	// Warden boss two; the Hammers carry none at all and lean on their
+	// heavier blade; the Tricksters trade that blade away for a fuller
+	// kit - two on the miniboss, three on the boss.
 	if (stage_id == "c1m1") {
 		add("rustfall", "RUST ON THE WIND", 16, 0);
 	} else if (stage_id == "c1s8") {
@@ -41,12 +44,33 @@ void VersusMatch::arm_skills (const std::string& stage_id) {
 	} else if (stage_id == "c3m1") {
 		add("sealgate", "THE VAULT SEALS", 20, 8);
 	} else if (stage_id == "c3s9") {
-		// The final boss alone carries three - the one fight allowed to
-		// break the one-per-miniboss, two-per-boss rule, because it is
-		// the road's whole curriculum turned hostile.
+		// The road's own Warden closes with three - the one fight
+		// allowed to break the two-per-boss rule, because it is the
+		// whole curriculum turned hostile.
 		add("coldsnap", "COLD SNAP", 17, 8);
 		add("heatwave", "HEAT WAVE", 24, 6);
 		add("rustfall", "RUST ON THE WIND", 13, 0);
+	} else if (stage_id == "c1m3") {
+		add("rustfall", "RUST ON THE WIND", 18, 0);
+		add("sealgate", "THE LAMP GOES OUT", 30, 7);
+	} else if (stage_id == "c1b3") {
+		add("rustfall", "RUST ON THE WIND", 16, 0);
+		add("sealgate", "THE GATE SWINGS SHUT", 29, 7);
+		add("heatwave", "HEAT WAVE", 34, 5);
+	} else if (stage_id == "c2m3") {
+		add("coldsnap", "COLD SNAP", 23, 9);
+		add("sealgate", "THE CHOIR CLOSES RANKS", 31, 7);
+	} else if (stage_id == "c2b3") {
+		add("coldsnap", "COLD SNAP", 21, 9);
+		add("heatwave", "HEAT WAVE", 30, 5);
+		add("sealgate", "THE QUENCH TANK SEALS", 36, 7);
+	} else if (stage_id == "c3m3") {
+		add("heatwave", "HEAT WAVE", 22, 6);
+		add("rustfall", "RUST ON THE WIND", 17, 0);
+	} else if (stage_id == "c3b3") {
+		add("heatwave", "HEAT WAVE", 20, 6);
+		add("rustfall", "RUST ON THE WIND", 15, 0);
+		add("coldsnap", "COLD SNAP", 27, 8);
 	}
 }
 

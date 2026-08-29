@@ -23,11 +23,11 @@ namespace campaign {
 const std::vector<Chapter>& chapters () {
 	static const std::vector<Chapter> road = {
 		{"c1", "The Outer Yard",
-			"The forge teaches one fire at a time.", 13},
+			"The forge teaches one fire at a time.", 17},
 		{"c2", "The Deep Forge",
-			"Every lesson, turned against you.", 14},
+			"Every lesson, turned against you.", 18},
 		{"c3", "The White Heart",
-			"Every lesson at once, at white heat.", 12},
+			"Every lesson at once, at white heat.", 16},
 	};
 	return road;
 }
@@ -168,6 +168,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c1m1"; s.name = "The Underwarden";
 		s.blurb = "The keeper's apprentice bars the short way up. A duel.";
 		s.mode = 5; s.rank = 2; s.first_to = 1;
+		s.role = kMiniboss; s.pair = 0;
 		s.slag_first = 30; s.slag_repeat = 6;
 		list.push_back(s);
 
@@ -175,6 +176,50 @@ const std::vector<Stage>& stages () {
 		s.id = "c1s8"; s.name = "The Gatekeeper";
 		s.blurb = "The yard's keeper, and its blade. Beat it out.";
 		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.role = kBoss; s.pair = 0;
+		s.slag_first = 40; s.slag_repeat = 8;
+		list.push_back(s);
+
+		// The Hammers: the same rung as the Wardens, and no telegraphed
+		// trick at all - what they carry instead is a heavier blade.
+		// A chapter's pairs are rolled per run, so which watch stands
+		// over a climb is the map's own business.
+		s = Stage{};
+		s.id = "c1m2"; s.name = "The Slag Fist";
+		s.blurb = "No tricks in this one. It hits, and it keeps hitting.";
+		s.mode = 5; s.rank = 2; s.first_to = 1;
+		s.role = kMiniboss; s.pair = 1;
+		s.blade = "thick_wick,quench,bellows,spark";
+		s.slag_first = 30; s.slag_repeat = 6;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c1b2"; s.name = "The Anvil-Breaker";
+		s.blurb = "It breaks anvils for a living. It will not out-think you -"
+			" it has never needed to.";
+		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.role = kBoss; s.pair = 1;
+		s.blade = "thick_wick,quench,bellows,spark,white_heat";
+		s.slag_first = 40; s.slag_repeat = 8;
+		list.push_back(s);
+
+		// The Tricksters: lighter steel than the Wardens carry, and one
+		// more trick than their station allows.
+		s = Stage{};
+		s.id = "c1m3"; s.name = "The Lamplighter";
+		s.blurb = "It fights by what it takes away. Watch the warnings.";
+		s.mode = 5; s.rank = 2; s.first_to = 1;
+		s.role = kMiniboss; s.pair = 2;
+		s.blade = "thick_wick,quench";
+		s.slag_first = 30; s.slag_repeat = 6;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c1b3"; s.name = "The Rust Weaver";
+		s.blurb = "Lighter than the keeper, and it never once stops meddling.";
+		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.role = kBoss; s.pair = 2;
+		s.blade = "thick_wick,quench,bellows";
 		s.slag_first = 40; s.slag_repeat = 8;
 		list.push_back(s);
 
@@ -299,6 +344,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c2m1"; s.name = "The Quenchguard";
 		s.blurb = "The master's second, cold and quick. A duel.";
 		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.role = kMiniboss; s.pair = 0;
 		s.slag_first = 45; s.slag_repeat = 9;
 		list.push_back(s);
 
@@ -306,7 +352,46 @@ const std::vector<Stage>& stages () {
 		s.id = "c2s8"; s.name = "The Forgemaster";
 		s.blurb = "Two falls against the master and the master's blade.";
 		s.mode = 5; s.rank = 4; s.first_to = 2;
+		s.role = kBoss; s.pair = 0;
 		s.blade = "bellows,white_heat,overheat,gamble";
+		s.slag_first = 60; s.slag_repeat = 12;
+		list.push_back(s);
+
+		// The Deep Forge's Hammers: weight, and nothing but.
+		s = Stage{};
+		s.id = "c2m2"; s.name = "The Drop Hammer";
+		s.blurb = "Nothing clever down here. Everything heavy.";
+		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.role = kMiniboss; s.pair = 1;
+		s.blade = "thick_wick,quench,bellows,spark,white_heat";
+		s.slag_first = 45; s.slag_repeat = 9;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c2b2"; s.name = "The Deep Kiln";
+		s.blurb = "It seals nothing and freezes nothing. It simply out-burns you.";
+		s.mode = 5; s.rank = 4; s.first_to = 2;
+		s.role = kBoss; s.pair = 1;
+		s.blade = "bellows,white_heat,overheat,gamble,heavy_hand";
+		s.slag_first = 60; s.slag_repeat = 12;
+		list.push_back(s);
+
+		// And its Tricksters: cold, loud, and thin in the arm.
+		s = Stage{};
+		s.id = "c2m3"; s.name = "The Frost Cantor";
+		s.blurb = "It sings the cold down on you, and hits like nothing at all.";
+		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.role = kMiniboss; s.pair = 2;
+		s.blade = "thick_wick,quench,bellows";
+		s.slag_first = 45; s.slag_repeat = 9;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c2b3"; s.name = "The Quench Choir";
+		s.blurb = "Three voices, none of them heavy. All of them cold.";
+		s.mode = 5; s.rank = 4; s.first_to = 2;
+		s.role = kBoss; s.pair = 2;
+		s.blade = "bellows,white_heat,overheat";
 		s.slag_first = 60; s.slag_repeat = 12;
 		list.push_back(s);
 
@@ -411,6 +496,7 @@ const std::vector<Stage>& stages () {
 		s.blurb = "The heart's last door, and the warden who seals it."
 			" A duel.";
 		s.mode = 5; s.rank = 4; s.first_to = 1;
+		s.role = kMiniboss; s.pair = 0;
 		s.slag_first = 60; s.slag_repeat = 12;
 		list.push_back(s);
 
@@ -419,8 +505,49 @@ const std::vector<Stage>& stages () {
 		s.blurb = "Two falls against the fire itself. Everything it ever"
 			" taught you, turned to kill you.";
 		s.mode = 5; s.rank = 5; s.first_to = 2;
+		s.role = kBoss; s.pair = 0;
 		s.blade = "white_heat,white_heat,overheat,gamble,heavy_hand,"
 			"loaded_dice";
+		s.slag_first = 70; s.slag_repeat = 14;
+		list.push_back(s);
+
+		// The White Heart's Hammers: the heaviest steel on the road.
+		s = Stage{};
+		s.id = "c3m2"; s.name = "The White Weight";
+		s.blurb = "It has no tricks left. It gave them up for mass.";
+		s.mode = 5; s.rank = 4; s.first_to = 1;
+		s.role = kMiniboss; s.pair = 1;
+		s.blade = "quench,bellows,spark,white_heat,every_twist";
+		s.slag_first = 60; s.slag_repeat = 12;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3b2"; s.name = "The Bellows Titan";
+		s.blurb = "No warnings. No windows. The heaviest blade the forge has"
+			" ever hung on anything.";
+		s.mode = 5; s.rank = 5; s.first_to = 2;
+		s.role = kBoss; s.pair = 1;
+		s.blade = "bellows,white_heat,white_heat,overheat,gamble,heavy_hand,loaded_dice";
+		s.slag_first = 70; s.slag_repeat = 14;
+		list.push_back(s);
+
+		// And its Tricksters: every trick the heart knows, thinly armed.
+		s = Stage{};
+		s.id = "c3m3"; s.name = "The Ember Sophist";
+		s.blurb = "It would rather argue than swing. It is very good at arguing.";
+		s.mode = 5; s.rank = 4; s.first_to = 1;
+		s.role = kMiniboss; s.pair = 2;
+		s.blade = "quench,bellows,spark";
+		s.slag_first = 60; s.slag_repeat = 12;
+		list.push_back(s);
+
+		s = Stage{};
+		s.id = "c3b3"; s.name = "The Chorus of Coals";
+		s.blurb = "Lighter steel than the Heart, and every trick it ever learned,"
+			" all at once.";
+		s.mode = 5; s.rank = 5; s.first_to = 2;
+		s.role = kBoss; s.pair = 2;
+		s.blade = "white_heat,overheat,gamble,heavy_hand,loaded_dice";
 		s.slag_first = 70; s.slag_repeat = 14;
 		list.push_back(s);
 

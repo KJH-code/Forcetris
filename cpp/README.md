@@ -324,7 +324,29 @@ rungs only climb: a chapter runs skirmish, miniboss, boss one rung apart
 beaten, so an S never arrives before an A has been fought twice - a
 raid, being three fights with no second chance, stands a rung under its
 own chapter. `campaign_check` pins that climb, and the fire picked at
-the door shifts the whole ladder a rung either way. One row under the boss a **miniboss** duel bars the risky
+the door shifts the whole ladder a rung either way.
+
+Which face stands at the top is the seed's to choose. Every chapter
+fields **three concept pairs** - a miniboss and a boss who belong
+together - and a run climbs to exactly one of them: the Wardens carry the
+rank's own blade and a skill or two, the Hammers trade every trick away
+for a blade one grade heavier, and the Tricksters give up that metal for
+a fuller kit (two skills on the miniboss, three on the boss). The three
+stand on the same rungs, so the roll never changes how hard a chapter is,
+only the shape of the fight. The map keeps their names back until the run
+is a row away: the icon says what waits - a boss, a miniboss - from the
+first look, but the plate reads `? ? ?` until you stand below it. None of
+this is read off the table's shape any more. A recipe declares its
+`role` (room, miniboss, boss) and its `pair`, and `chapter_rooms` /
+`chapter_pairs` / `pair_boss` / `chapter_bosses` answer the questions the
+generator and the screens used to open-code as "the chapter's last
+recipe" - which is why twelve new duels could be added without moving one
+existing seed's map: the battle window is the set of rooms, and the pair
+is rolled from a stream of its own. The chapter gate and the Endless
+Climb's key ask for *any* boss of the chapter below, since a run only
+ever meets one of them.
+
+One row under the boss a **miniboss** duel bars the risky
 branch, and the battle pool itself now fields **skirmishes** (a lesser
 foe on an ordinary node), a **raid** (three hounds back to back - one
 loss closes the kennel), and **watches** (outlast the rising floor;
@@ -344,12 +366,14 @@ two chapters taught one at a time - darkness over sealed columns, a
 score run in the dark, cold iron under fog, cold iron over rubble, a
 fast fuse burning hot all stage - and it ends at **the Forge Heart**,
 the only foe on the road that fights with three telegraphed skills at
-once. Past it waits **the Endless Climb**, open once the Forgemaster
-has fallen: the same six-row map stacked as *rings* without end, every
-battle drawn from all three chapters' pools with the window sliding up
-as the rings stack, and the top of every ring held by the gatekeeper
-rotation - the road's six duels in order, then the Vault Warden and the
-Forge Heart trading watches forever. Each ring tightens the screws
+once. Past it waits **the Endless Climb**, open once any of the
+Deep Forge's masters has fallen: the same six-row map stacked as *rings*
+without end, every battle drawn from all three chapters' rooms with the
+window sliding up as the rings stack, and the top of every ring held by
+the gatekeeper rotation - the road's watch a rung at a time (chapter
+one's miniboss, chapter one's boss, and up), then the White Heart's own
+two trading watches forever, with each ring rolling which concept pair
+supplies the face. Each ring tightens the screws
 (gravity, quotas, the flood; duel foes climb half a rank per ring) and
 the climb is always played at white heat - one death ends it - so the
 record is simply the rows climbed, kept as a single best on the

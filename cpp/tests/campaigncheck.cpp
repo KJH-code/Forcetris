@@ -92,6 +92,7 @@ int main () {
 		bool bossed = true;
 		std::set<std::string> chapter_ids;
 		bool chapters_unique = true;
+		int chapter_seen = 0;
 		for (const campaign::Chapter& chapter : campaign::chapters()) {
 			chapters_named = chapters_named && chapter.id != nullptr
 				&& chapter.id[0] != '\0' && chapter.name != nullptr
@@ -100,16 +101,15 @@ int main () {
 			chapters_unique = chapters_unique
 				&& chapter_ids.insert(chapter.id ? chapter.id : "").second;
 			counted += chapter.stages;
-			if (counted <= static_cast<int>(campaign::stages().size())) {
-				bossed = bossed
-					&& campaign::stages()[counted - 1].mode == 5;
-			}
+			bossed = bossed
+				&& !campaign::chapter_bosses(chapter_seen).empty();
+			++chapter_seen;
 		}
 		check("the chapter table covers the road exactly",
 			counted == static_cast<int>(campaign::stages().size()));
 		check("every chapter is named, non-empty and unique",
 			chapters_named && chapters_unique);
-		check("every chapter ends in a boss", bossed);
+		check("every chapter fields at least one boss", bossed);
 		// spot_of is the screens' map from flat index to chapter frame:
 		// walk the road and hold it to the running count.
 		bool spotted = true;
@@ -178,24 +178,17 @@ int main () {
 		int raids = 0;
 		int skirmishes = 0;
 		{
-			// A skirmish is a mode-5 recipe ahead of its chapter's
-			// trailing duel block.
-			int at = 0;
-			for (const campaign::Chapter& chapter : campaign::chapters()) {
-				int duels = 0;
-				while (duels < chapter.stages && campaign::stages()[
-					static_cast<size_t>(at + chapter.stages - 1 - duels)]
-						.mode == 5) {
-					++duels;
-				}
-				for (int i = 0; i < chapter.stages - duels; ++i) {
+			// A skirmish is a mode-5 recipe that is still a room: it is
+			// fought on an ordinary node, not on the chapter's watch.
+			for (int c = 0;
+				c < static_cast<int>(campaign::chapters().size()); ++c) {
+				for (const int at : campaign::chapter_rooms(c)) {
 					const Stage& stage
-						= campaign::stages()[static_cast<size_t>(at + i)];
+						= campaign::stages()[static_cast<size_t>(at)];
 					if (stage.mode == 5) {
 						++(stage.raid != nullptr ? raids : skirmishes);
 					}
 				}
-				at += chapter.stages;
 			}
 			for (const Stage& stage : campaign::stages()) {
 				if (stage.survive_seconds > 0) {
@@ -417,7 +410,7 @@ int main () {
 		int base = 0;
 		for (const auto& chapter : campaign::chapters()) {
 			int softest = 99;   // The chapter's lightest duel...
-			int boss = -1;      // ...and its last one, which is the boss.
+			int boss = -1;      // ...and the ceiling its bosses stand on.
 			for (int i = 0; i < chapter.stages; ++i) {
 				const Stage& stage
 					= campaign::stages()[static_cast<size_t>(base + i)];
@@ -447,7 +440,9 @@ int main () {
 					}
 				}
 				softest = std::min(softest, stage.rank);
-				boss = stage.rank;
+				if (stage.role == campaign::kBoss) {
+					boss = std::max(boss, stage.rank);
+				}
 			}
 			if (boss < 0) {
 				continue;
@@ -464,6 +459,95 @@ int main () {
 		check("the road's duels climb a rung at a time, chapter over chapter",
 			climbs, detail);
 		check("and every rung is on the ladder", banded, detail);
+	}
+
+	// --- The concept pairs. -------------------------------------------------
+	// Every chapter fields three pairs - a miniboss and a boss who belong
+	// together - and a run climbs to exactly one of them. The pairs stand on
+	// the same rungs, so which face a seed rolls never changes how hard the
+	// chapter is; what changes is the shape of the fight, and that is what
+	// the blade weights say: the Tricksters trade metal for a fuller skill
+	// kit, the Hammers buy metal by carrying none.
+	{
+		bool three = true;
+		bool level = true;
+		bool weighted = true;
+		std::string detail;
+		for (int chapter = 0;
+			chapter < static_cast<int>(campaign::chapters().size());
+			++chapter) {
+			const std::vector<int> pairs = campaign::chapter_pairs(chapter);
+			three = three && pairs.size() == 3;
+			int mini_rank = -1;
+			int boss_rank = -1;
+			int mini_race = -1;
+			int boss_race = -1;
+			std::vector<int> blades;
+			for (const int pair : pairs) {
+				const int mini_at
+					= campaign::pair_miniboss(chapter, pair);
+				const int boss_at = campaign::pair_boss(chapter, pair);
+				if (mini_at < 0 || boss_at < 0) {
+					three = false;
+					continue;
+				}
+				const Stage& mini
+					= campaign::stages()[static_cast<size_t>(mini_at)];
+				const Stage& boss
+					= campaign::stages()[static_cast<size_t>(boss_at)];
+				// Both halves fight the chapter's own kind of duel: the
+				// first_to and the rank ladder are the chapter's, not the
+				// pair's.
+				if (mini_rank < 0) {
+					mini_rank = mini.rank;
+					boss_rank = boss.rank;
+					mini_race = mini.first_to;
+					boss_race = boss.first_to;
+				}
+				if (mini.rank != mini_rank || boss.rank != boss_rank
+					|| mini.first_to != mini_race
+					|| boss.first_to != boss_race) {
+					level = false;
+					detail += std::string(boss.id) + " off the ladder; ";
+				}
+				blades.push_back(
+					static_cast<int>(campaign::blade_of(boss).size()));
+			}
+			// Three distinct weights: light, the Wardens' own, heavy.
+			std::vector<int> sorted = blades;
+			std::sort(sorted.begin(), sorted.end());
+			if (sorted.size() != 3 || sorted[0] >= sorted[1]
+				|| sorted[1] >= sorted[2]) {
+				weighted = false;
+				detail += std::string(campaign::chapters()[chapter].id)
+					+ " blades level; ";
+			}
+		}
+		check("every chapter fields three concept pairs", three, detail);
+		check("the pairs stand on one ladder", level, detail);
+		check("and they are told apart by the weight of their blades",
+			weighted, detail);
+		check("the pair a run meets is the seed's, and seeds disagree",
+			[] {
+				const auto boss_of = [] (const std::vector<
+						campaign::MapNode>& map) {
+					for (const campaign::MapNode& node : map) {
+						if (node.kind == 1) {
+							return node.stage;
+						}
+					}
+					return -1;
+				};
+				if (boss_of(campaign::build_map(0, 4242u))
+					!= boss_of(campaign::build_map(0, 4242u))) {
+					return false;
+				}
+				std::set<int> faces;
+				for (unsigned seed = 1; seed <= 60; ++seed) {
+					faces.insert(boss_of(campaign::build_map(0, seed * 977u)));
+				}
+				return faces.size() == 3;
+			}());
 	}
 
 	// --- Preset boards parse. -----------------------------------------------
@@ -636,22 +720,19 @@ int main () {
 		bool shaped = true;
 		bool connected = true;
 		bool ranged = true;
+		bool paired = true;
 		bool crossed = false;
 		std::string detail;
 		for (int chapter = 0;
 			chapter < static_cast<int>(campaign::chapters().size());
 			++chapter) {
-			int battle_lo = 0;
-			for (int c = 0; c < chapter; ++c) {
-				battle_lo += campaign::chapters()[c].stages;
-			}
-			const int boss_stage = battle_lo
-				+ campaign::chapters()[chapter].stages - 1;
-			// The chapter's trailing mode-5 block: the boss, and the
-			// miniboss just before it when the chapter fields one.
-			const int mini_stage = boss_stage - 1;
-			const bool has_mini = campaign::stages()[
-				static_cast<size_t>(mini_stage)].mode == 5;
+			// The rooms are the battle window, asked by role; the watch
+			// is whichever concept pair the seed rolls, so the map's own
+			// boss and miniboss are read off the map and held to a pair.
+			const std::vector<int> rooms
+				= campaign::chapter_rooms(chapter);
+			const std::vector<int> pairs
+				= campaign::chapter_pairs(chapter);
 			for (unsigned seed = 1; seed <= 40; ++seed) {
 				const std::vector<MapNode> map
 					= campaign::build_map(chapter, seed * 977u);
@@ -678,36 +759,53 @@ int main () {
 				int forges = 0;
 				int events = 0;
 				int minis = 0;
+				int boss_pair = -1;
+				int mini_pair = -1;
 				for (const MapNode& node : map) {
 					const bool boss_row
 						= node.depth == campaign::kMapDepth - 1;
+					const Stage* stage = node.stage >= 0
+						&& node.stage
+							< static_cast<int>(campaign::stages().size())
+						? &campaign::stages()[
+							static_cast<size_t>(node.stage)]
+						: nullptr;
 					if (node.kind == 1) {
-						ranged = ranged && boss_row
-							&& node.stage == boss_stage;
+						ranged = ranged && boss_row && stage != nullptr
+							&& stage->role == campaign::kBoss;
+						if (stage != nullptr) {
+							boss_pair = stage->pair;
+						}
 					} else if (node.kind == 0) {
 						// The battle window may hold skirmishes and raids
-						// (mode-5 recipes ahead of the trailing block) but
-						// never the miniboss or the boss themselves.
+						// - they are rooms too - but never the watch.
 						ranged = ranged && !boss_row
-							&& node.stage >= battle_lo
-							&& node.stage
-								< (has_mini ? mini_stage : boss_stage);
+							&& std::find(rooms.begin(), rooms.end(),
+								node.stage) != rooms.end();
 					} else if (node.kind == 2 || node.kind == 3) {
 						++(node.kind == 2 ? forges : events);
 						ranged = ranged && node.depth > 0 && !boss_row
 							&& node.stage == -1;
 					} else if (node.kind == 4) {
 						++minis;
-						ranged = ranged && has_mini
+						ranged = ranged
 							&& node.depth == campaign::kMapDepth - 2
-							&& node.stage == mini_stage;
+							&& stage != nullptr
+							&& stage->role == campaign::kMiniboss;
+						if (stage != nullptr) {
+							mini_pair = stage->pair;
+						}
 					} else {
 						ranged = false;
 					}
 				}
 				ranged = ranged && forges == 1
 					&& events >= 1 && events <= 2
-					&& minis == (has_mini ? 1 : 0);
+					&& minis <= 1 && !pairs.empty();
+				// The watch is one concept: the miniboss the map seats
+				// belongs to the same pair as the boss it climbs to.
+				paired = paired
+					&& (mini_pair < 0 || mini_pair == boss_pair);
 				// Edges point one row up and never cross; every node is
 				// reachable from the entrance and reaches the boss.
 				std::vector<int> reach(map.size(), 0);
@@ -756,7 +854,7 @@ int main () {
 				for (size_t at = 0; at < map.size(); ++at) {
 					connected = connected && reach[at] && climbs[at];
 				}
-				if ((!shaped || !connected || !ranged || crossed)
+				if ((!shaped || !connected || !ranged || !paired || crossed)
 					&& detail.empty()) {
 					detail = "chapter " + std::to_string(chapter) + " seed "
 						+ std::to_string(seed * 977u);
@@ -765,8 +863,10 @@ int main () {
 		}
 		check("every map is shaped 2 / 2..3 / 1 with honest kinds", shaped,
 			detail);
-		check("every battle draws from its chapter, every boss is the boss",
-			ranged, detail);
+		check("every battle draws from its chapter's rooms, every watch "
+			"node holds the right role", ranged, detail);
+		check("the miniboss the map seats shares the boss's pair", paired,
+			detail);
 		check("every node is reachable and every node reaches the boss",
 			connected, detail);
 		check("no two edges cross", !crossed, detail);
@@ -809,35 +909,16 @@ int main () {
 	{
 		using campaign::MapNode;
 		// The pool the climb draws from, mirrored here independently of the
-		// generator: every chapter's battle window in road order, each
-		// chapter's trailing duel block left out.
+		// generator: every chapter's rooms in road order, the watch left
+		// out.
 		std::vector<int> pool;
-		{
-			int base = 0;
-			for (const auto& chapter : campaign::chapters()) {
-				int duels = 0;
-				while (duels < chapter.stages
-					&& campaign::stages()[static_cast<size_t>(
-						base + chapter.stages - 1 - duels)].mode == 5) {
-					++duels;
-				}
-				for (int i = 0; i < chapter.stages - duels; ++i) {
-					pool.push_back(base + i);
-				}
-				base += chapter.stages;
+		for (int c = 0;
+			c < static_cast<int>(campaign::chapters().size()); ++c) {
+			for (const int at : campaign::chapter_rooms(c)) {
+				pool.push_back(at);
 			}
 		}
 		const int span = static_cast<int>(pool.size());
-		const char* keepers[6]
-			= {"c1m1", "c1s8", "c2m1", "c2s8", "c3m1", "c3s9"};
-		const auto stage_at = [] (const std::string& id) {
-			for (size_t at = 0; at < campaign::stages().size(); ++at) {
-				if (id == campaign::stages()[at].id) {
-					return static_cast<int>(at);
-				}
-			}
-			return -1;
-		};
 
 		// Shape, connectivity, honesty and the gatekeeper rotation, over the
 		// first rings and a spread of seeds - the same promises the chapter
@@ -849,10 +930,14 @@ int main () {
 		bool crossed = false;
 		std::string detail;
 		for (int ring = 0; ring <= 9; ++ring) {
-			const std::string keeper_id = ring < 6 ? keepers[ring]
-				: (ring % 2 == 0 ? "c3m1" : "c3s9");
-			const bool keeper_boss = keeper_id == "c1s8"
-				|| keeper_id == "c2s8" || keeper_id == "c3s9";
+			// The rotation walks the road's watch a rung at a time -
+			// chapter one's miniboss, chapter one's boss, and up - then
+			// the White Heart's own two trade watches without end. Which
+			// concept pair supplies the face is the ring's to roll, so
+			// the pin holds the role and the chapter, not the id.
+			const int watch = ring < 6 ? ring : (ring % 2 == 0 ? 4 : 5);
+			const int keeper_chapter = watch / 2;
+			const bool keeper_boss = watch % 2 == 1;
 			for (unsigned seed = 1; seed <= 20; ++seed) {
 				const std::vector<MapNode> map
 					= campaign::build_endless_map(ring, seed * 977u);
@@ -877,9 +962,14 @@ int main () {
 						// The top row is the gatekeeper's alone: the ring's
 						// own duel from the rotation, a boss kind for a boss
 						// recipe and a miniboss kind for a miniboss.
+						const Stage& keeper = campaign::stages()[
+							static_cast<size_t>(node.stage)];
 						kept = kept && top
-							&& node.stage == stage_at(keeper_id)
-							&& node.kind == (keeper_boss ? 1 : 4);
+							&& node.kind == (keeper_boss ? 1 : 4)
+							&& keeper.role == (keeper_boss
+								? campaign::kBoss : campaign::kMiniboss)
+							&& campaign::spot_of(static_cast<size_t>(
+								node.stage)).chapter == keeper_chapter;
 					} else if (node.kind == 0) {
 						// Every battle draws from the union pool - any
 						// chapter's window recipe, never a duel-block one.
@@ -1051,14 +1141,24 @@ int main () {
 		// The gate and the record's arithmetic.
 		{
 			campaign::State fresh;
-			campaign::State starless;
-			starless.stars["c2s8"] = 0;
-			campaign::State keyed;
-			keyed.stars["c2s8"] = 1;
-			check("the climb opens once the Deep Forge's master has fallen",
-				!campaign::endless_open(fresh)
-					&& !campaign::endless_open(starless)
-					&& campaign::endless_open(keyed));
+			// Any of the Deep Forge's three masters opens the climb: a run
+			// only ever meets one of them, so the gate cannot name a face.
+			bool any_opens = !campaign::chapter_bosses(1).empty();
+			bool none_opens_starless = true;
+			for (const int at : campaign::chapter_bosses(1)) {
+				const char* id = campaign::stages()[
+					static_cast<size_t>(at)].id;
+				campaign::State starless;
+				starless.stars[id] = 0;
+				campaign::State keyed;
+				keyed.stars[id] = 1;
+				none_opens_starless = none_opens_starless
+					&& !campaign::endless_open(starless);
+				any_opens = any_opens && campaign::endless_open(keyed);
+			}
+			check("the climb opens once a Deep Forge master has fallen",
+				!campaign::endless_open(fresh) && none_opens_starless
+					&& any_opens);
 			campaign::Run run;
 			run.ring = 2;
 			run.depth = 3;
@@ -1149,14 +1249,19 @@ int main () {
 					== campaign::kForged
 				&& campaign::difficulty_from("gibberish") == campaign::kMild);
 		campaign::State fresh;
-		const int first_boss = campaign::chapters()[0].stages - 1;
-		campaign::State keyed;
-		keyed.stars[campaign::stages()[first_boss].id] = 1;
-		check("the first chapter is open, the second waits for the boss",
-			campaign::chapter_open(fresh, 0)
-				&& !campaign::chapter_open(fresh, 1)
-				&& campaign::chapter_open(keyed, 1)
-				&& !campaign::chapter_open(keyed, 99));
+		bool gated = campaign::chapter_open(fresh, 0)
+			&& !campaign::chapter_open(fresh, 1)
+			&& !campaign::chapter_bosses(0).empty();
+		// Whichever of chapter one's bosses a run climbed to, beating it
+		// is beating the chapter.
+		for (const int at : campaign::chapter_bosses(0)) {
+			campaign::State keyed;
+			keyed.stars[campaign::stages()[static_cast<size_t>(at)].id] = 1;
+			gated = gated && campaign::chapter_open(keyed, 1)
+				&& !campaign::chapter_open(keyed, 99);
+		}
+		check("the first chapter is open, the second waits for any boss",
+			gated);
 	}
 
 	std::printf("%s\n",

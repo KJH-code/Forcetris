@@ -26,6 +26,13 @@
 namespace forcetris {
 namespace campaign {
 
+// What a recipe is for, which is how the map generator seats it. Rooms are
+// the battle window; the other two are the chapter's watch, and a chapter
+// may hold several of each - one miniboss and one boss per concept pair.
+constexpr int kRoom = 0;
+constexpr int kMiniboss = 1;
+constexpr int kBoss = 2;
+
 // One stage of the road. `id` is written into campaign.dat and frozen
 // forever; everything else may be rebalanced. Sentinels: -1 leaves a knob
 // at the mode's default, nullptr means none.
@@ -74,6 +81,18 @@ struct Stage {
 	const char* board = nullptr;    // Preset rows for Board::from_rows,
 	                                // newline-separated, top row first.
 	const char* tempers = nullptr;  // Pre-applied temper ids, comma-separated.
+	// What this recipe is on the map, said out loud rather than derived
+	// from where it sits in the table. A room is everything the battle
+	// window draws from - the skirmishes and the raids included, because
+	// those are fought on ordinary nodes - while a miniboss and a boss are
+	// seated by the generator itself. Frozen the way ids are: the save
+	// file never stores it, but the map's shape depends on it.
+	int role = kRoom;
+	// Which watch of the chapter this belongs to. A chapter fields several
+	// concept pairs - one miniboss and one boss each - and a run rolls one
+	// pair for its whole climb, so the top of the map is a different face
+	// every time. Meaningless on a room.
+	int pair = 0;
 	int rank = -1;           // Boss: index into bot::ranks().
 	int first_to = 1;
 	const char* blade = nullptr;    // Boss blade ids; nullptr = blade_for(rank).
@@ -106,6 +125,26 @@ struct Spot {
 	int stage;
 };
 Spot spot_of (size_t stage_index);
+
+// --- Reading the road by role rather than by position. ------------------
+// Where a chapter's recipes start in the flat table. Every screen and the
+// generator alike used to open-code this loop; now they ask.
+int chapter_base (int chapter);
+// The chapter's rooms, flat indexes in table order: everything the battle
+// window may draw. Skirmishes and raids are rooms - they are fought on
+// ordinary nodes - so only the watch (miniboss, boss) is missing.
+std::vector<int> chapter_rooms (int chapter);
+// The concept pairs the chapter fields, by pair number, in table order. A
+// run rolls one of these and climbs to it; the rest of the chapter's
+// watch is not on that map at all.
+std::vector<int> chapter_pairs (int chapter);
+// One pair's two duels, flat indexes; -1 when the chapter has no such
+// pair (which campaigncheck forbids, but the readers stay honest).
+int pair_miniboss (int chapter, int pair);
+int pair_boss (int chapter, int pair);
+// Every boss the chapter fields, whichever pair it belongs to - what the
+// chapter gate reads, since beating any of them is beating the chapter.
+std::vector<int> chapter_bosses (int chapter);
 
 // --- The map: a chapter played as one seeded climb. ---------------------
 // A run is a branching graph six rows deep, entrance at row 0, the

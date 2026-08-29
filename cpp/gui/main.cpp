@@ -5080,11 +5080,19 @@ void draw_career (App& app) {
 				const bool stop = node.kind == 2 || node.kind == 3;
 				const campaign::Stage* stage = stop ? nullptr
 					: &campaign::stages()[static_cast<size_t>(node.stage)];
+				// The watch keeps its face until the run is a row away.
+				// Which node holds a boss and which a miniboss is plain
+				// from the first look - the icon and the tint say so -
+				// but who stands there is only learned on approach, and
+				// a chapter fields three possible pairs.
+				const bool hidden = (node.kind == 1 || node.kind == 4)
+					&& run.depth + 1 < node.depth;
 				const char* label = node.kind == 2 ? "The Forge"
-					: node.kind == 3 ? "? ? ?" : stage->name;
+					: node.kind == 3 || hidden ? "? ? ?" : stage->name;
 				const char* promise = node.kind == 2
 					? "No fight here: draw a temper, melt one down."
 					: node.kind == 3 ? "Something waits. It never fights."
+					: hidden ? "The watch, unnamed until you stand below it."
 					: stage->blurb;
 				const bool taken = std::find(run.path.begin(),
 					run.path.end(), static_cast<int>(at)) != run.path.end();
