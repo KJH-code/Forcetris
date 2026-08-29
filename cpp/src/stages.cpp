@@ -90,7 +90,13 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c1k1"; s.name = "Scrap Whelp";
 		s.blurb = "Something small guards the scrap. Put it down.";
-		s.mode = 5; s.rank = 0; s.first_to = 1;
+		// The road's duels climb one rung at a time, three to a chapter,
+		// and each chapter starts a rung under the last one's boss:
+		// C-B-A, then B-A-S, then A-S-SS. A rung is a real step in how
+		// the bot thinks, so the ladder is the whole difficulty curve -
+		// and the fire picked at the door moves the lot one more rung
+		// either way (campaign::rank_for).
+		s.mode = 5; s.rank = 1; s.first_to = 1;
 		s.slag_first = 24; s.slag_repeat = 5;
 		list.push_back(s);
 
@@ -161,14 +167,14 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c1m1"; s.name = "The Underwarden";
 		s.blurb = "The keeper's apprentice bars the short way up. A duel.";
-		s.mode = 5; s.rank = 0; s.first_to = 1;
+		s.mode = 5; s.rank = 2; s.first_to = 1;
 		s.slag_first = 30; s.slag_repeat = 6;
 		list.push_back(s);
 
 		s = Stage{};
 		s.id = "c1s8"; s.name = "The Gatekeeper";
 		s.blurb = "The yard's keeper, and its blade. Beat it out.";
-		s.mode = 5; s.rank = 1; s.first_to = 1;
+		s.mode = 5; s.rank = 3; s.first_to = 1;
 		s.slag_first = 40; s.slag_repeat = 8;
 		list.push_back(s);
 
@@ -191,6 +197,7 @@ const std::vector<Stage>& stages () {
 		list.push_back(s);
 
 		s = Stage{};
+		// Chapter two opens a rung under the Gatekeeper it just beat.
 		s.id = "c2k1"; s.name = "Ash Hound";
 		s.blurb = "Something fast hunts the lower halls. A skirmish.";
 		s.mode = 5; s.rank = 2; s.first_to = 1;
@@ -258,8 +265,11 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c2r1"; s.name = "The Kennel";
 		s.blurb = "The hounds come one after another. Down all three.";
-		s.mode = 5; s.rank = 0; s.first_to = 3;
-		s.raid = "0,1,2";
+		// A gauntlet is priced by the whole run of it, not by one foe: three
+		// fights with no second chance, so every hound stands a rung under
+		// the chapter's own ladder.
+		s.mode = 5; s.rank = 1; s.first_to = 3;
+		s.raid = "1,2,2";
 		s.slag_first = 36; s.slag_repeat = 8;
 		list.push_back(s);
 
@@ -326,7 +336,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c3k1"; s.name = "Cinder Wolf";
 		s.blurb = "Something old hunts the antechamber. A skirmish.";
-		s.mode = 5; s.rank = 4; s.first_to = 1;
+		s.mode = 5; s.rank = 3; s.first_to = 1;
 		s.slag_first = 44; s.slag_repeat = 9;
 		list.push_back(s);
 
@@ -374,7 +384,7 @@ const std::vector<Stage>& stages () {
 		s.blurb = "Three of the forge's own, loose and hungry. Down them"
 			" all.";
 		s.mode = 5; s.rank = 2; s.first_to = 3;
-		s.raid = "2,3,4";
+		s.raid = "2,3,3";
 		s.slag_first = 58; s.slag_repeat = 12;
 		list.push_back(s);
 
@@ -400,7 +410,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c3m1"; s.name = "The Vault Warden";
 		s.blurb = "The heart's last door, and the warden who seals it."
 			" A duel.";
-		s.mode = 5; s.rank = 5; s.first_to = 1;
+		s.mode = 5; s.rank = 4; s.first_to = 1;
 		s.slag_first = 60; s.slag_repeat = 12;
 		list.push_back(s);
 
@@ -408,7 +418,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c3s9"; s.name = "The Forge Heart";
 		s.blurb = "Two falls against the fire itself. Everything it ever"
 			" taught you, turned to kill you.";
-		s.mode = 5; s.rank = 7; s.first_to = 2;
+		s.mode = 5; s.rank = 5; s.first_to = 2;
 		s.blade = "white_heat,white_heat,overheat,gamble,heavy_hand,"
 			"loaded_dice";
 		s.slag_first = 70; s.slag_repeat = 14;

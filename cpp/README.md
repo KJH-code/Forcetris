@@ -318,7 +318,13 @@ forge narrowed by sealed columns, a cold room where every completed line
 freezes solid and shatters one lock later, a stage that starts with
 Overheat already in your blood - and the boss duel carries its own blade
 (the Forgemaster fights two falls behind bellows, white heat, overheat
-and gamble). One row under the boss a **miniboss** duel bars the risky
+and gamble). Every duel on the road is a rung of the bot ladder and the
+rungs only climb: a chapter runs skirmish, miniboss, boss one rung apart
+(C-B-A, then B-A-S, then A-S-SS) and opens a rung under the boss just
+beaten, so an S never arrives before an A has been fought twice - a
+raid, being three fights with no second chance, stands a rung under its
+own chapter. `campaign_check` pins that climb, and the fire picked at
+the door shifts the whole ladder a rung either way. One row under the boss a **miniboss** duel bars the risky
 branch, and the battle pool itself now fields **skirmishes** (a lesser
 foe on an ordinary node), a **raid** (three hounds back to back - one
 loss closes the kennel), and **watches** (outlast the rising floor;

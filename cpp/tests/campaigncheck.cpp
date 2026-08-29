@@ -403,6 +403,69 @@ int main () {
 		check("every boss carries a real blade, never collapse", sane, detail);
 	}
 
+	// --- The ladder of foes. ------------------------------------------------
+	// Every duel on the road is a rung of the bot ladder, and the rungs only
+	// ever climb: within a chapter the skirmish is under the miniboss is
+	// under the boss, and each chapter's boss stands over the last one's.
+	// This is the whole difficulty curve of the campaign, so it is pinned
+	// rather than left to whoever edits the table next.
+	{
+		bool climbs = true;
+		bool banded = true;
+		std::string detail;
+		int previous_boss = -1;
+		int base = 0;
+		for (const auto& chapter : campaign::chapters()) {
+			int softest = 99;   // The chapter's lightest duel...
+			int boss = -1;      // ...and its last one, which is the boss.
+			for (int i = 0; i < chapter.stages; ++i) {
+				const Stage& stage
+					= campaign::stages()[static_cast<size_t>(base + i)];
+				if (stage.mode != 5) {
+					continue;
+				}
+				banded = banded && stage.rank >= 0 && stage.rank <= 7;
+				// A raid's own foes ride no more than a rung over its own
+				// entry rank: three fights with no second chance is priced
+				// by the run of it, not by one of them.
+				if (stage.raid != nullptr) {
+					int foe = 0;
+					for (const char* c = stage.raid; ; ++c) {
+						if (*c >= '0' && *c <= '9') {
+							foe = foe * 10 + (*c - '0');
+							continue;
+						}
+						if (foe > stage.rank + 1 || foe > 7) {
+							banded = false;
+							detail += std::string(stage.id) + " raid foe "
+								+ std::to_string(foe) + "; ";
+						}
+						foe = 0;
+						if (*c == '\0') {
+							break;
+						}
+					}
+				}
+				softest = std::min(softest, stage.rank);
+				boss = stage.rank;
+			}
+			if (boss < 0) {
+				continue;
+			}
+			if (softest > boss || boss <= previous_boss) {
+				climbs = false;
+				detail += std::string(chapter.id) + " "
+					+ std::to_string(softest) + ".." + std::to_string(boss)
+					+ " after " + std::to_string(previous_boss) + "; ";
+			}
+			previous_boss = boss;
+			base += chapter.stages;
+		}
+		check("the road's duels climb a rung at a time, chapter over chapter",
+			climbs, detail);
+		check("and every rung is on the ladder", banded, detail);
+	}
+
 	// --- Preset boards parse. -----------------------------------------------
 	{
 		bool sane = true;
