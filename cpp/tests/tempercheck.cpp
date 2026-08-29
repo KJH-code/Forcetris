@@ -111,6 +111,9 @@ std::vector<Reading> reading_of (const SimConfig& c) {
 		{"hold_churn", c.hold_churn ? 1. : 0.},
 		{"score_quota", static_cast<double>(c.score_quota)},
 		{"survive_ms", static_cast<double>(c.survive_ms)},
+		{"flow_rail", c.flow_rail ? 1. : 0.},
+		{"wild_spins", c.wild_spins ? 1. : 0.},
+		{"wrap_walls", c.wrap_walls ? 1. : 0.},
 	};
 }
 
@@ -134,6 +137,13 @@ std::vector<std::string> claimed (const std::string& id) {
 	if (id == "loaded_dice") return {"crit_every"};
 	if (id == "cold_forge") return {"cold_iron", "attack_scale"};
 	if (id == "turning_rack") return {"hold_churn"};
+	if (id == "wild_spins") return {"wild_spins"};
+	if (id == "ring_walls") return {"wrap_walls", "fall_delay"};
+	// The two chaos cards that curse the hands do their damage in the GUI's
+	// input path, where no SimConfig field can reach; what they move here
+	// is only the price they pay for it.
+	if (id == "crossed_wires") return {"attack_scale"};
+	if (id == "loose_ratchet") return {"flow_gain_line", "flow_gain_attack"};
 	// The brands land on the FOE's board through the duel wiring, so by
 	// design they move no field of this config - the claim names the foe
 	// so the no-claim gate can tell "versus-only" from "forgotten".
@@ -579,6 +589,24 @@ int main () {
 			never = at != 0 && at >= 0;
 		}
 		check("the bot never takes Collapse", never);
+		// Nor any chaos card, whichever one is on the table: two of them
+		// move the walls and the judge out from under its search, and the
+		// other two curse hands it does not have.
+		bool no_chaos = true;
+		for (const temper::Temper& card : temper::pool()) {
+			if (card.family != temper::Family::Chaos) {
+				continue;
+			}
+			for (unsigned roll = 0; roll < 60 && no_chaos; ++roll) {
+				std::mt19937 rng(roll);
+				const std::vector<std::string> mixed
+					= {card.id, "quench", "white_heat"};
+				const int at = temper::bot_pick(mixed,
+					static_cast<int>(roll % 7), rng);
+				no_chaos = at != 0 && at >= 0;
+			}
+		}
+		check("the bot never takes a chaos card", no_chaos);
 		std::mt19937 rng(5u);
 		check("a table with nothing acceptable returns no pick",
 			temper::bot_pick({"collapse"}, 6, rng) == -1

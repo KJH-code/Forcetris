@@ -61,6 +61,12 @@ SimConfig Config::sim () const {
 	config.kicks = true;
 	config.spin_rule = 2;
 	config.cleartype = 0;
+	// The Flow gauge and Overdrive, on the other hand, belong to every
+	// game: they are what quality buys. The fuse is the Forge's punishment
+	// and stays a room's gimmick; this is the reward, and it runs in the
+	// Training Yard, on the ladder and on the road alike. A campaign stage
+	// and a duel bot both build from here, so both sides ignite.
+	config.flow_rail = true;
 	return config;
 }
 

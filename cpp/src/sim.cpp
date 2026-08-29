@@ -108,6 +108,13 @@ void Sim::retune (const SimConfig& rules) {
 	config_.cold_iron = rules.cold_iron;
 	config_.sealed = rules.sealed;
 	board_.set_sealed(config_.sealed);
+	// The chaos cards rewrite what the board itself does, so they land the
+	// moment they are drafted like every other card. Gravity comes with
+	// them: a card that opens the walls pays for it in fall speed, and
+	// that price has to arrive with the gift.
+	config_.wild_spins = rules.wild_spins;
+	config_.wrap_walls = rules.wrap_walls;
+	config_.fall_delay = rules.fall_delay;
 	// The bank may now hold less than it is holding; a temper that shrinks
 	// the reservoir takes the overflow with it rather than leaving a value
 	// the sim's own ceiling says is impossible.
@@ -424,13 +431,37 @@ void Sim::commit_move () {
 	}
 	Piece probe = piece_;
 	probe.x = cand_x_;
+	if (board_.collides(probe) && config_.wrap_walls) {
+		// Ring walls: the two edges are one door. A move the WALL refused -
+		// the piece already stands against it and asked for one more column
+		// - lands it against the far wall instead, which is why a held
+		// direction crosses and keeps going. A move a block refused is
+		// still refused: the piece must be at the edge it is leaving, so a
+		// stack in the way can never be tunnelled through.
+		int lo = kWidth;
+		int hi = -1;
+		for (const Offset cell : cells_of(piece_)) {
+			lo = std::min(lo, cell.x);
+			hi = std::max(hi, cell.x);
+		}
+		if (cand_x_ < piece_.x && lo == 0) {
+			probe.x = piece_.x + (kWidth - 1 - hi);
+		} else if (cand_x_ > piece_.x && hi == kWidth - 1) {
+			probe.x = piece_.x - lo;
+		}
+		if (probe.x != cand_x_ && !board_.collides(probe)) {
+			cand_x_ = probe.x;
+		}
+	}
+	probe.x = cand_x_;
 	if (board_.collides(probe)) {
 		cand_x_ = piece_.x;
 	} else {
 		if (piece_.x != cand_x_) {
 			// A move disarms the spin only when the piece actually went
 			// somewhere. Rotations resync cand_x_ on the spot, so a kick's
-			// displacement never trips this.
+			// displacement never trips this - and a walk through the ring
+			// is a move like any other, so it disarms too.
 			rotated_last_ = false;
 		}
 		piece_.x = cand_x_;
@@ -503,9 +534,31 @@ void Sim::lock (bool forced, int posdif) {
 	// The spin verdict, decided while the piece still stands where it landed
 	// and before it becomes part of the stack, as announce_spin decides it.
 	int spin = attack::NOT_SPIN;
-	const auto verdict = spins::judge(
+	auto verdict = spins::judge(
 		board_, piece_, static_cast<spins::Rule>(config_.spin_rule),
 		rotated_last_, twist_flag_);
+	if (config_.wild_spins) {
+		// The crooked judge throws the rulebook out and looks at one thing:
+		// is the piece boxed in where it stopped? Walls on both flanks and
+		// it is a full spin, whatever the piece is and however it got there
+		// - an O dropped straight into a notch counts. Not the all-spin
+		// rule's own test, which also wants the way up shut: that can only
+		// be reached by turning under an overhang, and a judge this
+		// crooked is not asking anyone to turn anything.
+		//
+		// The judgement REPLACES the honest one rather than joining it, and
+		// that is the price on the card: a T-spin off the corner rule with
+		// room to slide out stops scoring.
+		Piece aside = piece_;
+		aside.x = piece_.x - 1;
+		const bool left_shut = board_.collides(aside);
+		aside.x = piece_.x + 1;
+		const bool right_shut = board_.collides(aside);
+		verdict = left_shut && right_shut
+			? std::optional<spins::Verdict>(
+				spins::Verdict{piece_.form, true})
+			: std::nullopt;
+	}
 	if (verdict.has_value()) {
 		spin = verdict->full ? attack::SPIN_FULL : attack::SPIN_MINI;
 		tspin_flag_ = true;
@@ -805,7 +858,7 @@ void Sim::resolve_score () {
 		if (config_.gametype == 1) {
 			stake *= 1.0 + (300.0 - static_cast<double>(timer_ms_ / 1000)) / 100.0;
 		}
-		if (config_.fuse && overdrive_frames_ > 0) {
+		if (charging() && overdrive_frames_ > 0) {
 			stake *= config_.overdrive_mult;
 		}
 		score_ += static_cast<long long>(py_round_whole(stake / 50.0) * 50.0);
@@ -819,18 +872,21 @@ void Sim::resolve_score () {
 	const int sent = attack::attack_for(
 		total, static_cast<attack::SpinKind>(last.spin), b2b_ > 1,
 		std::max(0, combo_ - 1), perfect);
-	// Under the fuse: the clear refuels the bank and charges the gauge -
-	// lines plus the base attack, so spins, quads, back-to-backs and
-	// perfect clears are what fill it, not haste - and Overdrive
-	// multiplies what goes out and burns the floor's garbage besides.
-	// Refuel and Flow read the unboosted attack, or Overdrive would feed
-	// itself.
+	// The clear pays two different debts. Only a fuse has a bank to refuel,
+	// so that half stays behind `fuse`. The gauge is the other half and it
+	// answers to quality alone - lines plus the base attack, so spins,
+	// quads, back-to-backs and perfect clears are what fill it, not haste -
+	// which is true with or without a clock on the piece, so it charges
+	// wherever the rail is up. Refuel and Flow read the unboosted attack,
+	// or Overdrive would feed itself.
 	int boosted = sent;
-	if (config_.fuse) {
+	if (config_.fuse && total > 0) {
+		fuse_bank_ = std::min(config_.fuse_bank_cap,
+			fuse_bank_ + config_.fuse_refuel_line * total
+				+ config_.fuse_refuel_attack * sent);
+	}
+	if (charging()) {
 		if (total > 0) {
-			fuse_bank_ = std::min(config_.fuse_bank_cap,
-				fuse_bank_ + config_.fuse_refuel_line * total
-					+ config_.fuse_refuel_attack * sent);
 			fuse_charge(config_.flow_gain_line * total
 				+ config_.flow_gain_attack * sent);
 		}

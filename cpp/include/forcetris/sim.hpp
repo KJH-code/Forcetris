@@ -115,6 +115,15 @@ struct SimConfig {
 	// The turning rack: every clear stirs the hold, swapping the held
 	// piece with the queue's front. Chaos, priced as a rule card.
 	bool hold_churn = false;
+	// The crooked judge: the corner rule is thrown out and a lock is a full
+	// spin whenever the piece cannot move - any piece, the O included, and
+	// whether or not it was ever turned. An honest T-spin with room to
+	// slide stops counting, which is the price.
+	bool wild_spins = false;
+	// Ring walls: the well's two edges open onto each other. A sideways
+	// move that only the wall refused lands the piece against the far wall
+	// instead - so a held direction crosses and keeps going.
+	bool wrap_walls = false;
 
 	// The fuse ruleset - the variant's own core, this side only. With `fuse`
 	// false the sim is the graded engine unchanged, and no trace ever sets
@@ -124,6 +133,13 @@ struct SimConfig {
 	// attack multiplied. Every number is a field so a balance pass changes
 	// defaults, never test pins.
 	bool fuse = false;
+	// The reward half of that ruleset, on its own switch: the Flow gauge
+	// charges and Overdrive ignites with no fuse anywhere. The fuse is the
+	// punishment (a piece slammed down when its clock runs out); Flow is
+	// the reward, and a game can want one without the other - every room
+	// off the Forge Road does. What still needs a clock stays behind
+	// `fuse`: the Flash bonus, the burn loss, heat pressure.
+	bool flow_rail = false;
 	double fuse_base = 3.0;       // Seconds a piece burns at level zero.
 	double fuse_min = 0.8;        // The schedule never shrinks below this.
 	double fuse_decay = 0.15;     // Seconds shaved off per level.
@@ -372,6 +388,9 @@ private:
 	void fuse_prime ();
 	void fuse_lock (bool forced);
 	void fuse_charge (double gain);
+	// Is the Flow gauge live? Either ruleset raises it - the fuse brings
+	// the rail with it, and the rail can stand without the fuse.
+	bool charging () const { return config_.fuse || config_.flow_rail; }
 	void cue (std::string name) { cues_.push_back(std::move(name)); }
 
 	SimConfig config_;

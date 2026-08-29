@@ -1054,6 +1054,29 @@ int main () {
 			campaign::slag_percent(campaign::kMild) == 100
 				&& campaign::slag_percent(campaign::kForged) == 150
 				&& campaign::slag_percent(campaign::kWhite) == 200);
+		// And so does the foe: the fire moves every duel rank a rung, the
+		// recipe's own number being what forged fights.
+		check("the fire moves the foe a rung either way",
+			campaign::rank_for(4, campaign::kMild) == 3
+				&& campaign::rank_for(4, campaign::kForged) == 4
+				&& campaign::rank_for(4, campaign::kWhite) == 5);
+		check("and never off the ladder",
+			campaign::rank_for(0, campaign::kMild) == 0
+				&& campaign::rank_for(7, campaign::kWhite) == 7
+				&& campaign::rank_for(-3, campaign::kMild) == 0
+				&& campaign::rank_for(99, campaign::kWhite) == 7);
+		// Monotone in the fire: a hotter run never fields an easier foe.
+		{
+			bool climbs = true;
+			for (int rank = 0; rank <= 7; ++rank) {
+				climbs = climbs
+					&& campaign::rank_for(rank, campaign::kMild)
+						<= campaign::rank_for(rank, campaign::kForged)
+					&& campaign::rank_for(rank, campaign::kForged)
+						<= campaign::rank_for(rank, campaign::kWhite);
+			}
+			check("a hotter fire never fields an easier foe", climbs);
+		}
 		check("difficulty names round-trip",
 			campaign::difficulty_from(
 					campaign::difficulty_name(campaign::kWhite))

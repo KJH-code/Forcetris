@@ -182,9 +182,12 @@ Meta read_meta (const json& data) {
 	meta.lines = int_or(data, "lines", 0);
 	meta.downstack = int_or(data, "downstack", 0);
 	meta.seconds = num_or(data, "seconds", 0.);
-	// The fuse ruleset, absent in every trainer-rules file.
+	// The fuse ruleset, absent in every trainer-rules file. `flow` is the
+	// reward half without it - a file written before that split simply
+	// does not carry the key, and reads back as the fuse said.
 	meta.fuse = bool_or(data, "fuse", false);
-	if (meta.fuse) {
+	meta.flow = bool_or(data, "flow", false);
+	if (meta.fuse || meta.flow) {
 		meta.fuse_base = num_or(data, "fuse_base", 0.);
 		meta.fuse_min = num_or(data, "fuse_min", 0.);
 		meta.fuse_decay = num_or(data, "fuse_decay", 0.);
@@ -232,10 +235,16 @@ json write_meta (const Meta& meta) {
 	out["lines"] = meta.lines;
 	out["downstack"] = meta.downstack;
 	out["seconds"] = meta.seconds;
-	// The fuse keys only exist in fuse-rules files: a trainer-rules file
-	// written today is byte-for-byte the file written yesterday.
-	if (meta.fuse) {
-		out["fuse"] = true;
+	// These keys only exist in files played under one of the two rulesets:
+	// a plain trainer-rules file written today is byte-for-byte the file
+	// written yesterday.
+	if (meta.fuse || meta.flow) {
+		if (meta.fuse) {
+			out["fuse"] = true;
+		}
+		if (meta.flow) {
+			out["flow"] = true;
+		}
 		out["fuse_base"] = meta.fuse_base;
 		out["fuse_min"] = meta.fuse_min;
 		out["fuse_decay"] = meta.fuse_decay;

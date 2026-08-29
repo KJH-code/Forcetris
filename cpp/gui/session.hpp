@@ -25,6 +25,24 @@ struct Banner {
 	long frame = -1;        // The sim frame it went up on.
 };
 
+// --- The chaos cards that curse the hands. --------------------------------
+// Two of the Forge's chaos cards do not change a single rule of the game:
+// they change what the player's own keys mean on the way in. That belongs
+// here rather than in the sim - the graded engine must go on receiving
+// honest keys, and a replay of a cursed run then re-enacts the piece's real
+// journey - but it is still arithmetic, so it lives in a pair of pure
+// functions the input tests can grade.
+
+// Crossed Wires: left and right trade places, and so do the two rotations.
+// The same function serves the press and the release, so a held key can
+// never come back as a different one and stick.
+Key crossed (Key key);
+
+// The Loose Ratchet: every third turn goes one further. `turns` is the
+// run's own counter, bumped here; true means the caller should send one
+// extra tap of the same rotation before the real one.
+bool overshoots (int& turns, Key key);
+
 class Session {
 public:
 	// `meta` is what the recorder writes down about the game being started:

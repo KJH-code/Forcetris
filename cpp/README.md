@@ -234,13 +234,25 @@ diagnostics overlay - average and worst frame time, and how many engine
 ticks each drawn frame carried - so a stutter report can arrive with
 numbers attached.
 
+**The fuse punishes; the Flow rail rewards.** They were one flag once,
+and turning the fuse into a room's gimmick took the reward with it by
+accident. They are two flags now (`fuse`, `flow_rail`): the fuse is the
+clock that slams a piece down where it stands and belongs to the burn
+rooms alone, while the gauge - filled by spins, quads, back-to-backs,
+combos and perfect clears, never by haste - climbs in every game there
+is, and a full gauge still ignites Overdrive: score and attack
+multiplied, and every clear burning a garbage row off your own floor
+while it lasts. What genuinely needs a clock stays with the fuse: the
+Flash bonus for a quick lock, the Flow bled by a forced drop, and the
+heat pressure a duel's Overdrive puts on the other wick.
+
 **The draft is the campaign's gimmick now.** The Forge Map deals its
 cards between battles - the spoils of a won node - and the board never
 freezes mid-game for a hand of cards; the pick is one press (`1` `2`
 `3`, the arrows and Enter, or a tap). Inside a burning room the heats -
 ten cleared lines each - still tighten the fuse; that is the sim's own.
 
-The pool is ten cards in four families, and a card's face carries no
+The pool is twenty cards in five families, and a card's face carries no
 numbers - a family word and glyph, a name, and one plain line, because a
 card that needs a manual has already failed. **Fuel** survives: *Thick
 Wick* (pieces burn longer, `fuse_base +0.5s`), *Quench* (clears refill
@@ -250,9 +262,24 @@ more fuse, `+0.3s` a line), *Slow Burn* (the forge tightens slower,
 attack). **Risk** trades: *Overheat* (all Flow gains doubled, the wick
 half a second shorter), *Gamble* (`overdrive_mult +1.0`, a burnt piece
 costs `15` more Flow). **Rule** rewrites: *Collapse* (clears become a
-sticky cascade), *Every Twist* (every spin scores, minis included). Fuel
-and Flow stack two or three deep; Risk and Rule are one each - nineteen
-stacks in all, and when they run out the forge simply stops dealing.
+sticky cascade), *Every Twist* (every spin scores, minis included).
+**Chaos** breaks something the hands trusted and pays for it in the same
+breath - and every one of its faces says both halves out loud: *The
+Crooked Judge* (any piece boxed in on both flanks scores a full spin,
+the O included - but the corner rule is thrown out, so an honest T-spin
+with room to slide stops counting), *The Ring* (the two walls open onto
+each other, so a held direction crosses and keeps going - and gravity
+tightens six frames to pay for it), *Crossed Wires* (left and right and
+the two rotations trade places - and the hand hits half again as hard),
+*The Loose Ratchet* (every third turn goes one further - and the Flow
+gauge charges far faster). The two that curse the keys do it in the
+GUI's input path, never in the sim: the graded engine is handed honest
+keys and the recording is the piece's real journey. Chaos is the rarest
+family, drawn as seldom as Rule, one copy each, and the duel bot never
+takes one - two of them move the walls and the judge out from under its
+search, the other two curse hands it does not have. Fuel and Flow stack
+two or three deep; Risk, Rule and Chaos are one each - and when the pool
+runs out the forge simply stops dealing.
 
 (The old **Tempering** mode - twelve heats, a draft at each, played as
 its own Training Yard card - retired in V2.2a: the campaign absorbed the
@@ -357,7 +384,12 @@ the pattern every "seen, not simmed" gimmick follows. A survival floor
 rising now lands with a shudder and a thud, so the recipe's quake is
 heard as well as suffered. What death costs is picked at the door: **mild** re-offers the
 node, **forged** spends one of three lives, **white-hot** ends the climb
-outright - and heavier fires pay 150 / 200 percent slag. Death always
+outright - and heavier fires pay 150 / 200 percent slag. The fire also
+picks the fight, not only the stakes: every duel on the road - miniboss,
+boss, skirmish and each foe of a raid - moves a rung of the bot ladder
+with it, a rung down on mild and a rung up at white heat, so the
+recipe's own rank is what forged fights (`campaign::rank_for`, clamped
+to the ladder's ends and pinned in `campaign_check`). Death always
 renders unspent embers down to slag - the prestige loop, "the run's coin
 dies, the metal stays". Slag buys permanent upgrades at **the Anvil** - a
 longer wick, a deeper bank, a greater bellows, ember sense, Preheat's

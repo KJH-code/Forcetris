@@ -32,6 +32,10 @@ enum class Family {
 	Flow = 1,   // Overdrive sooner, longer, worth more.
 	Risk = 2,   // A gain paid for with a loss.
 	Rule = 3,   // The rare one that changes what a clear or a spin is.
+	// The rarest: a trade that also breaks something the hands had learned
+	// to trust - the judge, the walls, the keys themselves. Every one of
+	// them pays, or it would be a punishment rather than a card.
+	Chaos = 4,
 };
 
 struct Temper {

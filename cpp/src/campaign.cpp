@@ -270,6 +270,15 @@ int slag_percent (int difficulty) {
 	return difficulty == kWhite ? 200 : difficulty == kForged ? 150 : 100;
 }
 
+int rank_for (int rank, int difficulty) {
+	// One rung either side of the recipe, and never off the ladder. A rung
+	// is a real step - the bot thinks wider and drops faster with each -
+	// so this is felt without any recipe being rewritten, and the recipe
+	// stays the honest middle it was balanced as.
+	const int shift = difficulty == kWhite ? 1 : difficulty == kMild ? -1 : 0;
+	return std::clamp(rank + shift, 0, 7);
+}
+
 const char* difficulty_name (int difficulty) {
 	return difficulty == kWhite ? "white"
 		: difficulty == kForged ? "forged" : "mild";

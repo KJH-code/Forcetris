@@ -131,6 +131,10 @@ add_executable(coldcheck tests/coldcheck.cpp)
 target_link_libraries(coldcheck PRIVATE forcetris_core)
 target_compile_options(coldcheck PRIVATE ${FORCETRIS_WARNINGS})
 
+add_executable(chaoscheck tests/chaoscheck.cpp)
+target_link_libraries(chaoscheck PRIVATE forcetris_core)
+target_compile_options(chaoscheck PRIVATE ${FORCETRIS_WARNINGS})
+
 add_executable(careercheck tests/careercheck.cpp)
 target_link_libraries(careercheck PRIVATE forcetris_core)
 target_compile_options(careercheck PRIVATE ${FORCETRIS_WARNINGS})
@@ -275,6 +279,9 @@ add_test(NAME opponent_check COMMAND opponentcheck)
 add_test(NAME clear_check COMMAND clearcheck)
 add_test(NAME sealed_check COMMAND sealedcheck)
 add_test(NAME cold_check COMMAND coldcheck)
+# The chaos cards' simmed halves: the crooked judge and the ring walls,
+# each graded for its gift, its price, and its silence when off.
+add_test(NAME chaos_check COMMAND chaoscheck)
 add_test(NAME input_check COMMAND inputcheck)
 add_test(NAME fuse_check COMMAND fusecheck)
 add_test(NAME career_check COMMAND careercheck)

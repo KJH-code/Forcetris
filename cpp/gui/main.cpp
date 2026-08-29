@@ -450,6 +450,14 @@ struct App {
 	// consumed by the launch - one coat, one fight.
 	bool oil_hot = false;
 	bool oil_frost = false;
+	// The chaos cards that curse the hands rather than the board, read off
+	// the run's build at every launch the way the oils are: Crossed Wires
+	// swaps the keys on the way in, the Loose Ratchet sends one turn too
+	// many every third time. The sim never hears about either - it receives
+	// whatever the cursed hands actually asked for.
+	bool wires_crossed = false;
+	bool ratchet_loose = false;
+	int ratchet_turns = 0;
 	// The seen-not-simmed stage gimmicks, read from the recipe at launch:
 	// dim lights only a lantern around the piece (the lantern glides after
 	// it), fog smokes the queue over past the first piece.
@@ -600,13 +608,15 @@ std::string place_string (int at) {
 	return std::to_string(at + 1) + "th";
 }
 
-// The fuse block on a recording: which ruleset, and every number it was
-// played under. One writer, because a file that says fuse-rules without
-// saying under which numbers cannot be read back honestly - and Tempering
-// starts from rules the settings screen never saw.
+// The ruleset block on a recording: which halves were up - the fuse, the
+// Flow rail, or both - and every number they were played under. One
+// writer, because a file that names a ruleset without saying under which
+// numbers cannot be read back honestly, and a campaign stage starts from
+// rules the settings screen never saw.
 void stamp_fuse (replay::Meta& meta, const SimConfig& rules) {
 	meta.fuse = rules.fuse;
-	if (!rules.fuse) {
+	meta.flow = rules.flow_rail;
+	if (!rules.fuse && !rules.flow_rail) {
 		return;
 	}
 	meta.fuse_base = rules.fuse_base;
@@ -686,6 +696,11 @@ void start_game (App& app, int mode,
 	app.career_stage = -1;
 	app.campaign_stage = -1;
 	app.daily_run = false;
+	// No campaign build here, so no curse either: a chaos card taken on the
+	// road must never follow the hands into the Training Yard.
+	app.wires_crossed = false;
+	app.ratchet_loose = false;
+	app.ratchet_turns = 0;
 	app.mode = mode;
 	app.tempers.clear();
 	app.offers.clear();
@@ -794,6 +809,10 @@ void start_versus (App& app, int career_stage = -1) {
 	app.career_od = false;
 	app.campaign_od = false;
 	app.daily_run = false;
+	// A yard duel carries no campaign build, and so no curse.
+	app.wires_crossed = false;
+	app.ratchet_loose = false;
+	app.ratchet_turns = 0;
 	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = 5;
@@ -899,6 +918,10 @@ ImU32 family_ink (temper::Family family) {
 		case temper::Family::Flow: return IM_COL32(255, 206, 96, 255);
 		case temper::Family::Risk: return IM_COL32(226, 92, 62, 255);
 		case temper::Family::Rule: return IM_COL32(240, 234, 220, 255);
+		// Chaos gets the one hue nothing else in the forge owns - a cold
+		// violet against all that iron and ember, so a card that breaks
+		// something is never mistaken for one that only helps.
+		case temper::Family::Chaos: return IM_COL32(196, 122, 255, 255);
 		case temper::Family::Fuel:
 		default: return IM_COL32(214, 128, 62, 255);
 	}
@@ -910,6 +933,7 @@ const char* family_tag (temper::Family family) {
 		case temper::Family::Flow: return "FLOW";
 		case temper::Family::Risk: return "RISK";
 		case temper::Family::Rule: return "RULE";
+		case temper::Family::Chaos: return "CHAOS";
 		case temper::Family::Fuel:
 		default: return "FUEL";
 	}
@@ -949,6 +973,16 @@ void family_glyph (ImDrawList* draw, temper::Family family, ImVec2 at,
 					ImVec2(at.x + size - r * 0.2f,
 						at.y + r * 0.6f + row * r * 0.55f), ink);
 			}
+			break;
+		case temper::Family::Chaos:
+			// A knot: two bars crossed over each other, the plainest way to
+			// draw "this is not what you think it is".
+			draw->AddLine(ImVec2(at.x + r * 0.3f, at.y + r * 0.3f),
+				ImVec2(at.x + size - r * 0.3f, at.y + size - r * 0.3f),
+				ink, std::max(1.f, r * 0.34f));
+			draw->AddLine(ImVec2(at.x + size - r * 0.3f, at.y + r * 0.3f),
+				ImVec2(at.x + r * 0.3f, at.y + size - r * 0.3f),
+				ink, std::max(1.f, r * 0.34f));
 			break;
 		case temper::Family::Fuel:
 		default:
@@ -1054,8 +1088,22 @@ void start_stage (App& app, int index, int run_node = -1) {
 	SimConfig mine = campaign::stage_config(stage, base, app.campaign.forge);
 	app.oil_hot = false;
 	app.oil_frost = false;
+	app.wires_crossed = false;
+	app.ratchet_loose = false;
+	app.ratchet_turns = 0;
 	if (run_node >= 0) {
 		mine = temper::tempered(mine, app.campaign.run.tempers);
+		// The two chaos cards the sim cannot carry: they curse the hands,
+		// so the screen holds them for as long as this stage lasts.
+		{
+			const std::vector<std::string>& worn = app.campaign.run.tempers;
+			const auto has = [&worn] (const char* id) {
+				return std::find(worn.begin(), worn.end(), std::string(id))
+					!= worn.end();
+			};
+			app.wires_crossed = has("crossed_wires");
+			app.ratchet_loose = has("loose_ratchet");
+		}
 		if (app.campaign.run.endless) {
 			// The climb's tightening, on top of everything else.
 			mine = campaign::endless_scaled(mine, app.campaign.run.ring);
@@ -1090,6 +1138,12 @@ void start_stage (App& app, int index, int run_node = -1) {
 	if (stage.mode == 5) {
 		app.versus_bot_base = campaign::bot_config(stage, base);
 		int rank = stage.rank;
+		if (run_node >= 0) {
+			// The fire picked at the door is the whole run's difficulty,
+			// so it moves the foe as well as the price of dying: a rung
+			// down on mild, a rung up at white heat.
+			rank = campaign::rank_for(rank, app.campaign.run.difficulty);
+		}
 		if (run_node >= 0 && app.campaign.run.endless) {
 			// The climb tightens the foe's side too: its board obeys the
 			// same squeeze, and its rank climbs half a rung a ring.
@@ -1104,17 +1158,22 @@ void start_stage (App& app, int index, int run_node = -1) {
 		// trainer's plain duels never carry.
 		app.versus->arm_skills(stage.id);
 		if (stage.raid != nullptr) {
-			// A raid walks its rank list one foe per round.
-			int rank = 0;
+			// A raid walks its rank list one foe per round - every one of
+			// them moved by the run's fire the way a lone boss is.
+			const int fire = run_node >= 0
+				? app.campaign.run.difficulty : campaign::kForged;
+			int listed = 0;
 			for (const char* c = stage.raid; *c != '\0'; ++c) {
 				if (*c >= '0' && *c <= '9') {
-					rank = rank * 10 + (*c - '0');
+					listed = listed * 10 + (*c - '0');
 				} else if (*c == ',') {
-					app.versus->raid_ranks.push_back(rank);
-					rank = 0;
+					app.versus->raid_ranks.push_back(
+						campaign::rank_for(listed, fire));
+					listed = 0;
 				}
 			}
-			app.versus->raid_ranks.push_back(rank);
+			app.versus->raid_ranks.push_back(
+				campaign::rank_for(listed, fire));
 		}
 		app.versus->begin_round(app.seeds(), meta, app.versus_bot_base,
 			app.versus_blade);
@@ -1735,6 +1794,29 @@ void take_binding (App& app, SDL_Scancode code) {
 	app.rebinding.clear();
 }
 
+// Every press and release the player makes, on its way to the sim - and the
+// one place the run's cursed hands are honoured, so the keyboard and the
+// touch buttons are cursed alike and neither can leave a key stuck (the
+// same translation runs on both edges, and the cards cannot change hands
+// mid-stage). The sim itself never learns of any of this: it is handed the
+// keys it is asked for, and the recording is the honest journey they made.
+void player_key (App& app, Key key, bool down) {
+	if (!app.session.has_value()) {
+		return;
+	}
+	if (app.wires_crossed) {
+		key = crossed(key);
+	}
+	if (down && app.ratchet_loose && overshoots(app.ratchet_turns, key)) {
+		// The overshoot rides in as a whole extra tap ahead of the real
+		// press, so the turn goes one further and the release still
+		// matches the key that made it.
+		app.session->key(key, true);
+		app.session->key(key, false);
+	}
+	app.session->key(key, down);
+}
+
 void handle_event (App& app, const SDL_Event& event) {
 	ImGui_ImplSDL2_ProcessEvent(&event);
 	if (event.type == SDL_QUIT) {
@@ -1768,7 +1850,7 @@ void handle_event (App& app, const SDL_Event& event) {
 					if (x >= rect.x && x < rect.x + rect.w
 						&& y >= rect.y && y < rect.y + rect.h) {
 						app.touch_held[event.tfinger.fingerId] = i;
-						app.session->key(app.touch[i].key, true);
+						player_key(app, app.touch[i].key, true);
 						app.input_nudge = true;
 						break;
 					}
@@ -1781,7 +1863,7 @@ void handle_event (App& app, const SDL_Event& event) {
 			if (found != app.touch_held.end()) {
 				if (app.session.has_value()
 					&& found->second < app.touch.size()) {
-					app.session->key(app.touch[found->second].key, false);
+					player_key(app, app.touch[found->second].key, false);
 				}
 				app.touch_held.erase(found);
 			}
@@ -1938,7 +2020,7 @@ void handle_event (App& app, const SDL_Event& event) {
 			// the next touch.
 			app.touch_shown = false;
 		}
-		app.session->key(*key, down);
+		player_key(app, *key, down);
 		app.input_nudge = true;
 	}
 }
@@ -2265,15 +2347,21 @@ void draw_overdrive_bloom (App& app) {
 	}
 }
 
+// Is this board's Flow gauge live? The fuse brings the rail with it, and
+// the rail stands on its own everywhere else - so the glow, the gauge and
+// the labels all ask this rather than the fuse.
+bool charging (const Sim& sim) {
+	return sim.config().fuse || sim.config().flow_rail;
+}
+
 // How much trouble this board is in, 0 to 1: a fuse nearly spent, garbage
 // massing, a stack near the sky, the other board's Overdrive bearing down.
-// The well's glow and the screen's vignette both read from it.
+// The well's glow and the screen's vignette both read from it. A pure room
+// has no fuse to spend but every other danger is still real.
 double danger_of (const Sim& sim) {
-	if (!sim.config().fuse) {
-		return 0.;
-	}
 	double danger = 0.;
-	if (sim.fuse_total() > 0. && sim.piece_elapsed().has_value()) {
+	if (sim.config().fuse && sim.fuse_total() > 0.
+		&& sim.piece_elapsed().has_value()) {
 		danger = std::max(danger,
 			(*sim.piece_elapsed() / sim.fuse_total() - 0.6) / 0.4);
 	}
@@ -2395,7 +2483,7 @@ void draw_board (App& app) {
 	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 	// The halo: the well itself glows as the Flow gauge fills, so the room
 	// warms towards an ignition before it happens.
-	const double charge = sim.config().fuse ? sim.flow() / 100. : 0.;
+	const double charge = charging(sim) ? sim.flow() / 100. : 0.;
 	if (charge > 0.02) {
 		const float beat = 0.85f + 0.15f * std::sin(sim.frame() * 0.12f);
 		draw_glow(app, kBoardX + kBoardW / 2.f, kBoardY + kBoardH / 2.f,
@@ -2739,7 +2827,7 @@ void draw_board (App& app) {
 	// frame, and a gauge sitting in that is a gauge nobody can read.
 	// Overdrive fills the rail solid, which is the point - the gauge is
 	// spent and the ignition is what it bought.
-	if (fused) {
+	if (charging(sim)) {
 		const int rail_x = kBoardX - px(38);
 		const int rail_y = kBoardY + px(120);
 		const int rail_h = kBoardH - px(130);
@@ -2781,7 +2869,7 @@ Room room_of (App& app) {
 	room.playing = app.screen == Screen::Game && app.session.has_value();
 	if (room.playing) {
 		const Sim& sim = app.session->sim();
-		room.heat = sim.config().fuse ? sim.flow() / 100. : 0.;
+		room.heat = charging(sim) ? sim.flow() / 100. : 0.;
 		room.danger = danger_of(sim);
 		room.burning = sim.overdrive();
 	}
@@ -3105,7 +3193,7 @@ void draw_versus_panel (App& app) {
 	}
 	// The bot's Flow rail on its board's right flank - watching the gauge
 	// creep up is the warning the ignition deserves.
-	if (theirs.config().fuse) {
+	if (charging(theirs)) {
 		const int rail_x = left + kWidth * cell + px(4);
 		const int rail_h = kHeight * cell;
 		fill(renderer, rail_x, top, px(4), rail_h, {36, 27, 20, 255});
@@ -4621,9 +4709,6 @@ void draw_burn_rows (App& app) {
 // near the sky, the other board's Overdrive bearing down.
 void draw_heat (App& app) {
 	const Sim& sim = app.session->sim();
-	if (!sim.config().fuse) {
-		return;
-	}
 	const double danger = danger_of(sim);
 	if (danger <= 0.) {
 		return;
@@ -4813,11 +4898,11 @@ void draw_career (App& app) {
 		};
 		const Fire fires[3] = {
 			{campaign::kMild, "Mild",
-				"a death re-offers the node"},
+				"a death re-offers the node; foes fight a rung down"},
 			{campaign::kForged, "Forged",
-				"three lives a climb, half again the slag"},
+				"three lives, half again the slag; foes as written"},
 			{campaign::kWhite, "White-hot",
-				"one death ends the climb, double slag"},
+				"one death ends it, double slag; foes a rung up"},
 		};
 		for (const Fire& fire : fires) {
 			if (ImGui::RadioButton(fire.name, &app.pick_difficulty,
@@ -6815,7 +6900,7 @@ int run (bool smoke, long smoke_frames) {
 			}
 			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
 			draw_label("NEXT", kBoardX + kBoardW + ui(18), kBoardY - ui(24));
-			if (app.session->sim().config().fuse) {
+			if (charging(app.session->sim())) {
 				draw_label("FLOW", kBoardX - px(114), kBoardY + px(98));
 				if (app.session->sim().overdrive()) {
 					draw_label("OVERDRIVE", kBoardX - px(114),

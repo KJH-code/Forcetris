@@ -53,6 +53,11 @@ struct Meta {
 	// tunable written down when on - a marker alone could not honestly say
 	// which game a score belongs to, let alone re-derive its pressure.
 	bool fuse = false;
+	// The reward half on its own: the Flow gauge and Overdrive with no
+	// fuse anywhere, which is how every room off the Forge Road plays. The
+	// tunables below are written whenever either flag is up, so a score
+	// made under Overdrive always says so.
+	bool flow = false;
 	double fuse_base = 0., fuse_min = 0., fuse_decay = 0.;
 	double fuse_bank_cap = 0., fuse_draw_cap = 0.;
 	double fuse_refuel_line = 0., fuse_refuel_attack = 0.;

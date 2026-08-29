@@ -152,6 +152,59 @@ int main () {
 			std::to_string(session.sim().locked().size()));
 	}
 
+	// --- The chaos cards that curse the hands. ------------------------------
+	// Crossed Wires trades the two directions and the two rotations, and
+	// nothing else - a hard drop under the curse is still a hard drop.
+	{
+		check("crossed wires trade the pairs",
+			gui::crossed(Key::Left) == Key::Right
+				&& gui::crossed(Key::Right) == Key::Left
+				&& gui::crossed(Key::Ccw) == Key::Cw
+				&& gui::crossed(Key::Cw) == Key::Ccw);
+		check("and leave the rest of the hand alone",
+			gui::crossed(Key::Hard) == Key::Hard
+				&& gui::crossed(Key::Soft) == Key::Soft
+				&& gui::crossed(Key::Hold) == Key::Hold
+				&& gui::crossed(Key::Flip) == Key::Flip);
+		// The swap has to be its own inverse, or the release of a held key
+		// would arrive as a different key and stick it down forever.
+		bool paired = true;
+		for (const Key key : {Key::Left, Key::Right, Key::Soft, Key::Hard,
+				Key::Hold, Key::Ccw, Key::Cw, Key::Flip}) {
+			paired = paired && gui::crossed(gui::crossed(key)) == key;
+		}
+		check("crossing twice is not crossing at all", paired);
+	}
+	// The Loose Ratchet counts turns and overshoots every third one. Only
+	// turns: walking the piece across the board must never trip it, or the
+	// count would depend on how much the player shuffled.
+	{
+		int turns = 0;
+		std::string pattern;
+		for (int i = 0; i < 9; ++i) {
+			pattern += gui::overshoots(turns, Key::Cw) ? "!" : ".";
+		}
+		check("every third turn goes one too far", pattern == "..!..!..!",
+			pattern);
+		int quiet = 0;
+		bool tripped = false;
+		for (const Key key : {Key::Left, Key::Right, Key::Soft, Key::Hard,
+				Key::Hold, Key::Flip}) {
+			for (int i = 0; i < 9; ++i) {
+				tripped = tripped || gui::overshoots(quiet, key);
+			}
+		}
+		check("and nothing but a turn is counted at all",
+			!tripped && quiet == 0);
+		// The two rotations share one ratchet: it is the hand that is
+		// loose, not one key.
+		int mixed = 0;
+		const bool third = gui::overshoots(mixed, Key::Cw)
+			|| gui::overshoots(mixed, Key::Ccw)
+			|| gui::overshoots(mixed, Key::Cw);
+		check("both rotations wind the same ratchet", third && mixed == 3);
+	}
+
 	if (failures > 0) {
 		std::printf("\n%d check(s) failed.\n", failures);
 		return 1;

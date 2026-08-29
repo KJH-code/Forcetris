@@ -14,6 +14,7 @@ namespace {
 int weight_of (Family family) {
 	switch (family) {
 		case Family::Rule: return 1;
+		case Family::Chaos: return 1;
 		case Family::Risk: return 3;
 		default: return 4;
 	}
@@ -65,6 +66,22 @@ const std::vector<Temper>& pool () {
 			"every spin scores", Family::Rule, 1},
 		{"turning_rack", "The Turning Rack",
 			"every clear stirs the hold", Family::Rule, 1},
+		// --- Chaos: something the hands trusted, bought and sold. ---------
+		// Each face names the gift and the price in one breath, because a
+		// card that only takes is a card nobody picks - and one that only
+		// gives is not chaos, it is a reward.
+		{"wild_spins", "The Crooked Judge",
+			"wedge it in and it twists - nothing else does",
+			Family::Chaos, 1},
+		{"ring_walls", "The Ring",
+			"the walls open onto each other - the forge spins faster",
+			Family::Chaos, 1},
+		{"crossed_wires", "Crossed Wires",
+			"your hands are not where you left them - but they hit harder",
+			Family::Chaos, 1},
+		{"loose_ratchet", "The Loose Ratchet",
+			"every third turn goes too far - the Flow loves it",
+			Family::Chaos, 1},
 	};
 	return all;
 }
@@ -121,9 +138,30 @@ void apply (SimConfig& rules, const std::string& id) {
 		rules.attack_scale += 0.75;
 	} else if (id == "turning_rack") {
 		rules.hold_churn = true;
+	} else if (id == "wild_spins") {
+		// The gift and the price are the same switch: every boxed-in lock
+		// scores, and every honest corner-rule spin stops.
+		rules.wild_spins = true;
+	} else if (id == "ring_walls") {
+		// The walls open, and the price is paid in gravity - the ring turns
+		// faster the moment it opens. A floor under it so a stack of other
+		// speed-ups can never leave a piece unplayable.
+		rules.wrap_walls = true;
+		rules.fall_delay = std::max(6, rules.fall_delay - 6);
+	} else if (id == "crossed_wires") {
+		// The curse itself lives in the GUI's hands (the keys are not the
+		// sim's business); what the sim owns is what it buys.
+		rules.attack_scale += 0.5;
+	} else if (id == "loose_ratchet") {
+		// Same shape: the extra turn is the screen's doing, the reward is
+		// here.
+		rules.flow_gain_line += 3.0;
+		rules.flow_gain_attack += 3.0;
 	}
 	// frostbrand and hobnails touch the FOE's board, not this config: the
 	// versus wiring reads them off the run's build at every round start.
+	// crossed_wires and loose_ratchet are the same shape pointed at the
+	// player's own hands - the arithmetic above is only what they pay.
 	// An id this build does not know - a card from a newer build's replay,
 	// or one that has since been retired - is read rather than refused, so
 	// there is deliberately no terminal else.
@@ -210,9 +248,12 @@ int bot_pick (const std::vector<std::string>& offers, int rank_index,
 		// Never a card that rewrites what the planner searches with:
 		// collapse changes the clearing rule, cold forge freezes the
 		// clears, and the turning rack churns the hold under a plan
-		// already typed.
+		// already typed. Chaos goes out whole, family and all - two of
+		// those cards move the walls and the judge out from under the
+		// search, and the other two curse hands the bot does not have.
 		const std::string id = card->id;
-		if (id == "collapse" || id == "cold_forge" || id == "turning_rack") {
+		if (id == "collapse" || id == "cold_forge" || id == "turning_rack"
+			|| card->family == Family::Chaos) {
 			continue;
 		}
 		int weight = 0;
@@ -229,6 +270,8 @@ int bot_pick (const std::vector<std::string>& offers, int rank_index,
 			case Family::Rule:
 				weight = 1;   // every_twist: harmless, occasionally taken.
 				break;
+			case Family::Chaos:
+				break;        // Unreachable: skipped above.
 		}
 		takeable.push_back(static_cast<int>(at));
 		weights.push_back(weight);

@@ -272,6 +272,68 @@ int main () {
 				&& heard.count("overdrive_end") == 1);
 	}
 
+	// The rail without the fuse: the reward half of the ruleset standing on
+	// its own, which is how every room off the Forge Road plays. Quality
+	// still charges the gauge, a full gauge still ignites, and Overdrive
+	// still multiplies the blow - but nothing burns, so no piece is ever
+	// slammed down and the Flash bonus (a share of a fuse that is not
+	// there) never pays.
+	{
+		SimConfig config = fused();
+		config.fuse = false;
+		config.flow_rail = true;
+		config.flow_gain_line = 120.;
+		config.overdrive_secs = 0.5;   // 25 frames.
+		config.clear_delay = false;
+		Sim sim(config, std::vector<int>(40, I));
+		std::set<std::string> heard;
+		wait_spawn(sim, &heard);
+		sim.seed(welled(1));
+		tap(sim, Key::Cw, &heard);
+		tap(sim, Key::Hard, &heard);
+		check("the gauge charges with no fuse anywhere",
+			sim.flow() > 0. && sim.overdrive()
+				&& heard.count("overdrive") == 1);
+		check("and no fuse means no flash bonus and no forced drop",
+			heard.count("flash") == 0 && heard.count("forced") == 0
+				&& heard.count("fusewarn") == 0);
+		wait_spawn(sim, &heard);
+		// The same quad-into-a-perfect-clear the fused block measures: four
+		// for the quad plus ten for the PC, times the 1.5 multiplier.
+		sim.seed(welled(4));
+		tap(sim, Key::Cw, &heard);
+		tap(sim, Key::Hard, &heard);
+		check("overdrive multiplies the attack without a fuse",
+			sim.locked().back().attack == 21,
+			std::to_string(sim.locked().back().attack));
+		// The piece clock never advances, so a long-held piece is never
+		// taken away from the player.
+		wait_spawn(sim, &heard);
+		for (int i = 0; i < 300; ++i) {
+			sim.step(std::nullopt);
+		}
+		check("a piece is never slammed down on a pure board",
+			sim.piece_elapsed().value_or(-1.) == 0.,
+			std::to_string(sim.piece_elapsed().value_or(-1.)));
+	}
+
+	// And with neither flag the gauge is dead metal: the graded engine.
+	{
+		SimConfig config = fused();
+		config.fuse = false;
+		config.flow_rail = false;
+		config.flow_gain_line = 120.;
+		Sim sim(config, std::vector<int>(40, I));
+		std::set<std::string> heard;
+		wait_spawn(sim, &heard);
+		sim.seed(welled(1));
+		tap(sim, Key::Cw, &heard);
+		tap(sim, Key::Hard, &heard);
+		check("with both flags down nothing charges",
+			sim.flow() == 0. && !sim.overdrive()
+				&& heard.count("overdrive") == 0);
+	}
+
 	// The record: a fuse-rules replay carries every tunable through a save
 	// and load, and a file without the keys reads back as trainer rules.
 	{

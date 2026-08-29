@@ -101,6 +101,24 @@ void Session::key (Key key, bool down) {
 	pending_.push_back(Event{key, down});
 }
 
+Key crossed (Key key) {
+	switch (key) {
+		case Key::Left: return Key::Right;
+		case Key::Right: return Key::Left;
+		case Key::Ccw: return Key::Cw;
+		case Key::Cw: return Key::Ccw;
+		default: return key;   // Drop, hold, soft drop and the flip are safe.
+	}
+}
+
+bool overshoots (int& turns, Key key) {
+	if (key != Key::Cw && key != Key::Ccw) {
+		return false;   // The flip already turns twice; leave it alone.
+	}
+	++turns;
+	return turns % 3 == 0;
+}
+
 bool Session::step () {
 	if (over_) {
 		return false;

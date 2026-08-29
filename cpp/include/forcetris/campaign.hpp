@@ -158,6 +158,12 @@ struct Run {
 };
 // Slag awards scale with the weight of death: 100 / 150 / 200 percent.
 int slag_percent (int difficulty);
+// And so does the foe. The fire picked at the door was only ever a wager
+// on death; it should also be what the road's duels are worth fighting,
+// so every duel rank moves with it - a rung down on mild, the recipe's own
+// on forged, a rung up at white heat - inside the ladder's own range. The
+// miniboss, the boss, the skirmishes and every foe of a raid alike.
+int rank_for (int rank, int difficulty);
 const char* difficulty_name (int difficulty);   // "mild" / "forged" / "white".
 int difficulty_from (const std::string& name);  // kMild when unrecognized.
 
