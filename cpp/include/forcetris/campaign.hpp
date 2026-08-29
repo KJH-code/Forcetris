@@ -246,6 +246,16 @@ bool open (const State& state, size_t stage);
 // starred.
 bool chapter_open (const State& state, int chapter);
 
+// --- What the smith charges. --------------------------------------------
+// Every ember price in a run - a reroll, a second pick, melting a card
+// down, a duplicate, a life, a coat of oil - climbs with the run. The
+// rungs already climbed are the measure: a chapter's rows plus the rows of
+// the map in progress, or the climb's own row count when it is endless.
+// Prices rise by a fixed share per row and stop at a ceiling, so late is
+// dear but never impossible. The skip's consolation is paid on the same
+// curve, because it is the shape of one economy and not two.
+int priced (int base, const Run& run);
+
 // --- The Endless Climb. -------------------------------------------------
 // Opens once the Deep Forge's master has fallen at least once.
 bool endless_open (const State& state);

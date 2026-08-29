@@ -493,6 +493,24 @@ bool endless_open (const State& state) {
 	return false;
 }
 
+int priced (int base, const Run& run) {
+	if (base <= 0 || !run.active) {
+		return std::max(0, base);
+	}
+	// The rungs behind you. A campaign run counts the chapters it has left
+	// behind as full maps, so the price carries across a chapter break the
+	// way the build does; a climb counts its rings the same way.
+	const int rungs = run.endless ? endless_rows(run)
+		: run.chapter * kMapDepth + run.depth;
+	// Eight percent a rung, and never past three times the door price -
+	// the ceiling is what keeps the last chapter a shop rather than a
+	// museum. Integer arithmetic throughout: an ember is not divisible,
+	// and a price the screen rounds differently from the till is a bug
+	// waiting on a player to find it.
+	const int scaled = base + base * 8 * std::max(0, rungs) / 100;
+	return std::min(scaled, base * 3);
+}
+
 int endless_rows (const Run& run) {
 	return run.ring * kMapDepth + run.depth;
 }

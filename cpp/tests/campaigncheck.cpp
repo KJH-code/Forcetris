@@ -1138,6 +1138,68 @@ int main () {
 				&& campaign::endless_rank(7, 1) == 7
 				&& campaign::endless_rank(3, 40) == 7);
 
+		// What the smith charges, as the climb goes on. A price at the door
+		// is the door price; every rung after it costs more, and the
+		// ceiling is what keeps the last chapter a shop rather than a
+		// museum.
+		{
+			campaign::Run door;
+			door.active = true;
+			door.chapter = 0;
+			door.depth = 0;
+			check("a price at the door is the price on the card",
+				campaign::priced(temper::kRerollCost, door)
+					== temper::kRerollCost
+					&& campaign::priced(temper::kLifeCost, door)
+						== temper::kLifeCost);
+			// A run that is not under way is not being charged for one.
+			campaign::Run none;
+			check("and no run is charged nothing extra",
+				campaign::priced(temper::kRerollCost, none)
+					== temper::kRerollCost);
+			bool climbs = true;
+			bool capped = true;
+			int last = 0;
+			std::string detail;
+			for (int chapter = 0; chapter < 3; ++chapter) {
+				for (int depth = 0; depth < campaign::kMapDepth; ++depth) {
+					campaign::Run run;
+					run.active = true;
+					run.chapter = chapter;
+					run.depth = depth;
+					const int now = campaign::priced(temper::kLifeCost, run);
+					if (now < last) {
+						climbs = false;
+						detail += std::to_string(now) + " after "
+							+ std::to_string(last) + "; ";
+					}
+					capped = capped && now <= temper::kLifeCost * 3;
+					last = now;
+				}
+			}
+			check("the road's prices only ever climb", climbs, detail);
+			check("and never past three times the door", capped);
+			// The climb charges by the rows it has climbed, so a deep ring
+			// is dearer than a shallow one - and it too stops at the cap.
+			campaign::Run shallow;
+			shallow.active = true;
+			shallow.endless = true;
+			shallow.ring = 0;
+			campaign::Run deep;
+			deep.active = true;
+			deep.endless = true;
+			deep.ring = 3;
+			campaign::Run deeper;
+			deeper.active = true;
+			deeper.endless = true;
+			deeper.ring = 40;
+			check("the climb charges by the rings behind you",
+				campaign::priced(temper::kRerollCost, shallow)
+					< campaign::priced(temper::kRerollCost, deep)
+					&& campaign::priced(temper::kRerollCost, deeper)
+						== temper::kRerollCost * 3);
+		}
+
 		// The gate and the record's arithmetic.
 		{
 			campaign::State fresh;

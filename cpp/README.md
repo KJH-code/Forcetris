@@ -21,7 +21,7 @@ What is here:
 | `replay` | The replay files: the same JSON the Python game writes, read and written here, with the re-enactment and the corrected-finesse view |
 | `hiscore` | The high score table: the same data/hiscore.dat, byte for byte, quirks and all |
 | `rating` | An estimated Tetra League standing - Glicko, TR by the official conversion formula, rank - interpolated from TETR.IO's own reported per-rank averages, and labelled the estimate it is |
-| `temper` | The game's central gimmick: the ten-card temper pool, what each card does to the rules, the weighted roll that offers three a heat, the heat counter every screen shares, and the bot's rank-tempered pick |
+| `temper` | The game's central gimmick: the thirty-four-card temper pool, what each card does to the rules, the weighted roll that offers three a heat, the heat counter every screen shares, and the bot's rank-tempered pick |
 | `campaign` | The Forge Map's machinery: the seeded branching map generator (`forgemap.cpp`), the run state and its difficulty arithmetic, the chapter gate, the star and slag arithmetic, the Anvil's permanent upgrades, and campaign.dat. The content - the chapter table and every stage recipe - lives apart in `stages.cpp`, so growing the road edits one file. The game's design itself (audience, goals, roadmap) is written down in the repository root's `DESIGN.md` |
 | `munch` | MinoMuncher's statistics re-derived over this game's own records (formulas from the MIT-licensed minomuncher-core): the nine clear buckets, spin efficiencies, the three-way attack-per-line split, burst and plonk PPS by Gaussian mixture, the four-deep well rule, the surge accounting and the cheesiness sigmoid - scored over raw attack, a trainer having no multiplayer wire |
 | `profile` | The history: one tolerant key=value line per finished game, appended forever, read back for the profile screen's aggregates and growth charts |
@@ -252,7 +252,7 @@ freezes mid-game for a hand of cards; the pick is one press (`1` `2`
 `3`, the arrows and Enter, or a tap). Inside a burning room the heats -
 ten cleared lines each - still tighten the fuse; that is the sim's own.
 
-The pool is twenty cards in five families, and a card's face carries no
+The pool is thirty-four cards in six families, and a card's face carries no
 numbers - a family word and glyph, a name, and one plain line, because a
 card that needs a manual has already failed. **Fuel** survives: *Thick
 Wick* (pieces burn longer, `fuse_base +0.5s`), *Quench* (clears refill
@@ -278,8 +278,41 @@ keys and the recording is the piece's real journey. Chaos is the rarest
 family, drawn as seldom as Rule, one copy each, and the duel bot never
 takes one - two of them move the walls and the judge out from under its
 search, the other two curse hands it does not have. Fuel and Flow stack
-two or three deep; Risk, Rule and Chaos are one each - and when the pool
-runs out the forge simply stops dealing.
+two or three deep; the one-of-a-kind rewrites are one each - and when the
+pool runs out the forge simply stops dealing.
+
+**Ward** guards, and it is the only cold colour on the table - slate,
+iron that has been let alone to cool. Nothing in it wins a fight faster
+and everything in it makes one survivable: *The Counterweight* (the forge
+lets go slower, `fall_delay +6`), *The Free Hand* (the hold box never
+locks - and it cannot stall the fuse, which rides through every swap, nor
+wash a finesse count, which only the first swap of a piece clears), *The
+Floor Sweep* (every eighth clear made with rubble still down takes the
+bottom garbage row with it - a counter, not a die, and a clean board
+never banks one), *The Cold Shoulder* (`garbage_scale 0.75`: what lands
+on you in a duel lands thinner, and a smaller queue also cancels less of
+what you send - two defences for one slot, with a floor of one row so a
+blow that landed never weighs nothing), *Coolant* (`fuse_pressure
+-0.25`: another forge's Overdrive leans on your wick less), *The Sifter*
+(`cheese_messiness -60`, floored at 20: the rubble's holes line up into a
+well instead of scattering). Half of them are conditional by nature -
+a guard drawn where there is nothing to guard is a wasted pick - which
+is why Ward is weighted with Risk rather than with Fuel. Deliberately
+there are no counter-cards: a ward makes a room's gimmick milder, and
+never switches it off.
+
+The rest of what V2.4 added spreads over the older families: *The Deep
+Bank* and *Hard Quench* feed the wick, *The Draught* lowers the bar
+Overdrive lights at (`flow_ignite`, floored at 60 - the rail draws a
+hairline tick where the new bar sits, so a gauge that fires early does
+not read as a fault), *The Glass Edge*, *The Hair Trigger* and *The
+Hollow Wick* trade in the Risk manner, *The Linked Chain* settles clears
+whole where Collapse crumbles them, and *Sticky Tongs* joins the curses:
+every fourth hold press sticks in the tongs, and the Flow gauge pays for
+the fumble. Like the other two curses it lives in the GUI's input path -
+and only the press is ever swallowed, never the release, because hold is
+edge-triggered and a swallowed release is the one way a curse could leave
+a key stuck.
 
 (The old **Tempering** mode - twelve heats, a draft at each, played as
 its own Training Yard card - retired in V2.2a: the campaign absorbed the
@@ -384,7 +417,7 @@ embers into the run and deals **the spoils** on the map - three cards,
 take one or take nothing, reroll or a second pick paid from the run's
 purse - and every temper picked rides into every later battle of the
 climb, forged into the player's rules before the first piece falls. The
-pool is sixteen cards now, and the newer half plays with the fight
+pool is thirty-four cards now, and its newer families play with the fight
 itself: a heavy hand that scales your attack, loaded dice that land
 every third strike double (a counter, not a die - the sim never rolls),
 a cold forge that freezes your own iron in exchange for a far harder

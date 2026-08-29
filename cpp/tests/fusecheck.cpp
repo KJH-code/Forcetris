@@ -272,6 +272,54 @@ int main () {
 				&& heard.count("overdrive_end") == 1);
 	}
 
+	// The Draught lowers the bar the gauge has to reach. The same clear that
+	// leaves the gauge short of a hundred lights Overdrive once the bar
+	// comes down - and it is a lower bar, not a standing light: the gauge
+	// still empties when the burn guts out, and more charge inside the burn
+	// never re-ignites it.
+	{
+		SimConfig high = fused();
+		high.flow_gain_line = 70.;      // One line: short of a hundred.
+		high.flow_gain_attack = 0.;     // Lines only, so the sum is plain.
+		high.clear_delay = false;
+		Sim sim(high, std::vector<int>(40, I));
+		std::set<std::string> heard;
+		wait_spawn(sim, &heard);
+		sim.seed(welled(1));
+		tap(sim, Key::Cw, &heard);
+		tap(sim, Key::Hard, &heard);
+		check("a gauge short of the bar lights nothing",
+			!sim.overdrive() && heard.count("overdrive") == 0
+				&& sim.flow() > 0.,
+			std::to_string(sim.flow()));
+
+		SimConfig low = high;
+		low.flow_ignite = 60.;
+		low.overdrive_secs = 0.5;       // 25 frames.
+		Sim drawn(low, std::vector<int>(40, I));
+		std::set<std::string> drawn_heard;
+		wait_spawn(drawn, &drawn_heard);
+		drawn.seed(welled(1));
+		tap(drawn, Key::Cw, &drawn_heard);
+		tap(drawn, Key::Hard, &drawn_heard);
+		check("and the same clear lights it once the bar comes down",
+			drawn.overdrive() && drawn_heard.count("overdrive") == 1);
+		// More charge inside the burn must not light a second one: the
+		// gate is the frame counter, not the gauge.
+		wait_spawn(drawn, &drawn_heard);
+		drawn.seed(welled(1));
+		tap(drawn, Key::Cw, &drawn_heard);
+		tap(drawn, Key::Hard, &drawn_heard);
+		check("a burning forge never re-lights",
+			drawn_heard.count("overdrive") == 1);
+		for (int i = 0; i < 60 && drawn.overdrive(); ++i) {
+			drawn.step(std::nullopt);
+			drawn_heard.insert(drawn.cues().begin(), drawn.cues().end());
+		}
+		check("and a drawn light still empties the gauge when it guts out",
+			!drawn.overdrive() && drawn.flow() == 0.);
+	}
+
 	// The rail without the fuse: the reward half of the ruleset standing on
 	// its own, which is how every room off the Forge Road plays. Quality
 	// still charges the gauge, a full gauge still ignites, and Overdrive

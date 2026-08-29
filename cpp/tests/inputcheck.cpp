@@ -205,6 +205,30 @@ int main () {
 		check("both rotations wind the same ratchet", third && mixed == 3);
 	}
 
+	// Sticky Tongs eat every fourth hold and nothing else. The pattern is
+	// the promise on the card face, and only the hold key is counted at
+	// all - a curse that swallowed a movement key would be a different
+	// card, and a much crueller one.
+	{
+		int holds = 0;
+		std::string pattern;
+		for (int i = 0; i < 12; ++i) {
+			pattern += gui::sticks(holds, Key::Hold) ? "!" : ".";
+		}
+		check("the tongs stick on every fourth hold",
+			pattern == "...!...!...!", pattern);
+		int quiet = 0;
+		bool tripped = false;
+		for (const Key key : {Key::Left, Key::Right, Key::Soft, Key::Hard,
+				Key::Cw, Key::Ccw, Key::Flip}) {
+			for (int i = 0; i < 8; ++i) {
+				tripped = tripped || gui::sticks(quiet, key);
+			}
+		}
+		check("and nothing but a hold is counted at all",
+			!tripped && quiet == 0);
+	}
+
 	if (failures > 0) {
 		std::printf("\n%d check(s) failed.\n", failures);
 		return 1;

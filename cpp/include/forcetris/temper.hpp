@@ -36,6 +36,11 @@ enum class Family {
 	// to trust - the judge, the walls, the keys themselves. Every one of
 	// them pays, or it would be a punishment rather than a card.
 	Chaos = 4,
+	// The guard: nothing here wins a fight faster, and everything here
+	// makes one survivable - gentler gravity, a hand that never locks, a
+	// floor that sweeps itself, a blow that lands thinner. Conditional by
+	// nature, which is why it sits at Risk's weight rather than Flow's.
+	Ward = 5,
 };
 
 struct Temper {

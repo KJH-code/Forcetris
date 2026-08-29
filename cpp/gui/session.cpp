@@ -119,6 +119,14 @@ bool overshoots (int& turns, Key key) {
 	return turns % 3 == 0;
 }
 
+bool sticks (int& holds, Key key) {
+	if (key != Key::Hold) {
+		return false;
+	}
+	++holds;
+	return holds % 4 == 0;
+}
+
 bool Session::step () {
 	if (over_) {
 		return false;

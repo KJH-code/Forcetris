@@ -43,6 +43,14 @@ Key crossed (Key key);
 // extra tap of the same rotation before the real one.
 bool overshoots (int& turns, Key key);
 
+// Sticky Tongs: every fourth hold press sticks in the tongs and never
+// reaches the board. `holds` is the run's own counter, bumped here; true
+// means the caller should swallow the press. Only the press is ever
+// swallowed - hold is edge-triggered in the sim, so a release with no
+// press behind it does nothing, while a swallowed release would leave the
+// screen and the sim disagreeing about a key that is still down.
+bool sticks (int& holds, Key key);
+
 class Session {
 public:
 	// `meta` is what the recorder writes down about the game being started:

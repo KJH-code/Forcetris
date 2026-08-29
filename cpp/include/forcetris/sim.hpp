@@ -112,6 +112,20 @@ struct SimConfig {
 	// Loaded dice: every Nth attacking clear lands double. Deterministic -
 	// the sim rolls no dice of its own - and zero is off.
 	int crit_every = 0;
+	// The cold shoulder: incoming attack is scaled before it queues. A
+	// smaller queue also cancels less of what you send, so the card
+	// defends twice. One at the default, and a landed blow never weighs
+	// nothing - the scaling has a floor of one row.
+	double garbage_scale = 1.0;
+	// The floor sweep: every Nth clear made with rubble still on the board
+	// takes the bottom garbage row with it. Deterministic like the dice,
+	// and zero is off. Only clears that had rubble to sweep count, so the
+	// card face is literally what happens.
+	int sweep_every = 0;
+	// The free hand: the hold box never locks. It cannot stall the fuse -
+	// a swap keeps the piece's elapsed clock either way - so what it buys
+	// is planning room, not time.
+	bool free_hold = false;
 	// The turning rack: every clear stirs the hold, swapping the held
 	// piece with the queue's front. Chaos, priced as a rule card.
 	bool hold_churn = false;
@@ -162,6 +176,10 @@ struct SimConfig {
 	double flow_burn_loss = 18.;  // Flow lost when the fuse forces the drop.
 	double overdrive_secs = 8.;   // How long Overdrive freezes the fuse.
 	double overdrive_mult = 1.5;  // Score and attack multiplier inside it.
+	// The gauge level Overdrive fires at. The gauge still caps at 100 and
+	// still empties when Overdrive guts out, so a lower bar buys an
+	// earlier light, never a permanent one.
+	double flow_ignite = 100.;
 	// Heat pressure: while the OTHER board's Overdrive burns, this fuse
 	// burns this much faster - igniting is an attack, not a private buff.
 	double fuse_pressure = 1.45;
@@ -271,7 +289,9 @@ public:
 	bool clearing () const { return clearing_; }
 	// Whether the hold box has already been used for this piece - the
 	// screen dims the box when it has. Read-only; nothing else sees it.
-	bool hold_locked () const { return hold_lock_; }
+	// A free hand never locks, so the box never dims: the accessor tells
+	// the truth and the screen needs to know nothing about the card.
+	bool hold_locked () const { return hold_lock_ && !config_.free_hold; }
 	const SimConfig& config () const { return config_; }
 	const Piece& piece () const { return piece_; }
 	const Board& board () const { return board_; }
@@ -298,7 +318,8 @@ public:
 
 	// Versus: attack arriving from the other board queues here and rises as
 	// garbage on the next lock that clears nothing, eight rows at a time.
-	void receive_attack (int rows) { pending_garbage_ += std::max(0, rows); }
+	// Scaled by the cold shoulder on the way in, if the build carries one.
+	void receive_attack (int rows);
 	// Attack going the other way, after cancellation ate what it ate. The
 	// ferry drains this every frame.
 	int take_outgoing () {
@@ -324,6 +345,10 @@ public:
 	long timer_ms () const { return timer_ms_; }
 	// How many holes the queue still holds, so the game knows when to roll.
 	size_t garbage_queued () const { return holes_.size(); }
+	// The dealt-but-unrisen hole masks, in the order they will rise. The
+	// sim never chose them - the Session's dice did - so this is how a
+	// test grades the dealer without owning its randomness.
+	const std::deque<int>& garbage_holes () const { return holes_; }
 
 	// The sound cues the last step fired, in the order Core would have fired
 	// them, by the names the files in sound/ carry.
@@ -496,6 +521,8 @@ private:
 	int surge_charge_ = 0;
 	// Loaded dice: attacking clears since the last doubled one.
 	int crit_count_ = 0;
+	// The floor sweep: clears made over rubble since the last sweep.
+	int sweep_count_ = 0;
 
 	// The forced drop clock, in the same arithmetic Python runs.
 	double now_ = 0.;

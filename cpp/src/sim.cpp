@@ -99,12 +99,17 @@ void Sim::retune (const SimConfig& rules) {
 	config_.flow_burn_loss = rules.flow_burn_loss;
 	config_.overdrive_secs = rules.overdrive_secs;
 	config_.overdrive_mult = rules.overdrive_mult;
+	config_.flow_ignite = rules.flow_ignite;
+	config_.fuse_pressure = rules.fuse_pressure;
 	// The card effects, and the gimmicks a card may now carry: cold iron
 	// rides a rule card, and the sealed mask must land on the board the
 	// moment the rules do.
 	config_.attack_scale = rules.attack_scale;
 	config_.crit_every = rules.crit_every;
 	config_.hold_churn = rules.hold_churn;
+	config_.garbage_scale = rules.garbage_scale;
+	config_.sweep_every = rules.sweep_every;
+	config_.free_hold = rules.free_hold;
 	config_.cold_iron = rules.cold_iron;
 	config_.sealed = rules.sealed;
 	board_.set_sealed(config_.sealed);
@@ -233,10 +238,27 @@ void Sim::fuse_lock (bool forced) {
 // already burning - the gauge holds full until that one gutters out.
 void Sim::fuse_charge (double gain) {
 	flow_ = std::min(100., flow_ + gain);
-	if (flow_ >= 100. && overdrive_frames_ == 0) {
+	// The bar the gauge has to reach is a tuning, not a constant: a draught
+	// lowers it. The gauge still caps at 100 and still empties when
+	// Overdrive guts out, so a lower bar buys an earlier light, never a
+	// standing one.
+	if (flow_ >= config_.flow_ignite && overdrive_frames_ == 0) {
 		overdrive_frames_ = static_cast<long>(config_.overdrive_secs * 50.);
 		cue("overdrive");
 	}
+}
+
+void Sim::receive_attack (int rows) {
+	if (rows <= 0) {
+		return;
+	}
+	// The cold shoulder thins the blow before it queues. A smaller queue
+	// also eats less of what this board sends back, since cancellation
+	// happens against it - the card defends twice for one slot. The floor
+	// of one row is the promise the other side is owed: a blow that landed
+	// never weighs nothing.
+	pending_garbage_ += config_.garbage_scale == 1.0 ? rows
+		: std::max(1, py_round(rows * config_.garbage_scale));
 }
 
 void Sim::set_pressure (bool on) {
@@ -299,7 +321,11 @@ bool Sim::hold_shape () {
 		}
 		return true;
 	}
-	if (!hold_lock_ && stored_ != piece_.form) {
+	// A free hand never locks the box, so the swap is allowed again and
+	// again - the guard on the stored form still stops a piece swapping
+	// with itself.
+	if ((!hold_lock_ || config_.free_hold) && stored_ != piece_.form) {
+		const bool first_swap = !hold_lock_;
 		hold_lock_ = true;
 		if (entry_) {
 			const int coming = stored_;
@@ -312,9 +338,15 @@ bool Sim::hold_shape () {
 			if (!config_.fuse) {
 				piece_elapsed_ = 0.;
 			}
-			inputs_ = 0;
-			input_log_.clear();
-			trail_.clear();
+			// Only the first swap of a piece clears the press record. A
+			// free hand that cleared it every time would let a player wash
+			// their finesse before every lock; the presses really happened,
+			// and the recording says so.
+			if (first_swap) {
+				inputs_ = 0;
+				input_log_.clear();
+				trail_.clear();
+			}
 			from_hold_ = true;
 		} else if (!queue_.empty()) {
 			std::swap(stored_, queue_.front());
@@ -900,6 +932,20 @@ void Sim::resolve_score () {
 				++lines_cleared_;
 				cue("burn");
 			}
+		}
+	}
+	// The floor sweep, outside the rail on purpose: it is a card the board
+	// answers to, not the gauge. Only clears made with rubble still down
+	// tick the counter, so "every eighth clear" means every eighth clear
+	// that had something to sweep - the card face is literally what
+	// happens, the way the dice below are.
+	if (config_.sweep_every > 0 && total > 0 && board_.garbage_rows() > 0
+		&& ++sweep_count_ >= config_.sweep_every) {
+		sweep_count_ = 0;
+		if (board_.burn_bottom_garbage()) {
+			++downstack_;
+			++lines_cleared_;
+			cue("burn");
 		}
 	}
 	// The card effects on the blow going out: a heavy hand scales it, and

@@ -458,6 +458,8 @@ struct App {
 	bool wires_crossed = false;
 	bool ratchet_loose = false;
 	int ratchet_turns = 0;
+	bool tongs_sticky = false;
+	int tongs_holds = 0;
 	// The seen-not-simmed stage gimmicks, read from the recipe at launch:
 	// dim lights only a lantern around the piece (the lantern glides after
 	// it), fog smokes the queue over past the first piece.
@@ -701,6 +703,8 @@ void start_game (App& app, int mode,
 	app.wires_crossed = false;
 	app.ratchet_loose = false;
 	app.ratchet_turns = 0;
+	app.tongs_sticky = false;
+	app.tongs_holds = 0;
 	app.mode = mode;
 	app.tempers.clear();
 	app.offers.clear();
@@ -813,6 +817,8 @@ void start_versus (App& app, int career_stage = -1) {
 	app.wires_crossed = false;
 	app.ratchet_loose = false;
 	app.ratchet_turns = 0;
+	app.tongs_sticky = false;
+	app.tongs_holds = 0;
 	save_config(app.config, app.config_file);
 	SimConfig config = app.config.sim();
 	config.gametype = 5;
@@ -922,6 +928,10 @@ ImU32 family_ink (temper::Family family) {
 		// violet against all that iron and ember, so a card that breaks
 		// something is never mistaken for one that only helps.
 		case temper::Family::Chaos: return IM_COL32(196, 122, 255, 255);
+		// The ward is the one cold colour on the table - slate, the shade
+		// of iron that has been let alone to cool. Nothing that defends
+		// should look like fire.
+		case temper::Family::Ward: return IM_COL32(120, 150, 186, 255);
 		case temper::Family::Fuel:
 		default: return IM_COL32(214, 128, 62, 255);
 	}
@@ -934,6 +944,7 @@ const char* family_tag (temper::Family family) {
 		case temper::Family::Risk: return "RISK";
 		case temper::Family::Rule: return "RULE";
 		case temper::Family::Chaos: return "CHAOS";
+		case temper::Family::Ward: return "WARD";
 		case temper::Family::Fuel:
 		default: return "FUEL";
 	}
@@ -941,7 +952,7 @@ const char* family_tag (temper::Family family) {
 
 // The family's glyph, drawn in primitives the way the mode buttons draw
 // theirs: a flame for fuel, a bolt for Flow, a blade for risk, a scroll
-// bar for the rule cards. Small on purpose - it is a stamp, not an icon
+// bar for the rule cards, a shield for the wards. Small on purpose - it is a stamp, not an icon
 // set, and it reads at a glance next to the tag word.
 void family_glyph (ImDrawList* draw, temper::Family family, ImVec2 at,
 		float size, ImU32 ink) {
@@ -983,6 +994,16 @@ void family_glyph (ImDrawList* draw, temper::Family family, ImVec2 at,
 			draw->AddLine(ImVec2(at.x + size - r * 0.3f, at.y + r * 0.3f),
 				ImVec2(at.x + r * 0.3f, at.y + size - r * 0.3f),
 				ink, std::max(1.f, r * 0.34f));
+			break;
+		case temper::Family::Ward:
+			// A shield: a straight shoulder over a point, the same two
+			// strokes as the blade turned to the other purpose.
+			draw->AddRectFilled(ImVec2(mid.x - r * 0.72f, at.y + r * 0.25f),
+				ImVec2(mid.x + r * 0.72f, mid.y + r * 0.15f), ink);
+			draw->AddTriangleFilled(
+				ImVec2(mid.x - r * 0.72f, mid.y + r * 0.12f),
+				ImVec2(mid.x + r * 0.72f, mid.y + r * 0.12f),
+				ImVec2(mid.x, at.y + size - r * 0.15f), ink);
 			break;
 		case temper::Family::Fuel:
 		default:
@@ -1091,6 +1112,8 @@ void start_stage (App& app, int index, int run_node = -1) {
 	app.wires_crossed = false;
 	app.ratchet_loose = false;
 	app.ratchet_turns = 0;
+	app.tongs_sticky = false;
+	app.tongs_holds = 0;
 	if (run_node >= 0) {
 		mine = temper::tempered(mine, app.campaign.run.tempers);
 		// The two chaos cards the sim cannot carry: they curse the hands,
@@ -1103,6 +1126,7 @@ void start_stage (App& app, int index, int run_node = -1) {
 			};
 			app.wires_crossed = has("crossed_wires");
 			app.ratchet_loose = has("loose_ratchet");
+			app.tongs_sticky = has("sticky_tongs");
 		}
 		if (app.campaign.run.endless) {
 			// The climb's tightening, on top of everything else.
@@ -1210,6 +1234,13 @@ void start_stage (App& app, int index, int run_node = -1) {
 // spent. Derived rather than accumulated, so it cannot drift. A reward
 // hand on the map spends the run's banked embers instead - the climb's
 // purse, not a battle's.
+// What the smith charges this run, right now. Every ember price on every
+// screen goes through here, so the number the button prints and the number
+// the till takes can never drift apart.
+int ember_price (const App& app, int base) {
+	return campaign::priced(base, app.campaign.run);
+}
+
 int ember_balance (const App& app) {
 	if (app.offer_reward) {
 		return app.campaign.run.embers;
@@ -1490,7 +1521,7 @@ void offer_tempers (App& app) {
 	app.extra_picks = 0;
 	app.offer_taken = false;
 	if (app.offers.empty()) {
-		// The pool ran dry - nineteen stacks is all there is - and a draft
+		// The pool ran dry - fifty-six stacks is all there is - and a draft
 		// with nothing to draft must not stop the game.
 		app.heat = forged;
 		return;
@@ -1561,7 +1592,7 @@ void skip_reward (App& app) {
 	// Walking past the spoils untaken pays a small solace: skipping is a
 	// real choice now, not just a refusal.
 	if (app.campaign.run.active) {
-		app.campaign.run.embers += temper::kSkipSolace;
+		app.campaign.run.embers += ember_price(app, temper::kSkipSolace);
 	}
 	app.offers.clear();
 	app.offer_reward = false;
@@ -1574,13 +1605,14 @@ void skip_reward (App& app) {
 // The two things the coin buys, both on the draft screen: the same heat
 // dealt again, and a second card off the same table.
 void reroll_offer (App& app) {
-	if (app.offer_taken || ember_balance(app) < temper::kRerollCost) {
+	const int cost = ember_price(app, temper::kRerollCost);
+	if (app.offer_taken || ember_balance(app) < cost) {
 		return;
 	}
 	if (app.offer_reward) {
-		app.campaign.run.embers -= temper::kRerollCost;
+		app.campaign.run.embers -= cost;
 	} else {
-		app.ember_spent += temper::kRerollCost;
+		app.ember_spent += cost;
 	}
 	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers,
 		++app.offer_salt);
@@ -1589,14 +1621,15 @@ void reroll_offer (App& app) {
 }
 
 void buy_extra_pick (App& app) {
+	const int cost = ember_price(app, temper::kExtraPickCost);
 	if (app.extra_picks > 0 || app.offers.size() < 2
-		|| ember_balance(app) < temper::kExtraPickCost) {
+		|| ember_balance(app) < cost) {
 		return;
 	}
 	if (app.offer_reward) {
-		app.campaign.run.embers -= temper::kExtraPickCost;
+		app.campaign.run.embers -= cost;
 	} else {
-		app.ember_spent += temper::kExtraPickCost;
+		app.ember_spent += cost;
 	}
 	app.extra_picks = 1;
 	app.audio.play("hold");
@@ -1806,6 +1839,13 @@ void player_key (App& app, Key key, bool down) {
 	}
 	if (app.wires_crossed) {
 		key = crossed(key);
+	}
+	if (down && app.tongs_sticky && sticks(app.tongs_holds, key)) {
+		// The press never reaches the board. Only the press: hold is
+		// edge-triggered, so the release behind it is already a no-op,
+		// and swallowing that too would be the one way this could leave
+		// a key stuck.
+		return;
 	}
 	if (down && app.ratchet_loose && overshoots(app.ratchet_turns, key)) {
 		// The overshoot rides in as a whole extra tap ahead of the real
@@ -2842,6 +2882,15 @@ void draw_board (App& app) {
 				? SDL_Color{255, 214, 96, 255} : SDL_Color{255, 138, 58, 255};
 			fill(renderer, rail_x, rail_y + rail_h - charge, px(12), charge,
 				glow);
+		}
+		// The bar the gauge has to reach, when a draught has pulled it
+		// below the top. Without this the rail visibly never fills before
+		// Overdrive lights, which reads as a fault rather than a card.
+		if (!burning && sim.config().flow_ignite < 100.) {
+			const int mark = static_cast<int>(
+				rail_h * (sim.config().flow_ignite / 100.));
+			fill(renderer, rail_x, rail_y + rail_h - mark, px(12),
+				std::max(1, px(2)), {255, 236, 190, 255});
 		}
 	}
 }
@@ -5039,10 +5088,12 @@ void draw_career (App& app) {
 					ImGui::SetTooltip("%s", promise);
 				}
 			};
-			oil_button("hot", "Hot Oil", temper::kHotOilCost,
+			oil_button("hot", "Hot Oil",
+				ember_price(app, temper::kHotOilCost),
 				"Next battle: your attacks hit harder.");
 			ImGui::SameLine();
-			oil_button("frost", "Frost Oil", temper::kFrostOilCost,
+			oil_button("frost", "Frost Oil",
+				ember_price(app, temper::kFrostOilCost),
 				"Next duel: the foe's clears freeze solid.");
 		}
 		if (!run.tempers.empty()) {
@@ -5343,6 +5394,7 @@ void draw_career (App& app) {
 			if (!visited.tempers.empty()) {
 				ImGui::Spacing();
 				ImGui::TextUnformatted("Melt down");
+				const int melt_cost = ember_price(app, temper::kRemoveCost);
 				int melted = -1;
 				for (size_t i = 0; i < visited.tempers.size(); ++i) {
 					const temper::Temper* card
@@ -5351,11 +5403,10 @@ void draw_career (App& app) {
 					ImGui::TextUnformatted(card != nullptr
 						? card->name : visited.tempers[i].c_str());
 					ImGui::SameLine();
-					ImGui::BeginDisabled(
-						visited.embers < temper::kRemoveCost);
+					ImGui::BeginDisabled(visited.embers < melt_cost);
 					char label[32];
 					std::snprintf(label, sizeof label, "Remove (%d)",
-						temper::kRemoveCost);
+						melt_cost);
 					if (ImGui::SmallButton(label)) {
 						melted = static_cast<int>(i);
 					}
@@ -5363,7 +5414,7 @@ void draw_career (App& app) {
 					ImGui::PopID();
 				}
 				if (melted >= 0) {
-					visited.embers -= temper::kRemoveCost;
+					visited.embers -= melt_cost;
 					visited.tempers.erase(visited.tempers.begin() + melted);
 					app.tempers = visited.tempers;
 					app.audio.play("clear");
@@ -5391,6 +5442,8 @@ void draw_career (App& app) {
 				if (!forgeable.empty()) {
 					ImGui::Spacing();
 					ImGui::TextUnformatted("Strike again");
+					const int copy_cost
+						= ember_price(app, temper::kDuplicateCost);
 					std::string struck;
 					for (size_t i = 0; i < forgeable.size(); ++i) {
 						const temper::Temper* card
@@ -5398,11 +5451,10 @@ void draw_career (App& app) {
 						ImGui::PushID(static_cast<int>(i + 100));
 						ImGui::TextUnformatted(card->name);
 						ImGui::SameLine();
-						ImGui::BeginDisabled(
-							visited.embers < temper::kDuplicateCost);
+						ImGui::BeginDisabled(visited.embers < copy_cost);
 						char label[32];
 						std::snprintf(label, sizeof label,
-							"Duplicate (%d)", temper::kDuplicateCost);
+							"Duplicate (%d)", copy_cost);
 						if (ImGui::SmallButton(label)) {
 							struck = forgeable[i];
 						}
@@ -5410,7 +5462,7 @@ void draw_career (App& app) {
 						ImGui::PopID();
 					}
 					if (!struck.empty()) {
-						visited.embers -= temper::kDuplicateCost;
+						visited.embers -= copy_cost;
 						visited.tempers.push_back(struck);
 						app.tempers = visited.tempers;
 						app.audio.play("crit");
@@ -5423,18 +5475,19 @@ void draw_career (App& app) {
 				// A life bought back on forged fire - once a visit, and
 				// priced so it is a decision, not an errand.
 				ImGui::Spacing();
+				const int life_cost = ember_price(app, temper::kLifeCost);
 				ImGui::BeginDisabled(app.forge_life_used
-					|| visited.embers < temper::kLifeCost
+					|| visited.embers < life_cost
 					|| visited.lives >= 9);
 				char label[40];
 				if (app.forge_life_used) {
 					std::snprintf(label, sizeof label, "Life bought");
 				} else {
 					std::snprintf(label, sizeof label,
-						"A life for the fire (%d)", temper::kLifeCost);
+						"A life for the fire (%d)", life_cost);
 				}
 				if (ImGui::Button(label, ImVec2(ui(200), 0))) {
-					visited.embers -= temper::kLifeCost;
+					visited.embers -= life_cost;
 					visited.lives += 1;
 					app.forge_life_used = true;
 					app.audio.play("perfect");
@@ -5826,20 +5879,19 @@ void draw_menus (App& app) {
 			ImGui::TextColored(ImVec4(1.f, 0.76f, 0.42f, 1.f),
 				"EMBERS %d", purse);
 			ImGui::SameLine();
-			ImGui::BeginDisabled(app.offer_taken
-				|| purse < temper::kRerollCost);
+			const int reroll = ember_price(app, temper::kRerollCost);
+			const int second = ember_price(app, temper::kExtraPickCost);
+			ImGui::BeginDisabled(app.offer_taken || purse < reroll);
 			char label[48];
-			std::snprintf(label, sizeof label, "Reroll (%d)",
-				temper::kRerollCost);
+			std::snprintf(label, sizeof label, "Reroll (%d)", reroll);
 			if (ImGui::SmallButton(label)) {
 				reroll_offer(app);
 			}
 			ImGui::EndDisabled();
 			ImGui::SameLine();
 			ImGui::BeginDisabled(app.extra_picks > 0 || app.offers.size() < 2
-				|| purse < temper::kExtraPickCost);
-			std::snprintf(label, sizeof label, "Second pick (%d)",
-				temper::kExtraPickCost);
+				|| purse < second);
+			std::snprintf(label, sizeof label, "Second pick (%d)", second);
 			if (ImGui::SmallButton(label)) {
 				buy_extra_pick(app);
 			}
@@ -5914,7 +5966,7 @@ void draw_menus (App& app) {
 			// and the walk itself pays a little.
 			char pass[32];
 			std::snprintf(pass, sizeof pass, "Take nothing (+%d)",
-				temper::kSkipSolace);
+				ember_price(app, temper::kSkipSolace));
 			if (ImGui::Button(pass, ImVec2(ui(170), 0))) {
 				skip_reward(app);
 			}

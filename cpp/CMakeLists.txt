@@ -147,6 +147,10 @@ add_executable(inputcheck tests/inputcheck.cpp gui/session.cpp)
 target_link_libraries(inputcheck PRIVATE forcetris_core)
 target_compile_options(inputcheck PRIVATE ${FORCETRIS_WARNINGS})
 
+add_executable(wardcheck tests/wardcheck.cpp gui/session.cpp)
+target_link_libraries(wardcheck PRIVATE forcetris_core)
+target_compile_options(wardcheck PRIVATE ${FORCETRIS_WARNINGS})
+
 add_executable(munchcheck tests/munchcheck.cpp)
 target_link_libraries(munchcheck PRIVATE forcetris_core)
 target_compile_options(munchcheck PRIVATE ${FORCETRIS_WARNINGS})
@@ -283,6 +287,7 @@ add_test(NAME cold_check COMMAND coldcheck)
 # each graded for its gift, its price, and its silence when off.
 add_test(NAME chaos_check COMMAND chaoscheck)
 add_test(NAME input_check COMMAND inputcheck)
+add_test(NAME ward_check COMMAND wardcheck)
 add_test(NAME fuse_check COMMAND fusecheck)
 add_test(NAME career_check COMMAND careercheck)
 # The munch: minomuncher's statistics re-derived over our own records,

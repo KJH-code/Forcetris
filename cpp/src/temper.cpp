@@ -16,6 +16,10 @@ int weight_of (Family family) {
 		case Family::Rule: return 1;
 		case Family::Chaos: return 1;
 		case Family::Risk: return 3;
+		// The ward stands with risk rather than with fuel: half its cards
+		// only matter in the rooms that threaten what they guard, and a
+		// guard drawn where there is nothing to guard is a wasted pick.
+		case Family::Ward: return 3;
 		default: return 4;
 	}
 }
@@ -23,7 +27,8 @@ int weight_of (Family family) {
 } // namespace
 
 const std::vector<Temper>& pool () {
-	// Ten cards, and every face reads without a manual: the number lives in
+	// Thirty-four cards, and every face reads without a manual: the number
+	// lives in
 	// the arithmetic here and in the README, never on the card. The effects
 	// are sized so that a single copy is felt - half a second of wick, three
 	// seconds of Overdrive - because a card whose effect needs a stopwatch
@@ -36,6 +41,10 @@ const std::vector<Temper>& pool () {
 			"clears refill more fuse", Family::Fuel, 3},
 		{"slow_burn", "Slow Burn",
 			"the forge tightens slower", Family::Fuel, 2},
+		{"deep_bank", "The Deep Bank",
+			"the reservoir holds more", Family::Fuel, 2},
+		{"hard_quench", "Hard Quench",
+			"your blows refill the fuse too", Family::Fuel, 2},
 		// --- Flow: Overdrive sooner, longer, worth more. ------------------
 		{"bellows", "Bellows",
 			"Overdrive lasts longer", Family::Flow, 3},
@@ -49,6 +58,8 @@ const std::vector<Temper>& pool () {
 			"duels: the foe's clears freeze", Family::Flow, 1},
 		{"hobnails", "Hobnails",
 			"duels open with rust on the foe's floor", Family::Flow, 1},
+		{"draught", "The Draught",
+			"Overdrive catches sooner", Family::Flow, 2},
 		// --- Risk: a gain with a price on it. ----------------------------
 		{"overheat", "Overheat",
 			"double Flow - shorter fuse", Family::Risk, 1},
@@ -59,6 +70,14 @@ const std::vector<Temper>& pool () {
 		{"cold_forge", "Cold Forge",
 			"your iron freezes - your hand strikes far harder",
 			Family::Risk, 1},
+		{"glass_edge", "The Glass Edge",
+			"a far harder hand - and a far faster forge",
+			Family::Risk, 2},
+		{"hair_trigger", "The Hair Trigger",
+			"a narrower flash, worth much more", Family::Risk, 2},
+		{"hollow_wick", "The Hollow Wick",
+			"a long Overdrive - the schedule tightens faster",
+			Family::Risk, 2},
 		// --- Rule: the run becomes a different game. ----------------------
 		{"collapse", "Collapse",
 			"clears cascade", Family::Rule, 1},
@@ -66,6 +85,8 @@ const std::vector<Temper>& pool () {
 			"every spin scores", Family::Rule, 1},
 		{"turning_rack", "The Turning Rack",
 			"every clear stirs the hold", Family::Rule, 1},
+		{"linked_chain", "The Linked Chain",
+			"clears cascade, and the pieces stay whole", Family::Rule, 1},
 		// --- Chaos: something the hands trusted, bought and sold. ---------
 		// Each face names the gift and the price in one breath, because a
 		// card that only takes is a card nobody picks - and one that only
@@ -82,6 +103,26 @@ const std::vector<Temper>& pool () {
 		{"loose_ratchet", "The Loose Ratchet",
 			"every third turn goes too far - the Flow loves it",
 			Family::Chaos, 1},
+		{"sticky_tongs", "Sticky Tongs",
+			"every fourth hold sticks - the Flow feeds on the fumble",
+			Family::Chaos, 1},
+		// --- Ward: nothing here wins faster; everything here survives. ----
+		// The guard family. Half of it only matters in the rooms that
+		// threaten what it guards, which is the point: a ward is a bet on
+		// the road ahead, and the map shows the road.
+		{"counterweight", "The Counterweight",
+			"the forge lets go slower", Family::Ward, 2},
+		{"free_hand", "The Free Hand",
+			"the hold box never locks", Family::Ward, 1},
+		{"floor_sweep", "The Floor Sweep",
+			"now and then the rubble underfoot is swept away",
+			Family::Ward, 2},
+		{"cold_shoulder", "The Cold Shoulder",
+			"duels: what lands on you lands thinner", Family::Ward, 2},
+		{"coolant", "Coolant",
+			"another forge's heat leans on you less", Family::Ward, 2},
+		{"sifter", "The Sifter",
+			"the rubble falls in a straighter line", Family::Ward, 2},
 	};
 	return all;
 }
@@ -157,6 +198,61 @@ void apply (SimConfig& rules, const std::string& id) {
 		// here.
 		rules.flow_gain_line += 3.0;
 		rules.flow_gain_attack += 3.0;
+	} else if (id == "sticky_tongs") {
+		// And again: the tongs stick in the screen's hands, the gauge pays
+		// for the fumble here.
+		rules.flow_gain_line += 2.0;
+		rules.flow_gain_attack += 2.0;
+	} else if (id == "deep_bank") {
+		// A deeper reservoir, not a faster one: the draw cap still meters
+		// what a spawn may take out of it, so this buys length.
+		rules.fuse_bank_cap += 2.0;
+	} else if (id == "hard_quench") {
+		rules.fuse_refuel_attack += 0.3;
+	} else if (id == "draught") {
+		// A floor rather than nothing: an Overdrive that lit on a breath
+		// would never be a moment worth watching for.
+		rules.flow_ignite = std::max(60., rules.flow_ignite - 12.);
+	} else if (id == "glass_edge") {
+		// Both halves are real and both are large. The same floor the ring
+		// walls keep, for the same reason.
+		rules.attack_scale += 0.6;
+		rules.fall_delay = std::max(6, rules.fall_delay - 6);
+	} else if (id == "hair_trigger") {
+		// The window is max(floor, total * frac), so a card that moved
+		// only the fraction would do nothing at all on a short wick. Both
+		// move, or the card is a lie.
+		rules.flash_frac = std::max(0.08, rules.flash_frac - 0.10);
+		rules.flash_floor = std::max(0.08, rules.flash_floor - 0.10);
+		rules.flow_flash_gain += 6.0;
+	} else if (id == "hollow_wick") {
+		rules.fuse_decay += 0.05;
+		rules.overdrive_secs += 4.0;
+	} else if (id == "linked_chain") {
+		rules.cleartype = 2;
+	} else if (id == "counterweight") {
+		rules.fall_delay += 6;
+	} else if (id == "free_hand") {
+		rules.free_hold = true;
+	} else if (id == "floor_sweep") {
+		// The first copy sweeps every eighth clear made over rubble; the
+		// second tightens it, the way the dice do.
+		rules.sweep_every = rules.sweep_every == 0 ? 8
+			: std::max(4, rules.sweep_every - 3);
+	} else if (id == "cold_shoulder") {
+		// A floor, because a blow that landed is owed its row: the sim's
+		// own arithmetic already refuses to round one away.
+		rules.garbage_scale = std::max(0.5, rules.garbage_scale - 0.25);
+	} else if (id == "coolant") {
+		// Down to one, which is no pressure at all - the other forge's
+		// Overdrive stops being an attack and goes back to being a buff.
+		rules.fuse_pressure = std::max(1.0, rules.fuse_pressure - 0.25);
+	} else if (id == "sifter") {
+		// A floor rather than zero: messiness at nothing would deal one
+		// perfectly clean well forever, which is not a tidier pile, it is
+		// no pile at all.
+		rules.cheese_messiness
+			= std::max(20, rules.cheese_messiness - 60);
 	}
 	// frostbrand and hobnails touch the FOE's board, not this config: the
 	// versus wiring reads them off the run's build at every round start.
@@ -245,15 +341,15 @@ int bot_pick (const std::vector<std::string>& offers, int rank_index,
 		if (card == nullptr) {
 			continue;
 		}
-		// Never a card that rewrites what the planner searches with:
-		// collapse changes the clearing rule, cold forge freezes the
-		// clears, and the turning rack churns the hold under a plan
-		// already typed. Chaos goes out whole, family and all - two of
-		// those cards move the walls and the judge out from under the
-		// search, and the other two curse hands the bot does not have.
+		// Never a card that rewrites what the planner searches with: the
+		// two cascade rules settle a board the search never modelled, cold
+		// forge freezes the clears, and the turning rack churns the hold
+		// under a plan already typed. Chaos goes out whole, family and all
+		// - two of those cards move the walls and the judge out from under
+		// the search, and the other two curse hands the bot does not have.
 		const std::string id = card->id;
-		if (id == "collapse" || id == "cold_forge" || id == "turning_rack"
-			|| card->family == Family::Chaos) {
+		if (id == "collapse" || id == "linked_chain" || id == "cold_forge"
+			|| id == "turning_rack" || card->family == Family::Chaos) {
 			continue;
 		}
 		int weight = 0;
@@ -272,6 +368,13 @@ int bot_pick (const std::vector<std::string>& offers, int rank_index,
 				break;
 			case Family::Chaos:
 				break;        // Unreachable: skipped above.
+			case Family::Ward:
+				// A net is worth most to the ranks that still fall in. It
+				// is never worth nothing, though: every branch here must
+				// leave a weight of at least one, or a hand of nothing but
+				// one family would divide by an empty total below.
+				weight = 1 + static_cast<int>(3 * (1.0 - press));
+				break;
 		}
 		takeable.push_back(static_cast<int>(at));
 		weights.push_back(weight);

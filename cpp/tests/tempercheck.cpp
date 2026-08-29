@@ -18,6 +18,8 @@
 #include "forcetris/hiscore.hpp"
 #include "forcetris/replay.hpp"
 #include "forcetris/sim.hpp"
+#include <set>
+
 #include "forcetris/temper.hpp"
 
 using namespace forcetris;
@@ -114,6 +116,16 @@ std::vector<Reading> reading_of (const SimConfig& c) {
 		{"flow_rail", c.flow_rail ? 1. : 0.},
 		{"wild_spins", c.wild_spins ? 1. : 0.},
 		{"wrap_walls", c.wrap_walls ? 1. : 0.},
+		{"free_hold", c.free_hold ? 1. : 0.},
+		{"sweep_every", static_cast<double>(c.sweep_every)},
+		{"garbage_scale", c.garbage_scale},
+		{"flow_ignite", c.flow_ignite},
+		// The three the table forgot. A claimed name that is absent from
+		// this list can never fail the "moves what it claims" arm, so a
+		// card that silently stopped working would still pass.
+		{"cheese_holes", static_cast<double>(c.cheese_holes)},
+		{"cheese_messiness", static_cast<double>(c.cheese_messiness)},
+		{"flow_lock_gain", c.flow_lock_gain},
 	};
 }
 
@@ -148,6 +160,22 @@ std::vector<std::string> claimed (const std::string& id) {
 	// design they move no field of this config - the claim names the foe
 	// so the no-claim gate can tell "versus-only" from "forgotten".
 	if (id == "frostbrand" || id == "hobnails") return {"(the foe)"};
+	if (id == "sticky_tongs") return {"flow_gain_line", "flow_gain_attack"};
+	if (id == "deep_bank") return {"fuse_bank_cap"};
+	if (id == "hard_quench") return {"fuse_refuel_attack"};
+	if (id == "draught") return {"flow_ignite"};
+	if (id == "glass_edge") return {"attack_scale", "fall_delay"};
+	if (id == "hair_trigger") {
+		return {"flash_frac", "flash_floor", "flow_flash_gain"};
+	}
+	if (id == "hollow_wick") return {"fuse_decay", "overdrive_secs"};
+	if (id == "linked_chain") return {"cleartype"};
+	if (id == "counterweight") return {"fall_delay"};
+	if (id == "free_hand") return {"free_hold"};
+	if (id == "floor_sweep") return {"sweep_every"};
+	if (id == "cold_shoulder") return {"garbage_scale"};
+	if (id == "coolant") return {"fuse_pressure"};
+	if (id == "sifter") return {"cheese_messiness"};
 	return {};
 }
 
@@ -311,6 +339,178 @@ int main () {
 		SimConfig rack = rules();
 		temper::apply(rack, "turning_rack");
 		check("The Turning Rack stirs the hold", rack.hold_churn);
+	}
+
+	// --- The ward cards' arithmetic, and their floors. ----------------------
+	// Every ward that subtracts has a floor, and the floors are what keep a
+	// stack of them from putting the rules somewhere the sim's own
+	// arithmetic says is impossible - the same guard Slow Burn and Overheat
+	// carry above.
+	{
+		SimConfig heavy = rules();
+		temper::apply(heavy, "counterweight");
+		check("The Counterweight eases the fall",
+			heavy.fall_delay == rules().fall_delay + 6,
+			std::to_string(heavy.fall_delay));
+		temper::apply(heavy, "counterweight");
+		check("and stacks", heavy.fall_delay == rules().fall_delay + 12,
+			std::to_string(heavy.fall_delay));
+
+		SimConfig hand = rules();
+		temper::apply(hand, "free_hand");
+		check("The Free Hand unlocks the box", hand.free_hold);
+
+		SimConfig sweep = rules();
+		temper::apply(sweep, "floor_sweep");
+		check("The Floor Sweep sweeps every eighth clear",
+			sweep.sweep_every == 8, std::to_string(sweep.sweep_every));
+		temper::apply(sweep, "floor_sweep");
+		check("and every fifth with the second copy",
+			sweep.sweep_every == 5, std::to_string(sweep.sweep_every));
+
+		SimConfig cold = rules();
+		temper::apply(cold, "cold_shoulder");
+		check("The Cold Shoulder thins what lands",
+			std::abs(cold.garbage_scale - 0.75) < 1e-9,
+			number(cold.garbage_scale));
+		for (int i = 0; i < 6; ++i) {
+			temper::apply(cold, "cold_shoulder");
+		}
+		check("and never thins a blow away to nothing",
+			cold.garbage_scale >= 0.5 - 1e-9, number(cold.garbage_scale));
+
+		SimConfig cool = rules();
+		temper::apply(cool, "coolant");
+		check("Coolant leans the other forge's heat off you",
+			std::abs(cool.fuse_pressure - 1.20) < 1e-9,
+			number(cool.fuse_pressure));
+		for (int i = 0; i < 6; ++i) {
+			temper::apply(cool, "coolant");
+		}
+		check("and never turns their Overdrive into a kindness",
+			cool.fuse_pressure >= 1.0 - 1e-9, number(cool.fuse_pressure));
+
+		SimConfig sift = rules();
+		temper::apply(sift, "sifter");
+		check("The Sifter lines the rubble up",
+			sift.cheese_messiness == 40,
+			std::to_string(sift.cheese_messiness));
+		for (int i = 0; i < 5; ++i) {
+			temper::apply(sift, "sifter");
+		}
+		check("and never deals one perfectly clean well forever",
+			sift.cheese_messiness >= 20,
+			std::to_string(sift.cheese_messiness));
+	}
+
+	// --- The rest of the V2.4 cards' arithmetic. ----------------------------
+	{
+		SimConfig bank = rules();
+		temper::apply(bank, "deep_bank");
+		check("The Deep Bank deepens the reservoir",
+			std::abs(bank.fuse_bank_cap - (rules().fuse_bank_cap + 2.))
+				< 1e-9, number(bank.fuse_bank_cap));
+
+		SimConfig hard = rules();
+		temper::apply(hard, "hard_quench");
+		check("Hard Quench refills on the blow as well",
+			std::abs(hard.fuse_refuel_attack
+				- (rules().fuse_refuel_attack + 0.3)) < 1e-9,
+			number(hard.fuse_refuel_attack));
+
+		SimConfig draw = rules();
+		temper::apply(draw, "draught");
+		check("The Draught lowers the bar Overdrive lights at",
+			std::abs(draw.flow_ignite - 88.) < 1e-9,
+			number(draw.flow_ignite));
+		for (int i = 0; i < 8; ++i) {
+			temper::apply(draw, "draught");
+		}
+		check("and never lights it on a breath",
+			draw.flow_ignite >= 60. - 1e-9, number(draw.flow_ignite));
+
+		SimConfig edge = rules();
+		temper::apply(edge, "glass_edge");
+		check("The Glass Edge arms the hand and hurries the forge",
+			std::abs(edge.attack_scale - 1.6) < 1e-9
+				&& edge.fall_delay == rules().fall_delay - 6,
+			number(edge.attack_scale) + " / "
+				+ std::to_string(edge.fall_delay));
+		for (int i = 0; i < 6; ++i) {
+			temper::apply(edge, "glass_edge");
+		}
+		temper::apply(edge, "ring_walls");
+		check("and no stack of hurry leaves a piece unplayable",
+			edge.fall_delay >= 6, std::to_string(edge.fall_delay));
+
+		// The flash window is max(floor, total * frac), so a card that
+		// moved only the fraction would be a no-op on a short wick. Both
+		// move, or the face is a lie.
+		SimConfig hair = rules();
+		temper::apply(hair, "hair_trigger");
+		check("The Hair Trigger narrows the window at both ends",
+			hair.flash_frac < rules().flash_frac
+				&& hair.flash_floor < rules().flash_floor
+				&& hair.flow_flash_gain > rules().flow_flash_gain,
+			number(hair.flash_frac) + " / " + number(hair.flash_floor));
+		for (int i = 0; i < 6; ++i) {
+			temper::apply(hair, "hair_trigger");
+		}
+		check("and never closes it entirely",
+			hair.flash_frac >= 0.08 - 1e-9
+				&& hair.flash_floor >= 0.08 - 1e-9,
+			number(hair.flash_frac));
+
+		SimConfig hollow = rules();
+		temper::apply(hollow, "hollow_wick");
+		check("The Hollow Wick buys the burn with the schedule",
+			hollow.overdrive_secs > rules().overdrive_secs
+				&& hollow.fuse_decay > rules().fuse_decay);
+
+		SimConfig linked = rules();
+		temper::apply(linked, "linked_chain");
+		check("The Linked Chain settles the pieces whole",
+			linked.cleartype == 2, std::to_string(linked.cleartype));
+	}
+
+	// --- The pool's shape. --------------------------------------------------
+	// Six families, thirty-four cards, and the counts written down here so
+	// that growing one family is a decision rather than an accident.
+	{
+		std::map<int, int> counted;
+		std::set<std::string> seen;
+		bool unique = true;
+		bool wordless = true;
+		bool findable = true;
+		std::string detail;
+		for (const temper::Temper& card : temper::pool()) {
+			++counted[static_cast<int>(card.family)];
+			unique = unique && seen.insert(card.id).second;
+			findable = findable && temper::find(card.id) == &card;
+			for (const char* c = card.text; *c != '\0'; ++c) {
+				if (*c >= '0' && *c <= '9') {
+					wordless = false;
+					detail += std::string(card.id) + " counts; ";
+				}
+			}
+		}
+		check("the pool is thirty-four cards in six families",
+			temper::pool().size() == 34 && counted.size() == 6,
+			std::to_string(temper::pool().size()) + " cards, "
+				+ std::to_string(counted.size()) + " families");
+		check("and the families are five, seven, seven, four, five, six",
+			counted[0] == 5 && counted[1] == 7 && counted[2] == 7
+				&& counted[3] == 4 && counted[4] == 5 && counted[5] == 6,
+			std::to_string(counted[0]) + "/" + std::to_string(counted[1])
+				+ "/" + std::to_string(counted[2]) + "/"
+				+ std::to_string(counted[3]) + "/"
+				+ std::to_string(counted[4]) + "/"
+				+ std::to_string(counted[5]));
+		check("no two cards share an id, and every id is findable",
+			unique && findable);
+		// The card face carries no numbers - the arithmetic lives in
+		// apply() and in the README, never on the table.
+		check("no card face says a number", wordless, detail);
 	}
 
 	// --- The dice and the rack, through a live sim. -------------------------
@@ -607,10 +807,48 @@ int main () {
 			}
 		}
 		check("the bot never takes a chaos card", no_chaos);
+		// The linked chain settles a board the search never modelled, the
+		// same way collapse does, so it goes out with it.
+		bool no_chain = true;
+		for (unsigned roll = 0; roll < 300 && no_chain; ++roll) {
+			std::mt19937 rng(roll);
+			const std::vector<std::string> mixed
+				= {"linked_chain", "quench", "white_heat"};
+			const int at = temper::bot_pick(mixed,
+				static_cast<int>(roll % 7), rng);
+			no_chain = at != 0 && at >= 0;
+		}
+		check("the bot never takes the linked chain", no_chain);
 		std::mt19937 rng(5u);
 		check("a table with nothing acceptable returns no pick",
 			temper::bot_pick({"collapse"}, 6, rng) == -1
+				&& temper::bot_pick({"collapse", "linked_chain"}, 6, rng)
+					== -1
 				&& temper::bot_pick({}, 6, rng) == -1);
+		// Every family the picker will take must carry a weight of at
+		// least one at every rank. A branch that yielded zero would leave
+		// a single-family hand dividing by an empty total, which is not a
+		// wrong pick but an undefined one - so the pin is on the picker's
+		// arithmetic, not its taste.
+		bool weighted = true;
+		std::string light;
+		for (const temper::Temper& card : temper::pool()) {
+			const std::string id = card.id;
+			if (id == "collapse" || id == "linked_chain"
+				|| id == "cold_forge" || id == "turning_rack"
+				|| card.family == temper::Family::Chaos) {
+				continue;
+			}
+			for (int rank = 0; rank < 8; ++rank) {
+				std::mt19937 one(static_cast<unsigned>(rank));
+				if (temper::bot_pick({card.id}, rank, one) != 0) {
+					weighted = false;
+					light += id + " at " + std::to_string(rank) + "; ";
+				}
+			}
+		}
+		check("every family the picker will take carries a weight",
+			weighted, light);
 
 		// Temperament: over many rolls, the lowest rank reaches for Fuel
 		// more often than the highest does. Loose on purpose - the claim
@@ -650,6 +888,46 @@ int main () {
 		check("a reroll still honours the caps",
 			rerolled.size() == 3 && rerolled[0] != rerolled[1]
 				&& rerolled[1] != rerolled[2] && rerolled[0] != rerolled[2]);
+	}
+
+	// --- How often each family comes up. ------------------------------------
+	// The weights live in an anonymous namespace, so the only honest way to
+	// read them is through the roll itself. Bounds rather than equalities:
+	// the claim is a lean, and the pool is meant to grow under it.
+	{
+		std::map<int, int> seen;
+		for (unsigned seed = 1; seed <= 400; ++seed) {
+			for (int heat = 0; heat < 10; ++heat) {
+				for (const std::string& id
+					: temper::offer(seed * 977u, heat, {})) {
+					const temper::Temper* card = temper::find(id);
+					if (card != nullptr) {
+						++seen[static_cast<int>(card->family)];
+					}
+				}
+			}
+		}
+		const int fuel = seen[static_cast<int>(temper::Family::Fuel)];
+		const int flow = seen[static_cast<int>(temper::Family::Flow)];
+		const int risk = seen[static_cast<int>(temper::Family::Risk)];
+		const int rule = seen[static_cast<int>(temper::Family::Rule)];
+		const int chaos = seen[static_cast<int>(temper::Family::Chaos)];
+		const int ward = seen[static_cast<int>(temper::Family::Ward)];
+		const std::string tally = std::to_string(fuel) + "/"
+			+ std::to_string(flow) + "/" + std::to_string(risk) + "/"
+			+ std::to_string(rule) + "/" + std::to_string(chaos) + "/"
+			+ std::to_string(ward);
+		check("Flow is still the family the forge offers most",
+			flow > fuel && flow > risk && flow > ward, tally);
+		check("and the rule and chaos cards are still the rarest",
+			rule < ward && chaos < ward && rule < risk && chaos < risk,
+			tally);
+		// The ward stands with risk, not with fuel: half its cards are
+		// only worth taking in the rooms that threaten what they guard.
+		check("the wards come up about as often as the risks",
+			ward > risk / 2 && ward < risk * 2, tally);
+		check("and every family comes up at all",
+			seen.size() == 6, std::to_string(seen.size()));
 	}
 
 	// --- The run economy's arithmetic. --------------------------------------
@@ -757,11 +1035,16 @@ int main () {
 			std::to_string(taken.size()) + " taken");
 		// The build actually moved the rules the run finished under.
 		const SimConfig built = temper::tempered(start, taken);
+		// Named fields would go stale the moment a family is added; the
+		// reading is every field the gate knows, which is strictly more.
+		const std::vector<Reading> before = reading_of(start);
+		const std::vector<Reading> after = reading_of(built);
+		bool moved = before.size() != after.size();
+		for (size_t i = 0; i < before.size() && i < after.size(); ++i) {
+			moved = moved || before[i].value != after[i].value;
+		}
 		check("the rules it finished under are not the ones it started with",
-			built.fuse_base != start.fuse_base
-				|| built.fuse_refuel_line != start.fuse_refuel_line
-				|| built.overdrive_secs != start.overdrive_secs
-				|| built.flow_gain_line != start.flow_gain_line);
+			moved);
 	}
 
 	// --- What adding the mode cost the score file. --------------------------
