@@ -101,6 +101,13 @@ void Sim::retune (const SimConfig& rules) {
 	config_.overdrive_mult = rules.overdrive_mult;
 	config_.flow_ignite = rules.flow_ignite;
 	config_.fuse_pressure = rules.fuse_pressure;
+	config_.flow_gain_dig = rules.flow_gain_dig;
+	config_.flow_gain_taken = rules.flow_gain_taken;
+	config_.flow_cap = rules.flow_cap;
+	config_.flow_keep = rules.flow_keep;
+	config_.overdrive_refill = rules.overdrive_refill;
+	config_.flash_finesse = rules.flash_finesse;
+	config_.flow_flood_loss = rules.flow_flood_loss;
 	// The card effects, and the gimmicks a card may now carry: cold iron
 	// rides a rule card, and the sealed mask must land on the board the
 	// moment the rules do.
@@ -120,6 +127,15 @@ void Sim::retune (const SimConfig& rules) {
 	config_.wild_spins = rules.wild_spins;
 	config_.wrap_walls = rules.wrap_walls;
 	config_.fall_delay = rules.fall_delay;
+	// Gravity is read from the member, not the tuning, so a card drafted
+	// mid-run has to move the member too - without this the ring's price
+	// and the counterweight's gift were both quietly nothing until the
+	// next stage rebuilt the sim. Arcade owns its own ramp and overwrites
+	// this on its next level, which is correct: its ladder is the mode's,
+	// not a card's.
+	if (config_.gametype != 2) {
+		fall_delay_ = config_.fall_delay;
+	}
 	// The bank may now hold less than it is holding; a temper that shrinks
 	// the reservoir takes the overflow with it rather than leaving a value
 	// the sim's own ceiling says is impossible.
@@ -216,19 +232,33 @@ void Sim::fuse_prime () {
 // the lines and attack the placement resolves into - charges the gauge
 // where the clear is scored, not here.
 void Sim::fuse_lock (bool forced) {
-	if (!config_.fuse || lost_ || !piece_elapsed_.has_value()) {
+	if (lost_) {
 		return;
 	}
 	if (forced) {
-		flow_ = std::max(0., flow_ - config_.flow_burn_loss);
+		// Only a clock forces a drop, so this is a burn room by
+		// construction.
+		if (config_.fuse) {
+			flow_ = std::max(0., flow_ - config_.flow_burn_loss);
+		}
 		return;
 	}
-	if (fuse_total_ <= 0.) {
+	if (config_.fuse && piece_elapsed_.has_value() && fuse_total_ > 0.) {
+		const double window = std::max(
+			config_.flash_floor, fuse_total_ * config_.flash_frac);
+		if (*piece_elapsed_ <= window) {
+			cue("flash");
+			fuse_charge(config_.flow_flash_gain);
+		}
 		return;
 	}
-	const double window = std::max(
-		config_.flash_floor, fuse_total_ * config_.flash_frac);
-	if (*piece_elapsed_ <= window) {
+	// The clean flash. With no clock to be fast against, the bonus goes to
+	// the placement that wasted the fewest presses - and only when a card
+	// asked for it. Paying for pace alone once made pace the whole game;
+	// finesse is not pace, it is care.
+	if (charging() && config_.flash_finesse > 0 && last_judged_
+		&& last_best_.has_value()
+		&& inputs_ - *last_best_ < config_.flash_finesse) {
 		cue("flash");
 		fuse_charge(config_.flow_flash_gain);
 	}
@@ -237,7 +267,16 @@ void Sim::fuse_lock (bool forced) {
 // Feed the gauge and ignite Overdrive when it fills, unless one is
 // already burning - the gauge holds full until that one gutters out.
 void Sim::fuse_charge (double gain) {
-	flow_ = std::min(100., flow_ + gain);
+	// The other board's Overdrive smothers this one's supply. This is
+	// where heat pressure lives now: it used to lean only on the wick,
+	// which meant it vanished the day the duels put their clocks away -
+	// and the duel is exactly the fight it was written for.
+	if (pressured_ && config_.fuse_pressure > 1.) {
+		gain /= config_.fuse_pressure;
+	}
+	// A floor of a hundred under the ceiling: however a build stacks, the
+	// bar Overdrive lights at stays reachable.
+	flow_ = std::min(std::max(100., config_.flow_cap), flow_ + gain);
 	// The bar the gauge has to reach is a tuning, not a constant: a draught
 	// lowers it. The gauge still caps at 100 and still empties when
 	// Overdrive guts out, so a lower bar buys an earlier light, never a
@@ -257,8 +296,28 @@ void Sim::receive_attack (int rows) {
 	// happens against it - the card defends twice for one slot. The floor
 	// of one row is the promise the other side is owed: a blow that landed
 	// never weighs nothing.
-	pending_garbage_ += config_.garbage_scale == 1.0 ? rows
+	const int landed = config_.garbage_scale == 1.0 ? rows
 		: std::max(1, py_round(rows * config_.garbage_scale));
+	pending_garbage_ += landed;
+	// Being hit stokes the fire, where a build asked for it - counted on
+	// what actually landed, so a ward that thinned the blow thinned this
+	// too and the trade stays honest.
+	if (charging() && config_.flow_gain_taken > 0.) {
+		fuse_charge(config_.flow_gain_taken * landed);
+	}
+}
+
+void Sim::impose_gravity (int frames) {
+	// The member, not the config: gravity is read from fall_delay_ every
+	// step, and a skill that only moved the tuning would be a banner with
+	// nothing behind it.
+	if (frames >= 1) {
+		fall_delay_ = frames;
+	}
+}
+
+void Sim::drain_flow (double share) {
+	flow_ = std::max(0., flow_ * (1. - std::clamp(share, 0., 1.)));
 }
 
 void Sim::set_pressure (bool on) {
@@ -784,6 +843,12 @@ void Sim::clearing_step () {
 			const int rows = board_.clear_pass(
 				config_.cleartype, base, dug, config_.cold_iron);
 			downstack_ += dug;
+			// Rubble dug out feeds the gauge, where a build asked for it.
+			// The road's own rooms are half digging, so this is the faucet
+			// that pays for the work the score never noticed.
+			if (dug > 0 && charging() && config_.flow_gain_dig > 0.) {
+				fuse_charge(config_.flow_gain_dig * dug);
+			}
 			if (rows > 0) {
 				// One yield with sprites: the pass's rows named and heard.
 				// Under naive that is one row and a running count - a quad is
@@ -932,6 +997,16 @@ void Sim::resolve_score () {
 				++lines_cleared_;
 				cue("burn");
 			}
+			// A wick thick enough to be fed while it burns: every cleared
+			// line adds seconds back to the fire. Self-limiting on
+			// purpose - it may top the burn back up to a full one, never
+			// past it, so the reward is keeping the fire alive rather
+			// than owning it.
+			if (total > 0 && config_.overdrive_refill > 0.) {
+				const long whole = std::lround(config_.overdrive_secs * 50.);
+				overdrive_frames_ = std::min(whole, overdrive_frames_
+					+ std::lround(config_.overdrive_refill * total * 50.));
+			}
 		}
 	}
 	// The floor sweep, outside the rail on purpose: it is a card the board
@@ -1018,6 +1093,11 @@ void Sim::apply_pending_garbage () {
 	// the hole the dealer rolled for it. The queue can outlast the dealt
 	// holes in a hand-fed test; what cannot rise now stays pending.
 	int rising = std::min(pending_garbage_, 8);
+	// The flood's own price, charged once for the wave rather than per
+	// row: what rises on you costs you the fire you were banking.
+	if (rising > 0 && !holes_.empty() && config_.flow_flood_loss > 0.) {
+		flow_ = std::max(0., flow_ - config_.flow_flood_loss);
+	}
 	while (rising > 0 && !holes_.empty()) {
 		const int mask = holes_.front() & 0x3FF;
 		board_.push_garbage_mask(mask != 0 ? mask : 1 << 4);
@@ -1181,7 +1261,10 @@ bool Sim::step_frame (const Event* events, size_t count) {
 	// Overdrive burns down in real frames, clearing or not; when it gutters
 	// out the gauge starts over from empty.
 	if (overdrive_frames_ > 0 && --overdrive_frames_ == 0) {
-		flow_ = 0.;
+		// The gauge starts over - or keeps the share a build bought it.
+		// Clamped well under the whole, so no stack of cards can leave a
+		// fire that relights itself.
+		flow_ *= std::clamp(config_.flow_keep, 0., 0.9);
 		cue("overdrive_end");
 	}
 	eval_timer();

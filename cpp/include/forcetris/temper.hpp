@@ -71,8 +71,16 @@ SimConfig tempered (const SimConfig& start, const std::vector<std::string>& take
 // counter: zero - the default, and every pre-reroll caller - leaves the
 // hand exactly as it always was, and each paid reroll deals the same heat
 // again under salt+1, deterministic like everything else here.
+// `chaos` opens the challenge tier. The chaos family bends what the hands
+// had learned to trust - the keys, the judge, the walls - and meeting one
+// of those on a mild fire is not a choice, it is an accident. So they are
+// dealt only where the run already said it wanted the worst of it: white
+// heat, one death and done, which is also every ring of the Endless Climb.
+// The default is closed, so a screen that forgets to ask never leaks them.
+// Even open, a hand carries at most one.
 std::vector<std::string> offer (unsigned seed, int heat,
-	const std::vector<std::string>& taken, unsigned salt = 0);
+	const std::vector<std::string>& taken, unsigned salt = 0,
+	bool chaos = false);
 
 // How many heats this run has forged so far - the one owner of the count,
 // shared by the offer gate, the HUD, the stat panel and the bot's side of

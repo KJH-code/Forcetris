@@ -389,8 +389,13 @@ boss fights with its own kit: telegraphed skills, two seconds of warning
 burning over your board before rust falls on it, a column seals shut,
 the iron cold-snaps, or a heat wave leans on your fuse. And the fuse is a stage gimmick now, not the campaign's default:
 most rooms play the board pure - the forced drop was the beginners' wall
-- and only the Backdraft rooms, the Overheated Wing and the duels still
-burn, the way the Dark Gallery is the room that goes dark. Above mild, a
+- and only the Backdraft rooms and the Overheated Wing still burn, the
+way the Dark Gallery is the room that goes dark. Duels were the last
+carve-out and are one no longer: a clock that is always there is not
+tension, it is the rule the beginner already lost to, and it made the
+fight the whole road builds towards feel like the trainer. A duel's
+tension is the foe - its attack, its blade, and the skills it telegraphs
+at you. Above mild, a
 mid-fight restart is a surrender and costs what a death costs.
 
 The road runs three chapters now. **The White Heart** is where the

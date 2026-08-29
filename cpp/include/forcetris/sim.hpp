@@ -180,9 +180,28 @@ struct SimConfig {
 	// still empties when Overdrive guts out, so a lower bar buys an
 	// earlier light, never a permanent one.
 	double flow_ignite = 100.;
-	// Heat pressure: while the OTHER board's Overdrive burns, this fuse
-	// burns this much faster - igniting is an attack, not a private buff.
+	// Heat pressure: while the OTHER board's Overdrive burns, this board
+	// pays for it - the wick burns this much faster where there is one,
+	// and the gauge fills this much slower everywhere. Igniting is an
+	// attack, not a private buff, and it stayed one when the duels put
+	// their clocks away.
 	double fuse_pressure = 1.45;
+	// --- The gauge's supply. -------------------------------------------
+	// Extra faucets nobody else opens, a bigger tank, a tank that does not
+	// drain, and a fire that can be topped up while it burns. Every one is
+	// inert at its default, and no trace sets any of them.
+	double flow_gain_dig = 0.;     // Flow per garbage row dug out.
+	double flow_gain_taken = 0.;   // Flow per row of garbage that lands.
+	double flow_cap = 100.;        // The gauge's ceiling.
+	double flow_keep = 0.;         // Share kept when Overdrive guts out.
+	double overdrive_refill = 0.;  // Seconds a clear adds to a live burn.
+	// The clean flash: with no clock to be fast against, the bonus goes to
+	// the placement that wasted the fewest presses. Zero is off; N pays a
+	// lock made within N-1 presses of the finesse ideal.
+	int flash_finesse = 0;
+	// Flow spilled when garbage rises on this board - the flood's own
+	// price, and the one a duel can charge without a clock.
+	double flow_flood_loss = 0.;
 };
 
 enum class Key : int { Left, Right, Soft, Hard, Hold, Ccw, Cw, Flip };
@@ -379,6 +398,13 @@ public:
 	// and the next clearing pass. GUI-side only - nothing graded calls
 	// this - and the caller owns the safety of the moment (a column is
 	// never sealed under a piece that stands in it).
+	// Gravity imposed from outside, the way the gimmicks are: a boss skill
+	// leaning on the well. Frames per row; anything under one is ignored.
+	// GUI-only, like impose_gimmick - the graded engine never calls it.
+	void impose_gravity (int frames);
+	// The gauge, taken. A share of what is banked, drained on the spot -
+	// what a heat wave does now that there is no clock to lean on.
+	void drain_flow (double share);
 	void impose_gimmick (int sealed, bool cold_iron) {
 		config_.sealed = sealed;
 		config_.cold_iron = cold_iron;

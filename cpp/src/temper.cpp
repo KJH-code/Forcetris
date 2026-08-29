@@ -34,17 +34,22 @@ const std::vector<Temper>& pool () {
 	// seconds of Overdrive - because a card whose effect needs a stopwatch
 	// to notice teaches the player that cards do not matter.
 	static const std::vector<Temper> all = {
-		// --- Fuel: the run lasts longer. ---------------------------------
+		// --- Fuel: what feeds the fire. -----------------------------------
+		// The supply, as against Flow's payout: extra faucets nobody else
+		// opens, a bigger tank, a tank that does not drain, and a fire
+		// that can be topped up while it burns. The family used to feed a
+		// wick; the wick left the duels, and what it feeds now is the
+		// gauge - which is live in every room on the road.
 		{"thick_wick", "Thick Wick",
-			"pieces burn longer", Family::Fuel, 3},
+			"every clear feeds the fire while it burns", Family::Fuel, 3},
 		{"quench", "Quench",
-			"clears refill more fuse", Family::Fuel, 3},
+			"digging out rubble charges the gauge", Family::Fuel, 3},
 		{"slow_burn", "Slow Burn",
-			"the forge tightens slower", Family::Fuel, 2},
+			"the gauge keeps its heat when the fire dies", Family::Fuel, 2},
 		{"deep_bank", "The Deep Bank",
-			"the reservoir holds more", Family::Fuel, 2},
+			"the gauge holds more than it needs", Family::Fuel, 2},
 		{"hard_quench", "Hard Quench",
-			"your blows refill the fuse too", Family::Fuel, 2},
+			"what lands on you charges the gauge", Family::Fuel, 2},
 		// --- Flow: Overdrive sooner, longer, worth more. ------------------
 		{"bellows", "Bellows",
 			"Overdrive lasts longer", Family::Flow, 3},
@@ -62,9 +67,9 @@ const std::vector<Temper>& pool () {
 			"Overdrive catches sooner", Family::Flow, 2},
 		// --- Risk: a gain with a price on it. ----------------------------
 		{"overheat", "Overheat",
-			"double Flow - shorter fuse", Family::Risk, 1},
+			"double Flow - a shorter burn", Family::Risk, 1},
 		{"gamble", "Gamble",
-			"huge Overdrive - burns cost Flow", Family::Risk, 1},
+			"huge Overdrive - the flood spills your gauge", Family::Risk, 1},
 		{"loaded_dice", "Loaded Dice",
 			"every third strike lands double", Family::Risk, 2},
 		{"cold_forge", "Cold Forge",
@@ -76,8 +81,7 @@ const std::vector<Temper>& pool () {
 		{"hair_trigger", "The Hair Trigger",
 			"a narrower flash, worth much more", Family::Risk, 2},
 		{"hollow_wick", "The Hollow Wick",
-			"a long Overdrive - the schedule tightens faster",
-			Family::Risk, 2},
+			"a long Overdrive - a slow gauge", Family::Risk, 2},
 		// --- Rule: the run becomes a different game. ----------------------
 		{"collapse", "Collapse",
 			"clears cascade", Family::Rule, 1},
@@ -138,13 +142,13 @@ const Temper* find (const std::string& id) {
 
 void apply (SimConfig& rules, const std::string& id) {
 	if (id == "thick_wick") {
-		rules.fuse_base += 0.5;
+		rules.overdrive_refill += 0.5;
 	} else if (id == "quench") {
-		rules.fuse_refuel_line += 0.3;
+		rules.flow_gain_dig += 2.0;
 	} else if (id == "slow_burn") {
-		// A floor rather than zero: a schedule that never tightens would
-		// make the twelfth heat the same as the first.
-		rules.fuse_decay = std::max(0.03, rules.fuse_decay - 0.05);
+		// A ceiling rather than the whole: a gauge that kept everything
+		// would leave a fire that relights itself.
+		rules.flow_keep = std::min(0.75, rules.flow_keep + 0.25);
 	} else if (id == "bellows") {
 		rules.overdrive_secs += 3.0;
 	} else if (id == "white_heat") {
@@ -156,11 +160,16 @@ void apply (SimConfig& rules, const std::string& id) {
 		rules.flow_gain_line *= 2.0;
 		rules.flow_gain_attack *= 2.0;
 		rules.flow_flash_gain *= 2.0;
-		// Never below the floor the schedule itself may not cross.
-		rules.fuse_base = std::max(rules.fuse_min, rules.fuse_base - 0.5);
+		// The price is the burn itself: twice the charge, and less of the
+		// fire to spend it on. A floor, so the fire is always worth
+		// lighting.
+		rules.overdrive_secs = std::max(3.0, rules.overdrive_secs - 3.0);
 	} else if (id == "gamble") {
+		// The price used to be paid on a forced drop, which duels no
+		// longer have. The flood pays it instead - and the flood is the
+		// duel's own pressure, so the card trades where the fight is.
 		rules.overdrive_mult += 1.0;
-		rules.flow_burn_loss += 15.0;
+		rules.flow_flood_loss += 15.0;
 	} else if (id == "collapse") {
 		rules.cleartype = 1;
 	} else if (id == "every_twist") {
@@ -204,11 +213,11 @@ void apply (SimConfig& rules, const std::string& id) {
 		rules.flow_gain_line += 2.0;
 		rules.flow_gain_attack += 2.0;
 	} else if (id == "deep_bank") {
-		// A deeper reservoir, not a faster one: the draw cap still meters
-		// what a spawn may take out of it, so this buys length.
-		rules.fuse_bank_cap += 2.0;
+		// A gauge that holds more than ignition needs: the overfill rides
+		// out of one burn and into the next, where a build keeps it.
+		rules.flow_cap += 30.;
 	} else if (id == "hard_quench") {
-		rules.fuse_refuel_attack += 0.3;
+		rules.flow_gain_taken += 3.0;
 	} else if (id == "draught") {
 		// A floor rather than nothing: an Overdrive that lit on a breath
 		// would never be a moment worth watching for.
@@ -219,14 +228,18 @@ void apply (SimConfig& rules, const std::string& id) {
 		rules.attack_scale += 0.6;
 		rules.fall_delay = std::max(6, rules.fall_delay - 6);
 	} else if (id == "hair_trigger") {
-		// The window is max(floor, total * frac), so a card that moved
-		// only the fraction would do nothing at all on a short wick. Both
-		// move, or the card is a lie.
-		rules.flash_frac = std::max(0.08, rules.flash_frac - 0.10);
-		rules.flash_floor = std::max(0.08, rules.flash_floor - 0.10);
+		// The flash used to pay for being fast against a clock. With the
+		// clock gone from every duel it pays for being clean instead: a
+		// lock made within a press or two of the finesse ideal. The face
+		// is unchanged and still true - the window narrows, and is worth
+		// far more.
+		rules.flash_finesse = rules.flash_finesse == 0 ? 2
+			: std::max(1, rules.flash_finesse - 1);
 		rules.flow_flash_gain += 6.0;
 	} else if (id == "hollow_wick") {
-		rules.fuse_decay += 0.05;
+		// The inverse of Overheat: all the fire, none of the hurry.
+		rules.flow_gain_line = std::max(0.5, rules.flow_gain_line - 1.5);
+		rules.flow_gain_attack = std::max(0.5, rules.flow_gain_attack - 1.5);
 		rules.overdrive_secs += 4.0;
 	} else if (id == "linked_chain") {
 		rules.cleartype = 2;
@@ -286,7 +299,7 @@ int heats_done (int lines, int downstack, bool by_digging) {
 }
 
 std::vector<std::string> offer (unsigned seed, int heat,
-		const std::vector<std::string>& taken, unsigned salt) {
+		const std::vector<std::string>& taken, unsigned salt, bool chaos) {
 	// The roll is the run, the heat and the reroll count, and nothing else:
 	// the same run offers the same three cards at the same heat however it
 	// got there, so a replay can say what the choice actually was. Salt
@@ -298,12 +311,18 @@ std::vector<std::string> offer (unsigned seed, int heat,
 	for (const Temper& entry : pool()) {
 		const int held = static_cast<int>(
 			std::count(taken.begin(), taken.end(), std::string(entry.id)));
-		if (held < entry.stacks) {
-			left.push_back(&entry);
-			weights.push_back(weight_of(entry.family));
+		if (held >= entry.stacks) {
+			continue;
 		}
+		// The challenge tier, shut unless the run asked for it.
+		if (entry.family == Family::Chaos && !chaos) {
+			continue;
+		}
+		left.push_back(&entry);
+		weights.push_back(weight_of(entry.family));
 	}
 	std::vector<std::string> cards;
+	bool chaos_dealt = false;
 	while (cards.size() < 3 && !left.empty()) {
 		int total = 0;
 		for (const int weight : weights) {
@@ -317,8 +336,23 @@ std::vector<std::string> offer (unsigned seed, int heat,
 			++at;
 		}
 		cards.emplace_back(left[at]->id);
+		if (left[at]->family == Family::Chaos) {
+			chaos_dealt = true;
+		}
 		left.erase(left.begin() + static_cast<long>(at));
 		weights.erase(weights.begin() + static_cast<long>(at));
+		// One is a decision; two is a hand nobody would keep. Once the
+		// tier has spoken, the rest of the table is ordinary metal - and
+		// the draw goes on from the same roll, so the hand stays the pure
+		// function of (seed, heat, salt) that a replay depends on.
+		if (chaos_dealt) {
+			for (size_t i = left.size(); i-- > 0;) {
+				if (left[i]->family == Family::Chaos) {
+					left.erase(left.begin() + static_cast<long>(i));
+					weights.erase(weights.begin() + static_cast<long>(i));
+				}
+			}
+		}
 	}
 	return cards;
 }

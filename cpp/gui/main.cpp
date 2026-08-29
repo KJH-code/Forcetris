@@ -544,6 +544,11 @@ struct App {
 	bool was_overdrive = false;
 	bool was_pressured = false;
 	int hit_flash = 0;          // Frames of the garbage-landing flash.
+	// A boss skill landing: the frames left of its full-screen flash, and
+	// the ink it flashes in. Overdrive gets one of these when the player
+	// earns it; the boss gets one when it takes something away.
+	int skill_flash = 0;
+	SDL_Color skill_ink{255, 96, 60, 255};
 	// Rows going white-hot as they clear: the row, and the frames left of
 	// its burn. Kept here so an instant clear - where the row is spliced
 	// out on the lock frame - still gets its moment.
@@ -677,6 +682,7 @@ void reset_effects (App& app) {
 	app.od_flash = 0;
 	app.od_banner = 0;
 	app.hit_flash = 0;
+	app.skill_flash = 0;
 	for (App::BurnRow& row : app.burn_rows) {
 		row.life = 0;
 	}
@@ -1237,6 +1243,15 @@ void start_stage (App& app, int index, int run_node = -1) {
 // What the smith charges this run, right now. Every ember price on every
 // screen goes through here, so the number the button prints and the number
 // the till takes can never drift apart.
+// Whether this run has asked for the challenge tier. White heat only -
+// one death and done - which is also every ring of the Endless Climb, so
+// the climb is the one place the chaos cards turn up as a matter of
+// course. Asked in one place so no screen can open the tier by accident.
+bool chaos_open (const App& app) {
+	return app.campaign.run.active
+		&& app.campaign.run.difficulty == campaign::kWhite;
+}
+
 int ember_price (const App& app, int base) {
 	return campaign::priced(base, app.campaign.run);
 }
@@ -1271,7 +1286,8 @@ void deal_reward (App& app) {
 	app.offer_salt = 0;
 	app.extra_picks = 0;
 	app.offer_taken = false;
-	app.offers = temper::offer(app.temper_seed, app.heat, run.tempers);
+	app.offers = temper::offer(app.temper_seed, app.heat, run.tempers, 0,
+		chaos_open(app));
 	app.offer_at = 0;
 	app.offer_shown = 0;
 	app.offer_reward = !app.offers.empty();
@@ -1404,7 +1420,8 @@ void apply_event (App& app, int id) {
 			// The spark is whatever the forge would have offered here; a
 			// dry pool pays embers instead of nothing.
 			const std::vector<std::string> hand = temper::offer(
-				run.seed ^ 0x27d4eb2fu, run.depth, run.tempers);
+				run.seed ^ 0x27d4eb2fu, run.depth, run.tempers, 0,
+				chaos_open(app));
 			if (!hand.empty()) {
 				run.tempers.push_back(hand.front());
 				app.tempers = run.tempers;
@@ -1514,7 +1531,8 @@ void offer_tempers (App& app) {
 	if (forged <= app.heat) {
 		return;
 	}
-	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers);
+	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers, 0,
+		chaos_open(app));
 	app.offer_at = 0;
 	app.offer_shown = 0;
 	app.offer_salt = 0;
@@ -1615,7 +1633,7 @@ void reroll_offer (App& app) {
 		app.ember_spent += cost;
 	}
 	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers,
-		++app.offer_salt);
+		++app.offer_salt, chaos_open(app));
 	app.offer_at = 0;
 	app.audio.play("rotate");
 }
@@ -1839,6 +1857,13 @@ void player_key (App& app, Key key, bool down) {
 	}
 	if (app.wires_crossed) {
 		key = crossed(key);
+	}
+	// A boss can take the tongs away outright for a few seconds. Like the
+	// sticky tongs it swallows the press and never the release, because
+	// hold is edge-triggered and an orphan release is harmless.
+	if (down && key == Key::Hold && app.versus.has_value()
+		&& app.versus->imposed_hold_bar) {
+		return;
 	}
 	if (down && app.tongs_sticky && sticks(app.tongs_holds, key)) {
 		// The press never reaches the board. Only the press: hold is
@@ -2722,7 +2747,7 @@ void draw_board (App& app) {
 		SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 	}
 
-	if (app.stage_dim) {
+	if (app.stage_dim || (app.versus.has_value() && app.versus->imposed_dark)) {
 		// The Dark Gallery: only a lantern around the falling piece lights
 		// the well. The lantern glides after the piece rather than jumping
 		// with it - and when there is no piece (a clear resolving, the
@@ -2802,7 +2827,9 @@ void draw_board (App& app) {
 		const int x = kBoardX + kBoardW + px(18) + shrink / 2;
 		const int y = kBoardY + slot * px(92) + shrink / 2;
 		draw_slot(x, y, w, h, false);
-		if (app.stage_fog && slot > 0) {
+		if ((app.stage_fog
+			|| (app.versus.has_value() && app.versus->imposed_fog))
+			&& slot > 0) {
 			// Smoke in the Rafters: everything past the first piece is
 			// smoked over - the slot stands, its contents do not read.
 			const int size = px(18) - shrink / 6;
@@ -4129,11 +4156,12 @@ void draw_help (App& app) {
 	ImGui::Separator();
 	ImGui::TextUnformatted("The Fuse");
 	ImGui::TextUnformatted(
-		"The board plays pure - no clock on your pieces. But a few rooms\n"
-		"of the Forge burn: in a burn room and in every campaign duel each\n"
-		"piece carries a fuse, and when it runs out the piece is slammed\n"
-		"down where it stands. Clears refuel the pieces to come; spins,\n"
-		"quads and perfect clears refuel hardest.");
+		"The board plays pure - no clock on your pieces. Three rooms of\n"
+		"the Forge burn, and only those three: in a burn room each piece\n"
+		"carries a fuse, and when it runs out the piece is slammed down\n"
+		"where it stands. Clears refuel the pieces to come; spins, quads\n"
+		"and perfect clears refuel hardest. A duel never burns - what\n"
+		"presses you there is the foe.");
 	ImGui::TextUnformatted("");
 	ImGui::TextUnformatted("Flow and Overdrive");
 	ImGui::TextUnformatted(
@@ -6781,6 +6809,21 @@ int run (bool smoke, long smoke_frames) {
 			// cues do - warning and landing alike.
 			for (const std::string& cue : app.versus->skill_cues) {
 				app.audio.play(cue);
+				// A blow that lands is felt as well as heard. The warning
+				// is not: a telegraph that shook the screen would be
+				// indistinguishable from the thing it warns about.
+				if (cue == "skillwarn" || !app.session.has_value()) {
+					continue;
+				}
+				app.skill_flash = 14;
+				app.skill_ink = cue == "freeze"
+					? SDL_Color{150, 200, 240, 255}
+					: cue == "skilldark" ? SDL_Color{120, 100, 170, 255}
+					: cue == "skillheavy" ? SDL_Color{190, 150, 110, 255}
+					: cue == "pressure" ? SDL_Color{255, 150, 60, 255}
+					: SDL_Color{226, 92, 62, 255};
+				app.shake_until = std::max(app.shake_until,
+					app.session->sim().frame() + 12);
 			}
 			app.versus->skill_cues.clear();
 		}
@@ -6933,6 +6976,20 @@ int run (bool smoke, long smoke_frames) {
 					fill(app.renderer, 0, 0, w, h, {255, 214, 96,
 						static_cast<Uint8>(app.od_flash * 10)});
 				}
+				if (app.skill_flash > 0) {
+					// The boss's own flash, drawn the way Overdrive's is
+					// but in the skill's colour, so a blow landing and a
+					// fire lighting never read as the same event.
+					--app.skill_flash;
+					int w = 0;
+					int h = 0;
+					SDL_GetRendererOutputSize(app.renderer, &w, &h);
+					SDL_SetRenderDrawBlendMode(app.renderer,
+						SDL_BLENDMODE_BLEND);
+					SDL_Color ink = app.skill_ink;
+					ink.a = static_cast<Uint8>(app.skill_flash * 11);
+					fill(app.renderer, 0, 0, w, h, ink);
+				}
 				if (app.od_banner > 0) {
 					--app.od_banner;
 					ImFont* font = app.fonts.title;
@@ -7004,6 +7061,26 @@ int run (bool smoke, long smoke_frames) {
 						sim.config().line_quota);
 				}
 				draw_label(goal, kBoardX + ui(4), kBoardY - ui(24),
+					IM_COL32(255, 196, 120, 255));
+			} else if (app.versus.has_value()) {
+				// A duel has neither heats nor a finish line, so the slot
+				// over the well says what the fight is instead: which
+				// round, and how many falls it takes. The scoreboard
+				// carries the same numbers, but that sits over the foe's
+				// board - this is the one over your own.
+				const VersusMatch& match = *app.versus;
+				char round[48];
+				if (match.raid()) {
+					std::snprintf(round, sizeof round, "FOE %d / %d",
+						std::min(match.round, match.first_to),
+						match.first_to);
+				} else if (match.first_to > 1) {
+					std::snprintf(round, sizeof round, "ROUND %d  -  FIRST TO %d",
+						match.round, match.first_to);
+				} else {
+					std::snprintf(round, sizeof round, "ONE FALL");
+				}
+				draw_label(round, kBoardX + ui(4), kBoardY - ui(24),
 					IM_COL32(255, 196, 120, 255));
 			}
 			if (!kPortrait && !app.versus.has_value()) {

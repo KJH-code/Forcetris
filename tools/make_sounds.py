@@ -335,6 +335,37 @@ SOUNDS.update({
         metal(1175, 0.030, 0.15, ANVIL, release=1.1, strike=0.),
     ),
 
+    # --- a boss winding up ---------------------------------------------------
+    # The fuse's warning is deliberately tiny - it fires on most pieces and
+    # would wear the ear down. A boss announcing itself is the opposite
+    # problem: it happens once every twenty seconds and has to be the biggest
+    # thing in the room, or the fight reads as nothing happening. A slow low
+    # bell, struck twice and left to ring.
+    'skillwarn': lambda: widen(trim(room(chain(
+        metal(196., 0.34, 0.40, BELL, release=0.75),
+        silence(0.10),
+        metal(261.63, 0.60, 0.44, BELL, release=0.85),
+    ), size=2.2, decay=0.9, wet=0.42, tail=1.2)), ms=21., spread=0.9),
+    # The gate coming down: iron sliding, then the stop at the bottom.
+    'skillseal': lambda: widen(trim(room(mix(
+        lowpass(tone(140, 0.26, 0.30, 'noise', attack=0.05, release=0.5),
+            1400., 2),
+        after(0.20, metal(147., 0.30, 0.38, ANVIL, release=0.5)),
+        after(0.20, sub(55, 0.28, 0.34, release=0.35)),
+    ), size=1.3, decay=0.8, wet=0.3, tail=0.7)), ms=15., spread=0.7),
+    # The lamps going out, or the smoke rolling in: a hush that swallows.
+    'skilldark': lambda: widen(trim(room(mix(
+        lowpass(tone(220, 0.55, 0.26, 'noise', attack=0.3, release=0.45),
+            700., 3),
+        tone(110, 0.55, 0.20, 'saw', freq_end=62, attack=0.2, release=0.5),
+    ), size=2., decay=0.9, wet=0.45, tail=1.)), ms=23., spread=1.),
+    # The hammer falling: all weight, no ring.
+    'skillheavy': lambda: widen(trim(room(mix(
+        sub(41, 0.42, 0.42, freq_end=33, release=0.3),
+        lowpass(tone(70, 0.30, 0.30, 'noise', release=0.35), 600., 3),
+        metal(98., 0.22, 0.20, ANVIL, release=0.3),
+    ), size=1.6, decay=0.85, wet=0.34, tail=0.8)), ms=13., spread=0.6),
+
     # --- weight --------------------------------------------------------------
     # A hard drop is a thud with body: the old click, a sub under it, and just
     # enough room that the floor sounds like it is made of something.

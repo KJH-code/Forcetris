@@ -134,6 +134,7 @@ COMBO_STEPS = 10
 SFX_NAMES = (
 	'move', 'rotate', 'hold', 'lock', 'drop',
 	'forced', 'clear', 'tetris', 'tspin', 'perfect', 'b2b', 'finesse', 'gameover',
+	'skillwarn', 'skillseal', 'skilldark', 'skillheavy',
 ) + tuple('combo{}'.format(step) for step in range(1, COMBO_STEPS + 1))
 sounds = {}
 

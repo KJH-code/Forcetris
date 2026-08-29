@@ -203,6 +203,35 @@ int main () {
 			std::to_string(sim.piece().x));
 	}
 
+	// --- Gravity a card can actually move. ----------------------------------
+	// A retune writes the tuning, but gravity is read from a member the sim
+	// derived at birth - so for three cards (the ring's price, the glass
+	// edge's hurry, the counterweight's gift) the number moved and the fall
+	// did not. The fix is one line in retune; this is the pin that keeps it.
+	{
+		const auto fell = [] (int fall_delay, bool retuned) {
+			SimConfig config = plain();
+			config.fall_delay = retuned ? 30 : fall_delay;
+			Sim sim(config, std::vector<int>(20, static_cast<int>(O)));
+			if (retuned) {
+				config.fall_delay = fall_delay;
+				sim.retune(config);
+			}
+			wait_spawn(sim);
+			const int from = sim.piece().y;
+			for (int i = 0; i < 200; ++i) {
+				sim.step(std::nullopt);
+			}
+			return sim.piece().y - from;
+		};
+		check("a retuned gravity is the gravity the piece falls under",
+			fell(10, true) == fell(10, false)
+				&& fell(10, true) > fell(100, true),
+			std::to_string(fell(10, true)) + " vs "
+				+ std::to_string(fell(10, false)) + ", slow "
+				+ std::to_string(fell(100, true)));
+	}
+
 	std::printf("%s\n", failures == 0 ? "All checks passed."
 		: "Some checks FAILED.");
 	return failures == 0 ? 0 : 1;

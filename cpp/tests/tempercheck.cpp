@@ -123,6 +123,13 @@ std::vector<Reading> reading_of (const SimConfig& c) {
 		// The three the table forgot. A claimed name that is absent from
 		// this list can never fail the "moves what it claims" arm, so a
 		// card that silently stopped working would still pass.
+		{"flow_gain_dig", c.flow_gain_dig},
+		{"flow_gain_taken", c.flow_gain_taken},
+		{"flow_cap", c.flow_cap},
+		{"flow_keep", c.flow_keep},
+		{"overdrive_refill", c.overdrive_refill},
+		{"flash_finesse", static_cast<double>(c.flash_finesse)},
+		{"flow_flood_loss", c.flow_flood_loss},
 		{"cheese_holes", static_cast<double>(c.cheese_holes)},
 		{"cheese_messiness", static_cast<double>(c.cheese_messiness)},
 		{"flow_lock_gain", c.flow_lock_gain},
@@ -132,17 +139,17 @@ std::vector<Reading> reading_of (const SimConfig& c) {
 // Which fields one temper is declared to move. Written out here rather than
 // derived from apply(), so the test is a second opinion and not an echo.
 std::vector<std::string> claimed (const std::string& id) {
-	if (id == "thick_wick") return {"fuse_base"};
-	if (id == "quench") return {"fuse_refuel_line"};
-	if (id == "slow_burn") return {"fuse_decay"};
+	if (id == "thick_wick") return {"overdrive_refill"};
+	if (id == "quench") return {"flow_gain_dig"};
+	if (id == "slow_burn") return {"flow_keep"};
 	if (id == "bellows") return {"overdrive_secs"};
 	if (id == "white_heat") return {"overdrive_mult"};
 	if (id == "spark") return {"flow_gain_line", "flow_gain_attack"};
 	if (id == "overheat") {
 		return {"flow_gain_line", "flow_gain_attack", "flow_flash_gain",
-			"fuse_base"};
+			"overdrive_secs"};
 	}
-	if (id == "gamble") return {"overdrive_mult", "flow_burn_loss"};
+	if (id == "gamble") return {"overdrive_mult", "flow_flood_loss"};
 	if (id == "collapse") return {"cleartype"};
 	if (id == "every_twist") return {"spin_rule"};
 	if (id == "heavy_hand") return {"attack_scale"};
@@ -161,14 +168,14 @@ std::vector<std::string> claimed (const std::string& id) {
 	// so the no-claim gate can tell "versus-only" from "forgotten".
 	if (id == "frostbrand" || id == "hobnails") return {"(the foe)"};
 	if (id == "sticky_tongs") return {"flow_gain_line", "flow_gain_attack"};
-	if (id == "deep_bank") return {"fuse_bank_cap"};
-	if (id == "hard_quench") return {"fuse_refuel_attack"};
+	if (id == "deep_bank") return {"flow_cap"};
+	if (id == "hard_quench") return {"flow_gain_taken"};
 	if (id == "draught") return {"flow_ignite"};
 	if (id == "glass_edge") return {"attack_scale", "fall_delay"};
-	if (id == "hair_trigger") {
-		return {"flash_frac", "flash_floor", "flow_flash_gain"};
+	if (id == "hair_trigger") return {"flash_finesse", "flow_flash_gain"};
+		if (id == "hollow_wick") {
+		return {"flow_gain_line", "flow_gain_attack", "overdrive_secs"};
 	}
-	if (id == "hollow_wick") return {"fuse_decay", "overdrive_secs"};
 	if (id == "linked_chain") return {"cleartype"};
 	if (id == "counterweight") return {"fall_delay"};
 	if (id == "free_hand") return {"free_hold"};
@@ -272,18 +279,18 @@ int main () {
 	// --- The declared arithmetic, spelled out for a few. --------------------
 	{
 		SimConfig config = rules();
-		const double base = config.fuse_base;
 		temper::apply(config, "thick_wick");
 		temper::apply(config, "thick_wick");
-		check("Thick Wick stacks", std::abs(config.fuse_base - (base + 1.0)) < 1e-9,
-			number(config.fuse_base));
+		check("Thick Wick stacks",
+			std::abs(config.overdrive_refill - 1.0) < 1e-9,
+			number(config.overdrive_refill));
 
 		SimConfig risky = rules();
 		const double flow = risky.flow_gain_line;
 		temper::apply(risky, "overheat");
-		check("Overheat doubles Flow and shortens the fuse",
+		check("Overheat doubles Flow and shortens the burn",
 			std::abs(risky.flow_gain_line - flow * 2.) < 1e-9
-				&& risky.fuse_base < rules().fuse_base);
+				&& risky.overdrive_secs < rules().overdrive_secs);
 
 		SimConfig quick = rules();
 		const double line = quick.flow_gain_line;
@@ -297,8 +304,8 @@ int main () {
 		temper::apply(bold, "gamble");
 		check("Gamble pays its multiplier and charges its price",
 			std::abs(bold.overdrive_mult - (rules().overdrive_mult + 1.)) < 1e-9
-				&& std::abs(bold.flow_burn_loss
-					- (rules().flow_burn_loss + 15.)) < 1e-9);
+				&& std::abs(bold.flow_flood_loss
+					- (rules().flow_flood_loss + 15.)) < 1e-9);
 
 		// The two guards: neither may put the rules somewhere the sim's own
 		// arithmetic says is impossible.
@@ -306,14 +313,14 @@ int main () {
 		for (int i = 0; i < 6; ++i) {
 			temper::apply(slow, "slow_burn");
 		}
-		check("Slow Burn never stops the schedule tightening",
-			slow.fuse_decay >= 0.03 - 1e-9, number(slow.fuse_decay));
+		check("Slow Burn never keeps the whole gauge",
+			slow.flow_keep <= 0.75 + 1e-9, number(slow.flow_keep));
 		SimConfig hot = rules();
 		for (int i = 0; i < 6; ++i) {
 			temper::apply(hot, "overheat");
 		}
-		check("Overheat never burns the wick below the schedule's own floor",
-			hot.fuse_base >= hot.fuse_min - 1e-9, number(hot.fuse_base));
+		check("Overheat never shortens the burn to nothing",
+			hot.overdrive_secs >= 3.0 - 1e-9, number(hot.overdrive_secs));
 	}
 
 	// --- The V2.1d cards' arithmetic. ---------------------------------------
@@ -407,16 +414,22 @@ int main () {
 	{
 		SimConfig bank = rules();
 		temper::apply(bank, "deep_bank");
-		check("The Deep Bank deepens the reservoir",
-			std::abs(bank.fuse_bank_cap - (rules().fuse_bank_cap + 2.))
-				< 1e-9, number(bank.fuse_bank_cap));
+		check("The Deep Bank raises the gauge's ceiling",
+			std::abs(bank.flow_cap - (rules().flow_cap + 30.)) < 1e-9,
+			number(bank.flow_cap));
 
 		SimConfig hard = rules();
 		temper::apply(hard, "hard_quench");
-		check("Hard Quench refills on the blow as well",
-			std::abs(hard.fuse_refuel_attack
-				- (rules().fuse_refuel_attack + 0.3)) < 1e-9,
-			number(hard.fuse_refuel_attack));
+		check("Hard Quench charges on what lands on you",
+			std::abs(hard.flow_gain_taken
+				- (rules().flow_gain_taken + 3.)) < 1e-9,
+			number(hard.flow_gain_taken));
+
+		SimConfig dig = rules();
+		temper::apply(dig, "quench");
+		check("Quench opens the digging faucet",
+			std::abs(dig.flow_gain_dig - (rules().flow_gain_dig + 2.))
+				< 1e-9, number(dig.flow_gain_dig));
 
 		SimConfig draw = rules();
 		temper::apply(draw, "draught");
@@ -448,24 +461,29 @@ int main () {
 		// move, or the face is a lie.
 		SimConfig hair = rules();
 		temper::apply(hair, "hair_trigger");
-		check("The Hair Trigger narrows the window at both ends",
-			hair.flash_frac < rules().flash_frac
-				&& hair.flash_floor < rules().flash_floor
+		check("The Hair Trigger pays the clean placement",
+			hair.flash_finesse == 2
 				&& hair.flow_flash_gain > rules().flow_flash_gain,
-			number(hair.flash_frac) + " / " + number(hair.flash_floor));
+			std::to_string(hair.flash_finesse));
 		for (int i = 0; i < 6; ++i) {
 			temper::apply(hair, "hair_trigger");
 		}
-		check("and never closes it entirely",
-			hair.flash_frac >= 0.08 - 1e-9
-				&& hair.flash_floor >= 0.08 - 1e-9,
-			number(hair.flash_frac));
+		check("and never narrows past the ideal itself",
+			hair.flash_finesse >= 1,
+			std::to_string(hair.flash_finesse));
 
 		SimConfig hollow = rules();
 		temper::apply(hollow, "hollow_wick");
-		check("The Hollow Wick buys the burn with the schedule",
+		check("The Hollow Wick buys the burn with the gauge",
 			hollow.overdrive_secs > rules().overdrive_secs
-				&& hollow.fuse_decay > rules().fuse_decay);
+				&& hollow.flow_gain_line < rules().flow_gain_line
+				&& hollow.flow_gain_attack < rules().flow_gain_attack);
+		for (int i = 0; i < 6; ++i) {
+			temper::apply(hollow, "hollow_wick");
+		}
+		check("and never stops the gauge charging entirely",
+			hollow.flow_gain_line >= 0.5 - 1e-9,
+			number(hollow.flow_gain_line));
 
 		SimConfig linked = rules();
 		temper::apply(linked, "linked_chain");
@@ -640,7 +658,7 @@ int main () {
 		const SimConfig built = temper::tempered(start,
 			{"quench", "bellows", "quench", "white_heat"});
 		check("a run's tempers compound in order",
-			std::abs(built.fuse_refuel_line - (start.fuse_refuel_line + 0.6)) < 1e-9
+			std::abs(built.flow_gain_dig - (start.flow_gain_dig + 4.)) < 1e-9
 				&& std::abs(built.overdrive_secs - (start.overdrive_secs + 3.)) < 1e-9
 				&& std::abs(built.overdrive_mult - (start.overdrive_mult + 0.5)) < 1e-9);
 		check("an id this build does not know is read rather than refused",
@@ -651,11 +669,16 @@ int main () {
 
 	// --- The claim the whole mode rests on: retune lands at once. -----------
 	{
+		// No card feeds the wick any more - the fuse is a burn room's own
+		// gimmick and the cards went where the rooms are - so the rules
+		// here are moved by hand. The claim under test was never about a
+		// particular card: it is that a retune lands at once, and that the
+		// piece already in the air keeps the terms it was dealt.
 		SimConfig config = rules();
 		const double plain = first_fuse(config);
 		SimConfig longer = config;
-		temper::apply(longer, "thick_wick");
-		check("a temper taken before the game changes the first fuse",
+		longer.fuse_base += 0.5;
+		check("rules taken before the game change the first fuse",
 			std::abs(first_fuse(longer) - (plain + 0.5)) < 1e-9,
 			number(first_fuse(longer)) + " vs " + number(plain));
 
@@ -673,7 +696,7 @@ int main () {
 		for (int i = 0; i < 8 && !sim.entry(); ++i) {
 			sim.step(std::optional<Event>{});
 		}
-		check("the next piece is dealt the tempered fuse",
+		check("the next piece is dealt the new fuse",
 			std::abs(sim.fuse_total() - (before + 0.5)) < 1e-9,
 			number(sim.fuse_total()) + " vs " + number(before));
 	}
@@ -930,6 +953,86 @@ int main () {
 			seen.size() == 6, std::to_string(seen.size()));
 	}
 
+	// --- The challenge tier. ------------------------------------------------
+	// The chaos family bends what the hands had learned to trust, so it is
+	// dealt only where the run already asked for the worst of it. The gate
+	// is shut by default, so a screen that forgets to ask never leaks one.
+	{
+		bool leaked = false;
+		bool seen = false;
+		bool doubled = false;
+		std::string detail;
+		for (unsigned seed = 1; seed <= 900; ++seed) {
+			for (int heat = 0; heat < 12; ++heat) {
+				int open_count = 0;
+				for (const std::string& id
+					: temper::offer(seed * 977u, heat, {})) {
+					const temper::Temper* card = temper::find(id);
+					if (card != nullptr
+						&& card->family == temper::Family::Chaos) {
+						leaked = true;
+						detail += id + "; ";
+					}
+				}
+				for (const std::string& id
+					: temper::offer(seed * 977u, heat, {}, 0, true)) {
+					const temper::Temper* card = temper::find(id);
+					if (card != nullptr
+						&& card->family == temper::Family::Chaos) {
+						++open_count;
+						seen = true;
+					}
+				}
+				doubled = doubled || open_count > 1;
+			}
+		}
+		check("a closed tier never deals a chaos card", !leaked, detail);
+		check("an open one does", seen);
+		check("and never two of them in one hand", !doubled);
+		// The other five families keep their own shape either way: the
+		// gate removes chaos, it does not re-weight the road.
+		{
+			const auto tally = [] (bool chaos) {
+				std::map<int, int> seen_by;
+				for (unsigned seed = 1; seed <= 300; ++seed) {
+					for (int heat = 0; heat < 8; ++heat) {
+						for (const std::string& id : temper::offer(
+							seed * 977u, heat, {}, 0, chaos)) {
+							const temper::Temper* card = temper::find(id);
+							if (card != nullptr && card->family
+								!= temper::Family::Chaos) {
+								++seen_by[static_cast<int>(card->family)];
+							}
+						}
+					}
+				}
+				return seen_by;
+			};
+			const std::map<int, int> shut = tally(false);
+			const std::map<int, int> open = tally(true);
+			const auto share = [] (const std::map<int, int>& counts, int at) {
+				int total = 0;
+				for (const auto& [family, seen_of] : counts) {
+					(void)family;
+					total += seen_of;
+				}
+				const auto found = counts.find(at);
+				return total == 0 || found == counts.end() ? 0.
+					: static_cast<double>(found->second) / total;
+			};
+			bool steady = shut.size() == open.size();
+			for (int family = 0; family <= 5; ++family) {
+				if (family == static_cast<int>(temper::Family::Chaos)) {
+					continue;
+				}
+				steady = steady && std::abs(share(shut, family)
+					- share(open, family)) < 0.04;
+			}
+			check("and the other families keep their shape either way",
+				steady);
+		}
+	}
+
 	// --- The run economy's arithmetic. --------------------------------------
 	{
 		check("embers pay on lines and attack, and on nothing else",
@@ -967,6 +1070,32 @@ int main () {
 					detail += id + " unknown; ";
 				}
 			}
+		}
+		// A blade of cards that do nothing is a blade of nothing. Every
+		// id on every rung must move the rules it is handed - this is the
+		// pin that would have caught the day the fuse left the duels and
+		// took rank D's whole blade with it.
+		{
+			bool armed = true;
+			std::string bare;
+			for (size_t rank = 0; rank < bot::ranks().size(); ++rank) {
+				const SimConfig start = rules();
+				const SimConfig built = temper::tempered(start,
+					temper::blade_for(static_cast<int>(rank)));
+				const std::vector<Reading> before = reading_of(start);
+				const std::vector<Reading> after = reading_of(built);
+				bool moved = false;
+				for (size_t i = 0; i < before.size(); ++i) {
+					moved = moved || before[i].value != after[i].value;
+				}
+				if (!moved) {
+					armed = false;
+					bare += bot::ranks()[rank].name;
+					bare += "; ";
+				}
+			}
+			check("and every blade actually moves the foe's rules", armed,
+				bare);
 		}
 		check("every rank carries a blade of real cards", armed && sane, detail);
 		check("the ladder's blades escalate",

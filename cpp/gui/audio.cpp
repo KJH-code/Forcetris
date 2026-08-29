@@ -22,6 +22,8 @@ std::vector<std::string> cue_names () {
 		"tspin", "perfect", "b2b", "finesse", "gameover",
 		"fusewarn", "flash", "overdrive", "overdrive_end", "burn", "pressure", "hit",
 		"cascade", "freeze", "crit",
+		// The boss announcing itself, and the three shapes its blows take.
+		"skillwarn", "skillseal", "skilldark", "skillheavy",
 	};
 	for (int step = 1; step <= 10; ++step) {
 		names.push_back("combo" + std::to_string(step));

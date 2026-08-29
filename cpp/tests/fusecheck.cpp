@@ -39,6 +39,13 @@ SimConfig fused () {
 	return config;
 }
 
+// A double said plainly, for a failure's detail line.
+std::string number (double value) {
+	char text[32];
+	std::snprintf(text, sizeof text, "%.3f", value);
+	return text;
+}
+
 std::vector<int> bags () {
 	std::vector<int> dealt;
 	for (int i = 0; i < 20; ++i) {
@@ -88,6 +95,29 @@ Board welled (int depth) {
 		}
 	}
 	return board;
+}
+
+// A floor of garbage `depth` rows deep with the right-hand four columns
+// open: a flat I laid in the gutter digs exactly one row out.
+Board rubbled (int depth) {
+	Board board;
+	for (int y = kHeight - depth; y < kHeight; ++y) {
+		for (int x = 0; x + 4 < kWidth; ++x) {
+			board.set(x, y, GARBAGE);
+		}
+	}
+	return board;
+}
+
+void clear_a_row (Sim& sim) {
+	wait_spawn(sim);
+	for (int step = 0; step < kWidth; ++step) {
+		tap(sim, Key::Right);
+	}
+	tap(sim, Key::Hard);
+	for (int settle = 0; settle < 30; ++settle) {
+		sim.step(std::nullopt);
+	}
 }
 
 } // namespace
@@ -318,6 +348,223 @@ int main () {
 		}
 		check("and a drawn light still empties the gauge when it guts out",
 			!drawn.overdrive() && drawn.flow() == 0.);
+	}
+
+	// --- The gauge's supply. ------------------------------------------------
+	// Seven tunings that feed, hold, cap and spill the gauge. Every one is
+	// inert at its default - which is what lets the Python-graded suites
+	// stay still - so each block here proves the default does nothing AND
+	// that the tuning does its one thing.
+	{
+		// Digging charges the gauge, where a build asked for it. A rail
+		// with no clock at all, because that is where the road lives.
+		SimConfig plain = fused();
+		plain.fuse = false;
+		plain.flow_rail = true;
+		plain.flow_gain_line = 0.;    // Lines pay nothing: the dig is the
+		plain.flow_gain_attack = 0.;  // only faucet under test.
+		plain.clear_delay = false;
+		Sim quiet(plain, std::vector<int>(40, I));
+		quiet.seed(rubbled(4));
+		wait_spawn(quiet);
+		clear_a_row(quiet);
+		check("rubble dug out charges nothing by default",
+			quiet.flow() == 0., number(quiet.flow()));
+
+		SimConfig dug = plain;
+		dug.flow_gain_dig = 5.;
+		Sim digger(dug, std::vector<int>(40, I));
+		digger.seed(rubbled(4));
+		wait_spawn(digger);
+		clear_a_row(digger);
+		check("and charges it once a build opens that faucet",
+			digger.flow() > 0., number(digger.flow()));
+	}
+	{
+		// Taking a blow stokes the fire - counted on what actually landed,
+		// so a ward that thinned the blow thinned this too.
+		SimConfig plain = fused();
+		plain.fuse = false;
+		plain.flow_rail = true;
+		plain.gametype = 5;
+		Sim quiet(plain, std::vector<int>(8, I));
+		quiet.receive_attack(4);
+		check("a blow charges nothing by default", quiet.flow() == 0.);
+
+		SimConfig hit = plain;
+		hit.flow_gain_taken = 4.;
+		Sim struck(hit, std::vector<int>(8, I));
+		struck.receive_attack(4);
+		check("and stokes the fire once a build asks",
+			std::abs(struck.flow() - 16.) < 1e-9, number(struck.flow()));
+
+		SimConfig warded = hit;
+		warded.garbage_scale = 0.5;
+		Sim guarded(warded, std::vector<int>(8, I));
+		guarded.receive_attack(4);
+		check("a thinner blow stokes a smaller fire",
+			guarded.flow() < struck.flow() && guarded.flow() > 0.,
+			number(guarded.flow()));
+	}
+	{
+		// The ceiling, and the floor under it: however a build stacks, a
+		// hundred is always reachable, so Overdrive can always light.
+		SimConfig deep = fused();
+		deep.fuse = false;
+		deep.flow_rail = true;
+		deep.gametype = 5;
+		deep.flow_gain_taken = 50.;   // The blow is the only faucet here.
+		deep.flow_ignite = 1000.;     // Never light; the gauge just fills.
+		deep.flow_cap = 160.;
+		Sim sim(deep, std::vector<int>(8, I));
+		sim.receive_attack(8);
+		check("the gauge fills to the ceiling a build bought",
+			sim.flow() <= 160. + 1e-9 && sim.flow() > 100.,
+			number(sim.flow()));
+
+		SimConfig shallow = deep;
+		shallow.flow_cap = 10.;     // Nonsense; the floor must refuse it.
+		Sim floored(shallow, std::vector<int>(8, I));
+		floored.receive_attack(8);
+		check("and a nonsense ceiling never puts ignition out of reach",
+			floored.flow() >= 100. - 1e-9, number(floored.flow()));
+	}
+	{
+		// What the gauge keeps when the fire guts out. Zero by default -
+		// the gauge starts over - and never the whole of it, or a build
+		// would own a fire that relights itself.
+		const auto after_burn = [] (double keep) {
+			SimConfig config = fused();
+			config.fuse = false;
+			config.flow_rail = true;
+			config.flow_gain_line = 200.;
+			config.overdrive_secs = 0.2;   // Ten frames.
+			config.clear_delay = false;
+			Sim sim(config, std::vector<int>(40, I));
+			config.flow_keep = keep;
+			sim.retune(config);
+			sim.seed(welled(1));
+			wait_spawn(sim);
+			tap(sim, Key::Cw);
+			tap(sim, Key::Hard);
+			for (int i = 0; i < 40; ++i) {
+				sim.step(std::nullopt);
+			}
+			return sim.flow();
+		};
+		check("the gauge starts over when the fire guts out",
+			after_burn(0.) == 0., number(after_burn(0.)));
+		check("or keeps the share a build bought it",
+			after_burn(0.5) > 0., number(after_burn(0.5)));
+		check("and never keeps the whole of it",
+			after_burn(1.0) < 100., number(after_burn(1.0)));
+	}
+	{
+		// A fire that can be fed while it burns - up to one full burn and
+		// never past it, so the reward is keeping it alive, not owning it.
+		SimConfig config = fused();
+		config.fuse = false;
+		config.flow_rail = true;
+		config.flow_gain_line = 200.;
+		config.overdrive_secs = 2.;
+		config.overdrive_refill = 0.5;
+		config.clear_delay = false;
+		Sim sim(config, std::vector<int>(40, I));
+		sim.seed(welled(1));
+		wait_spawn(sim);
+		tap(sim, Key::Cw);
+		tap(sim, Key::Hard);
+		const long lit = sim.overdrive_left();
+		for (int i = 0; i < 30; ++i) {
+			sim.step(std::nullopt);
+		}
+		const long spent = sim.overdrive_left();
+		sim.seed(welled(1));
+		wait_spawn(sim);
+		tap(sim, Key::Cw);
+		tap(sim, Key::Hard);
+		check("a clear feeds the fire it is made inside",
+			sim.overdrive_left() > spent, std::to_string(spent) + " -> "
+				+ std::to_string(sim.overdrive_left()));
+		check("and never past one whole burn",
+			sim.overdrive_left() <= lit, std::to_string(lit) + " vs "
+				+ std::to_string(sim.overdrive_left()));
+	}
+	{
+		// The flood spills the gauge: what rises on you costs the fire you
+		// were banking, charged once for the wave.
+		SimConfig config = fused();
+		config.fuse = false;
+		config.flow_rail = true;
+		config.gametype = 5;
+		config.flow_flood_loss = 20.;
+		config.flow_gain_taken = 30.;
+		config.flow_ignite = 1000.;   // Never light; the spill is the test.
+		Sim sim(config, std::vector<int>(20, I));
+		sim.feed_garbage(1 << 3);
+		sim.feed_garbage(1 << 3);
+		sim.receive_attack(2);
+		const double banked = sim.flow();
+		wait_spawn(sim);
+		tap(sim, Key::Hard);
+		for (int i = 0; i < 40; ++i) {
+			sim.step(std::nullopt);
+		}
+		check("the flood spills the gauge",
+			sim.flow() < banked, number(banked) + " -> "
+				+ number(sim.flow()));
+	}
+	{
+		// Heat pressure without a clock: the other board's Overdrive
+		// smothers this one's supply, so igniting stays an attack in a
+		// duel that has no wick to lean on.
+		const auto charged = [] (bool pressured) {
+			SimConfig config = fused();
+			config.fuse = false;
+			config.flow_rail = true;
+			config.flow_gain_line = 40.;
+			config.clear_delay = false;
+			Sim sim(config, std::vector<int>(40, I));
+			sim.set_pressure(pressured);
+			sim.seed(welled(1));
+			wait_spawn(sim);
+			tap(sim, Key::Cw);
+			tap(sim, Key::Hard);
+			return sim.flow();
+		};
+		check("their fire smothers your supply, clock or no clock",
+			charged(true) < charged(false) && charged(true) > 0.,
+			number(charged(true)) + " vs " + number(charged(false)));
+	}
+	{
+		// The clean flash: with no clock to be fast against, the bonus
+		// goes to the placement that wasted the fewest presses - and only
+		// where a card asked for it.
+		const auto flashes = [] (int slack, int wasted) {
+			SimConfig config = fused();
+			config.fuse = false;
+			config.flow_rail = true;
+			config.flash_finesse = slack;
+			config.flow_flash_gain = 30.;
+			config.clear_delay = false;
+			Sim sim(config, std::vector<int>(20, I));
+			wait_spawn(sim);
+			for (int i = 0; i < wasted; ++i) {
+				tap(sim, Key::Left);
+				tap(sim, Key::Right);
+			}
+			tap(sim, Key::Hard);
+			for (int i = 0; i < 10; ++i) {
+				sim.step(std::nullopt);
+			}
+			return sim.flow();
+		};
+		check("a clean placement flashes where a build asked",
+			flashes(2, 0) > 0., number(flashes(2, 0)));
+		check("a wasteful one does not",
+			flashes(2, 4) == 0., number(flashes(2, 4)));
+		check("and nothing flashes without the card",
+			flashes(0, 0) == 0., number(flashes(0, 0)));
 	}
 
 	// The rail without the fuse: the reward half of the ruleset standing on

@@ -239,8 +239,11 @@ int main () {
 		all.tempers = "thick_wick,bellows";
 		const SimConfig raw = base();
 		const SimConfig built = campaign::stage_config(all, raw, {});
+		// thick_wick feeds the fire rather than the wick now, so the
+		// recipe's own wick scale stands alone in this sum.
 		check("the stage's overrides all land",
-			std::abs(built.fuse_base - (raw.fuse_base * 0.5 + 0.5)) < 1e-9
+			std::abs(built.fuse_base - raw.fuse_base * 0.5) < 1e-9
+				&& std::abs(built.overdrive_refill - 0.5) < 1e-9
 				&& built.fall_delay == 15 && built.cheese_holes == 3
 				&& built.cheese_messiness == 70 && built.cheese_period == 200
 				&& !built.kicks && built.cleartype == 2 && built.spin_rule == 1
@@ -273,14 +276,28 @@ int main () {
 		Stage duel{};
 		duel.id = "d"; duel.name = "d"; duel.blurb = "d";
 		duel.mode = 5; duel.rank = 0;
-		check("a duel always burns",
-			campaign::stage_config(duel, off, {}).fuse);
+		// A duel is the one fight the road builds towards, and it plays
+		// the board pure like everything else that does not name the
+		// burn. Both sides: the bot's terms come through the same
+		// override, so a fuse-less duel is fuse-less for the foe too.
+		check("a duel never burns, on either side",
+			!campaign::stage_config(duel, off, {}).fuse
+				&& !campaign::bot_config(duel, off).fuse);
+		SimConfig duel_lit = raw;
+		duel_lit.fuse = true;
+		check("and not even with the Rules fuse on",
+			!campaign::stage_config(duel, duel_lit, {}).fuse);
 		check("the road's burn rooms are exactly the ones that say so",
 			[] {
 				int burns = 0;
 				for (const campaign::Stage& stage : campaign::stages()) {
 					if (stage.fuse) {
 						++burns;
+					}
+					// A duel's wick scale would be a dial wired to
+					// nothing now that no duel burns.
+					if (stage.mode == 5 && stage.fuse_scale != 1.) {
+						return false;
 					}
 					// Pressure without the fuse would be a dial with no
 					// meter: every pressure room must burn.
@@ -351,9 +368,12 @@ int main () {
 		quota.mode = 0; quota.quota = 10;
 		const SimConfig raw = base();
 		const SimConfig mine = campaign::stage_config(quota, raw, forge);
+		// The wick and the bank were bought with slag by players who are
+		// still playing, so the ids stayed and the metal moved with the
+		// game: they feed the gauge now, which is live in every room.
 		check("the Anvil's metal lands on the player's rules",
-			std::abs(mine.fuse_base - (raw.fuse_base + 0.3)) < 1e-9
-				&& std::abs(mine.fuse_refuel_line - (raw.fuse_refuel_line + 0.1))
+			std::abs(mine.flow_keep - (raw.flow_keep + 0.24)) < 1e-9
+				&& std::abs(mine.flow_gain_dig - (raw.flow_gain_dig + 1.))
 					< 1e-9
 				&& std::abs(mine.overdrive_secs - (raw.overdrive_secs + 1.))
 					< 1e-9);

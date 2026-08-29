@@ -39,20 +39,36 @@ struct VersusMatch {
 	std::optional<bot::Driver> driver;
 
 	// The boss's skills: telegraphed, periodic, armed only for campaign
-	// bosses (arm_skills below). Each one warns for two seconds over the
-	// player's board, then lands - rust thrown as garbage, a column
-	// sealed, the iron cold-snapped, a heat wave on the fuse - and the
-	// timed ones lift themselves when their spell runs out.
+	// bosses and minibosses (arm_skills below). Each one warns over the
+	// player's board, then lands, and the timed ones lift themselves when
+	// their spell runs out. Every decision a skill makes is a field on
+	// this struct rather than a reach into the screen, so the whole system
+	// is graded headlessly and only the pixels are not.
 	struct Skill {
-		std::string id;            // rustfall / sealgate / coldsnap / heatwave
+		std::string id;
 		const char* warning = "";  // What the telegraph shouts.
 		long period = 0;           // Frames between firings.
 		long duration = 0;         // Frames the effect holds; 0 = instant.
+		// How long the warning runs before the blow. The heavy ones take
+		// longer to wind up, and the wind-up is the dread.
+		long telegraph = 100;
 		long next_fire = 0;
 		long active_until = -1;
+		long landed_at = -1;       // The frame it struck; -1 for never.
 		bool telegraphing = false;
 	};
 	std::vector<Skill> skills;
+
+	// What the skills are doing to the player's board this frame, read by
+	// the screen. An imposition is a thing done TO you for a while - the
+	// dark, the smoke, the weight, the barred tongs - and only one may be
+	// live at a time, or a fat kit stacks into an unreadable soup.
+	bool imposed_dark = false;
+	bool imposed_fog = false;
+	bool imposed_hold_bar = false;
+	int imposed_gravity = 0;        // Frames per row; 0 = leave it alone.
+	int imposed_weight = 0;         // What the sim was last told, so the
+	                                // tick only reaches in on a change.
 
 	// A raid: a gauntlet of lesser foes fought back to back in one node.
 	// The rank list is walked one round per foe, each armed with its
@@ -69,6 +85,12 @@ struct VersusMatch {
 	bool imposed_cold = false;
 	std::string skill_banner;       // Drawn over the player's board...
 	long skill_banner_until = -1;   // ...until this player-sim frame.
+	// Which skill is announcing itself, and the two frames the plate
+	// counts between - so the screen can draw a wind-up that actually
+	// reaches its end as the blow lands.
+	std::string skill_caster;
+	long skill_warned_at = -1;
+	long skill_fires_at = -1;
 	// Sound cues the skills fired this tick, drained by the frame the way
 	// a session's cues are.
 	std::vector<std::string> skill_cues;

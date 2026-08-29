@@ -18,119 +18,238 @@ constexpr int kSealMask = 1 << (kWidth - 1);
 void VersusMatch::arm_skills (const std::string& stage_id) {
 	skills.clear();
 	const auto add = [this] (const char* id, const char* warning,
-			long period_s, long duration_s) {
+			long period_s, long duration_s, long telegraph_s = 2) {
 		Skill skill;
 		skill.id = id;
 		skill.warning = warning;
 		skill.period = period_s * 50;
 		skill.duration = duration_s * 50;
+		skill.telegraph = telegraph_s * 50;
 		skill.next_fire = skill.period;
 		skills.push_back(std::move(skill));
 	};
-	// The kit reads the room. A Warden miniboss carries one trick and a
-	// Warden boss two; the Hammers carry none at all and lean on their
-	// heavier blade; the Tricksters trade that blade away for a fuller
-	// kit - two on the miniboss, three on the boss.
+	// The kits. A Warden miniboss carries two and a Warden boss three; the
+	// Hammers carry two heavy ones rather than a handful of fiddly ones,
+	// because heavy is their whole character; the Tricksters carry the
+	// fiddly ones, three and four. The road's own Warden closes with four.
+	// Never darkness and smoke together on one kit - that is not hard, it
+	// is unreadable.
 	if (stage_id == "c1m1") {
 		add("rustfall", "RUST ON THE WIND", 16, 0);
+		add("tongslock", "THE TONGS ARE TAKEN", 21, 5);
 	} else if (stage_id == "c1s8") {
 		add("rustfall", "RUST ON THE WIND", 14, 0);
 		add("sealgate", "THE GATE SWINGS SHUT", 27, 8);
+		add("vaultdark", "THE LAMPS GO OUT", 30, 7);
 	} else if (stage_id == "c2m1") {
 		add("coldsnap", "COLD SNAP", 21, 10);
+		add("smokescreen", "SMOKE IN THE RAFTERS", 26, 8);
 	} else if (stage_id == "c2s8") {
 		add("coldsnap", "COLD SNAP", 19, 9);
-		add("heatwave", "HEAT WAVE", 28, 6);
+		add("heatwave", "HEAT WAVE", 24, 6);
+		add("pincer", "THE WALLS CLOSE IN", 31, 7);
 	} else if (stage_id == "c3m1") {
 		add("sealgate", "THE VAULT SEALS", 20, 8);
+		add("deadweight", "THE HAMMER FALLS", 28, 6);
 	} else if (stage_id == "c3s9") {
-		// The road's own Warden closes with three - the one fight
-		// allowed to break the two-per-boss rule, because it is the
-		// whole curriculum turned hostile.
+		// The road's own Warden closes with four - the one fight allowed
+		// to break the three-per-boss rule, because it is the whole
+		// curriculum turned hostile.
 		add("coldsnap", "COLD SNAP", 17, 8);
 		add("heatwave", "HEAT WAVE", 24, 6);
 		add("rustfall", "RUST ON THE WIND", 13, 0);
+		add("forgestrike", "THE ANVIL RISES", 34, 0, 5);
+	// --- The Hammers: two heavy blows, no tricks. ------------------------
+	} else if (stage_id == "c1m2") {
+		add("deadweight", "THE HAMMER FALLS", 26, 6);
+	} else if (stage_id == "c1b2") {
+		add("deadweight", "THE HAMMER FALLS", 24, 6);
+		add("forgestrike", "THE ANVIL RISES", 36, 0, 5);
+	} else if (stage_id == "c2m2") {
+		add("deadweight", "THE HAMMER FALLS", 24, 7);
+	} else if (stage_id == "c2b2") {
+		add("deadweight", "THE HAMMER FALLS", 22, 7);
+		add("forgestrike", "THE ANVIL RISES", 33, 0, 5);
+	} else if (stage_id == "c3m2") {
+		add("deadweight", "THE HAMMER FALLS", 22, 7);
+	} else if (stage_id == "c3b2") {
+		add("deadweight", "THE HAMMER FALLS", 20, 8);
+		add("forgestrike", "THE ANVIL RISES", 30, 0, 5);
+	// --- The Tricksters: the fiddly ones, and more of them. --------------
 	} else if (stage_id == "c1m3") {
 		add("rustfall", "RUST ON THE WIND", 18, 0);
 		add("sealgate", "THE LAMP GOES OUT", 30, 7);
+		add("tongslock", "THE TONGS ARE TAKEN", 23, 5);
 	} else if (stage_id == "c1b3") {
 		add("rustfall", "RUST ON THE WIND", 16, 0);
 		add("sealgate", "THE GATE SWINGS SHUT", 29, 7);
 		add("heatwave", "HEAT WAVE", 34, 5);
+		add("vaultdark", "THE LAMPS GO OUT", 27, 6);
 	} else if (stage_id == "c2m3") {
 		add("coldsnap", "COLD SNAP", 23, 9);
 		add("sealgate", "THE CHOIR CLOSES RANKS", 31, 7);
+		add("smokescreen", "SMOKE IN THE RAFTERS", 26, 7);
 	} else if (stage_id == "c2b3") {
 		add("coldsnap", "COLD SNAP", 21, 9);
 		add("heatwave", "HEAT WAVE", 30, 5);
 		add("sealgate", "THE QUENCH TANK SEALS", 36, 7);
+		add("smokescreen", "SMOKE IN THE RAFTERS", 25, 7);
 	} else if (stage_id == "c3m3") {
 		add("heatwave", "HEAT WAVE", 22, 6);
 		add("rustfall", "RUST ON THE WIND", 17, 0);
+		add("tongslock", "THE TONGS ARE TAKEN", 20, 5);
 	} else if (stage_id == "c3b3") {
 		add("heatwave", "HEAT WAVE", 20, 6);
 		add("rustfall", "RUST ON THE WIND", 15, 0);
 		add("coldsnap", "COLD SNAP", 27, 8);
+		add("pincer", "THE WALLS CLOSE IN", 32, 7);
 	}
 }
+
+namespace {
+
+// Which skills are impositions - a thing done TO the board for a while, as
+// against a blow that lands and is over. Only one may be live at a time.
+bool holds_the_board (const std::string& id) {
+	return id == "sealgate" || id == "coldsnap" || id == "pincer"
+		|| id == "vaultdark" || id == "smokescreen" || id == "deadweight"
+		|| id == "tongslock" || id == "heatwave";
+}
+
+} // namespace
 
 void VersusMatch::tick_skills (Session& player) {
 	if (skills.empty()) {
 		return;
 	}
 	const long frame = player.sim().frame();
-	bool want_cold = false;
-	bool want_seal = false;
-	bool want_pressure = false;
+	// What is already holding the board, so a second imposition defers
+	// rather than piling on. A fat kit with six-second windows on
+	// twenty-second periods would otherwise settle into a permanent
+	// fog-dark-narrow-heavy soup, which is not difficulty, it is mud.
+	bool held = false;
+	for (const Skill& skill : skills) {
+		held = held || (frame < skill.active_until
+			&& holds_the_board(skill.id));
+	}
 	for (Skill& skill : skills) {
-		if (!skill.telegraphing && frame >= skill.next_fire - kTelegraph) {
+		if (!skill.telegraphing && frame >= skill.next_fire - skill.telegraph) {
+			// An imposition that cannot land yet does not even warn: the
+			// telegraph is a promise, and a promise the fight breaks
+			// teaches the player to ignore it.
+			if (held && holds_the_board(skill.id)) {
+				skill.next_fire += 100;
+				continue;
+			}
 			skill.telegraphing = true;
 			skill_banner = skill.warning;
 			skill_banner_until = skill.next_fire + 50;
-			skill_cues.push_back("fusewarn");
+			skill_caster = skill.id;
+			skill_warned_at = frame;
+			skill_fires_at = skill.next_fire;
+			skill_cues.push_back("skillwarn");
 		}
 		if (skill.telegraphing && frame >= skill.next_fire) {
+			// Two warnings can begin before either has landed, so the
+			// board is asked again at the blow itself. A spell that would
+			// pile on waits its turn - and the warning goes with it, so
+			// the plate never promises something the fight then swallows.
+			if (held && holds_the_board(skill.id)) {
+				skill.telegraphing = false;
+				skill.next_fire += 100;
+				if (skill_caster == skill.id) {
+					skill_banner.clear();
+					skill_banner_until = -1;
+					skill_caster.clear();
+				}
+				continue;
+			}
 			skill.telegraphing = false;
 			skill.active_until = frame + skill.duration;
+			skill.landed_at = frame;
 			skill.next_fire += skill.period;
+			held = held || holds_the_board(skill.id);
 			if (skill.id == "rustfall") {
-				// Two rows of rust thrown at the player's floor, riding
+				// Three rows of rust thrown at the player's floor, riding
 				// the same pending-garbage rail an attack does.
-				player.receive_attack(2);
+				player.receive_attack(3);
 				skill_cues.push_back("hit");
+			} else if (skill.id == "forgestrike") {
+				// The long wind-up, and the blow to match it.
+				player.receive_attack(6);
+				skill_cues.push_back("hit");
+			} else if (skill.id == "heatwave") {
+				// The gauge, taken. With no clock in a duel, Overdrive is
+				// the one resource a fight is fought over - so taking it
+				// is the pressure the wick used to be.
+				player.sim_mutable().drain_flow(0.5);
+				skill_cues.push_back("pressure");
 			} else if (skill.id == "coldsnap") {
 				skill_cues.push_back("freeze");
-			} else if (skill.id == "sealgate") {
-				skill_cues.push_back("forced");
-			} else if (skill.id == "heatwave") {
-				skill_cues.push_back("pressure");
+			} else if (skill.id == "vaultdark"
+				|| skill.id == "smokescreen") {
+				skill_cues.push_back("skilldark");
+			} else if (skill.id == "deadweight") {
+				skill_cues.push_back("skillheavy");
+			} else {
+				skill_cues.push_back("skillseal");
 			}
 		}
-		if (frame < skill.active_until) {
-			want_cold = want_cold || skill.id == "coldsnap";
-			want_seal = want_seal || skill.id == "sealgate";
-			want_pressure = want_pressure || skill.id == "heatwave";
+	}
+	// What is live this frame, gathered before any of it is imposed.
+	int want_seal = 0;
+	bool want_cold = false;
+	bool want_pressure = false;
+	bool want_dark = false;
+	bool want_fog = false;
+	bool want_bar = false;
+	int want_gravity = 0;
+	for (const Skill& skill : skills) {
+		if (frame >= skill.active_until) {
+			continue;
+		}
+		if (skill.id == "sealgate") {
+			want_seal |= kSealMask;
+		} else if (skill.id == "pincer") {
+			want_seal |= kSealMask | 1;
+		} else if (skill.id == "coldsnap") {
+			want_cold = true;
+		} else if (skill.id == "heatwave") {
+			want_pressure = true;
+		} else if (skill.id == "vaultdark") {
+			want_dark = true;
+		} else if (skill.id == "smokescreen") {
+			want_fog = true;
+		} else if (skill.id == "tongslock") {
+			want_bar = true;
+		} else if (skill.id == "deadweight") {
+			// Twice the weight, floored where a piece is still playable.
+			want_gravity = std::max(6, player.sim().config().fall_delay / 2);
 		}
 	}
 	skill_pressure = want_pressure;
+	imposed_dark = want_dark;
+	imposed_fog = want_fog;
+	imposed_hold_bar = want_bar;
+	imposed_gravity = want_gravity;
 	// The seal never falls on a piece that stands in the column: it waits,
 	// still wanted, until the piece is clear - and lifts the moment its
 	// spell ends.
 	int seal = imposed_sealed;
-	if (want_seal && imposed_sealed == 0) {
+	if (want_seal != 0 && imposed_sealed == 0) {
 		bool clear_of = true;
 		if (player.sim().entry()) {
 			for (const Offset cell : cells_of(player.sim().piece())) {
-				if (kSealMask >> cell.x & 1) {
+				if (want_seal >> cell.x & 1) {
 					clear_of = false;
 					break;
 				}
 			}
 		}
 		if (clear_of) {
-			seal = kSealMask;
+			seal = want_seal;
 		}
-	} else if (!want_seal) {
+	} else if (want_seal == 0) {
 		seal = 0;
 	}
 	if (seal != imposed_sealed || want_cold != imposed_cold) {
@@ -191,13 +310,22 @@ void VersusMatch::begin_round (unsigned seed, const replay::Meta& player_meta,
 	for (Skill& skill : skills) {
 		skill.next_fire = skill.period;
 		skill.active_until = -1;
+		skill.landed_at = -1;
 		skill.telegraphing = false;
 	}
 	skill_pressure = false;
 	imposed_sealed = 0;
 	imposed_cold = false;
+	imposed_dark = false;
+	imposed_fog = false;
+	imposed_hold_bar = false;
+	imposed_gravity = 0;
+	imposed_weight = 0;
 	skill_banner.clear();
 	skill_banner_until = -1;
+	skill_caster.clear();
+	skill_warned_at = -1;
+	skill_fires_at = -1;
 }
 
 bool VersusMatch::step (Session& player) {
@@ -213,6 +341,16 @@ bool VersusMatch::step (Session& player) {
 	// The boss's skills run on the player's clock, before the pressure
 	// line reads what they want.
 	tick_skills(player);
+	// The weight, applied here rather than by the screen: gravity is read
+	// from a member the sim derived at birth, and a skill that only moved
+	// the tuning would be a banner with nothing behind it. Lifted the
+	// moment the spell ends.
+	const int weight = imposed_gravity != 0 ? imposed_gravity
+		: player.sim().config().fall_delay;
+	if (weight != imposed_weight) {
+		imposed_weight = weight;
+		player.sim_mutable().impose_gravity(weight);
+	}
 	// Heat pressure, both ways: an Overdrive burning on one board makes
 	// the other board's fuse burn faster - and a heat wave holds it hot
 	// from the skill side. Igniting is an attack.

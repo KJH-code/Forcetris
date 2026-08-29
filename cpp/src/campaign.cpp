@@ -41,8 +41,13 @@ const std::vector<Upgrade>& anvil () {
 	// a treadmill. Wick/bank/bellows land on the stage's rules in
 	// apply-order below; sense and preheat are read by the GUI.
 	static const std::vector<Upgrade> forge = {
-		{"wick", "Forged Wick", "pieces burn longer in stages", 3, 25},
-		{"bank", "Deep Bank", "clears refill more fuse in stages", 2, 30},
+		// The first two were bought with slag by players who are still
+		// playing, so the ids stay and the metal moves with the game: the
+		// wick used to lengthen a clock most rooms no longer carry, and
+		// the bank used to refill it. They feed the gauge now, which is
+		// live in every room on the road.
+		{"wick", "Forged Wick", "the fire holds its heat in stages", 3, 25},
+		{"bank", "Deep Bank", "digging charges the gauge in stages", 2, 30},
 		{"bellows", "Great Bellows", "Overdrive lasts longer in stages", 2, 30},
 		{"sense", "Ember Sense", "earn more embers in stages", 2, 35},
 		{"preheat", "Preheat", "start every stage with a free draft", 1, 60},
@@ -384,10 +389,14 @@ namespace {
 SimConfig overridden (const Stage& stage, SimConfig config) {
 	// The fuse is a stage gimmick, whatever the Rules tab says: most rooms
 	// play the board pure - the forced drop was the beginners' wall - and
-	// only the recipes that name the burn still burn. A duel always does:
-	// the fuse is the duel's own tension, Overdrive and heat pressure
-	// with it.
-	config.fuse = stage.fuse || stage.mode == 5;
+	// only the recipes that name the burn still burn. Duels used to be
+	// carved out as well, on the argument that the clock was the duel's
+	// tension; playing it says otherwise. A clock that is always there is
+	// not tension, it is the rule the beginner already lost to, and it
+	// made the one fight the road builds towards feel like the trainer.
+	// The duel's tension is the foe: its attack, its blade, and the
+	// skills it telegraphs at you.
+	config.fuse = stage.fuse;
 	config.fuse_base *= stage.fuse_scale;
 	config.fuse_base = std::max(config.fuse_min, config.fuse_base);
 	if (stage.fall_delay >= 1) {
@@ -444,8 +453,8 @@ SimConfig stage_config (const Stage& stage, SimConfig base,
 		const auto found = forge.find(id);
 		return found != forge.end() ? found->second : 0;
 	};
-	config.fuse_base += 0.1 * level("wick");
-	config.fuse_refuel_line += 0.05 * level("bank");
+	config.flow_keep += 0.08 * level("wick");
+	config.flow_gain_dig += 0.5 * level("bank");
 	config.overdrive_secs += 0.5 * level("bellows");
 	return config;
 }
