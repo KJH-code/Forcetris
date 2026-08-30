@@ -4812,14 +4812,72 @@ void open_layout_editor (App& app) {
 	app.show_settings = false;
 }
 
+// A content screen takes the whole window.
+//
+// Every one of these used to be a centred panel of some hand-picked width
+// - four hundred and ninety here, five hundred and eighty there - sitting
+// in the middle of a screen with the backdrop showing all round it. On a
+// small window that is fine; on anything modern it is a postage stamp,
+// and the Forge Map in particular had grown a tree too wide for its own
+// panel and was clipping and scrolling inside a box while two thirds of
+// the display sat empty.
+//
+// These are screens, not dialogs: they take the screen. The map, the
+// scores, the settings, the analysis, the replay shelf, the help and the
+// profile all begin with this. What is NOT here is the menu, the mode
+// picker and the game-over panel: those are hero panels that auto-fit
+// what they hold, and a column of five buttons stretched over a display
+// is not a menu, it is a menu with a lot of nothing beside it.
+//
+// Width alone is not the point either - see open_column, which puts a
+// form back in a readable column inside the full-bleed screen.
+void full_screen (float top = 0.f) {
+	const ImVec2 all = ImGui::GetIO().DisplaySize;
+	ImGui::SetNextWindowPos(ImVec2(0.f, top), ImGuiCond_Always);
+	ImGui::SetNextWindowSize(ImVec2(all.x, all.y - top), ImGuiCond_Always);
+}
+
+// A readable column inside a full-bleed screen.
+//
+// Taking the display is right for the map, whose tree wants every pixel of
+// it, and wrong for a form. A column of sliders or a list of key bindings
+// stretched across nineteen hundred pixels is a label pinned to the far
+// left and its value pinned to the far right with a hand's width of
+// nothing between them, which is harder to read than the small panel it
+// replaced, not easier.
+//
+// So the window is full-bleed - the chrome, the header and the ground fill
+// the screen the way the map does - and the content sits in a column of
+// its own down the middle. Wide content skips this and uses the whole
+// width, because a score table and a replay shelf have somewhere to put
+// it. `reserve` is the room left under the column for a footer that must
+// not scroll away with the rest.
+float open_column (float ideal, float reserve = 0.f) {
+	const float have = ImGui::GetContentRegionAvail().x;
+	const float want = std::min(ideal, have);
+	const float pad = (have - want) / 2.f;
+	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + pad);
+	const float tall = std::max(ui(80),
+		ImGui::GetContentRegionAvail().y - reserve);
+	ImGui::BeginChild("column", ImVec2(want, tall), false);
+	return pad;
+}
+
+// Closes it and puts the cursor back under the column's own left edge, so
+// the footer stands with the content rather than out at the screen's rim.
+void close_column (float pad) {
+	ImGui::EndChild();
+	ImGui::Separator();
+	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + pad);
+}
+
 void draw_settings (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(70)),
-		ImGuiCond_Appearing, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(ui(560), 0));
+	full_screen();
 	ImGui::Begin("Settings", &app.show_settings,
-		ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse
-		| ImGuiWindowFlags_NoSavedSettings);
+		ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	const float pad = open_column(ui(660), ui(52));
 	if (ImGui::BeginTabBar("settings", ImGuiTabBarFlags_None)) {
 		if (ImGui::BeginTabItem("Handling")) {
 			ImGui::Spacing();
@@ -5013,7 +5071,7 @@ void draw_settings (App& app) {
 		}
 		ImGui::EndTabBar();
 	}
-	ImGui::Separator();
+	close_column(pad);
 	if (ImGui::Button("Save", ImVec2(ui(140), 0))) {
 		save_config(app.config, app.config_file);
 		app.show_settings = false;
@@ -5260,15 +5318,14 @@ void draw_analysis_munch (const replay::Replay& game) {
 }
 
 void draw_analysis (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(6)),
-		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(ui(490), 0));
+	full_screen();
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(6)));
 	ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui(8), ui(3)));
-	ImGui::Begin("Analysis", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+	ImGui::Begin("Analysis", nullptr, ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	const float pad = open_column(ui(720), ui(88));
 	if (app.studying.has_value()) {
 		ImGui::TextDisabled("%s", app.studying->title().c_str());
 		if (ImGui::BeginTabBar("analysis_tabs")) {
@@ -5305,6 +5362,7 @@ void draw_analysis (App& app) {
 	} else {
 		ImGui::TextDisabled("That run was too short to record.");
 	}
+	close_column(pad);
 	if (ImGui::Button("Back", ImVec2(ui(240), 0))) {
 		app.screen = app.study_back;
 		app.studying.reset();
@@ -5317,13 +5375,12 @@ void draw_analysis (App& app) {
 // other Tetris has. The Python help screen's text, read off the live
 // bindings the same way.
 void draw_help (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(50)),
-		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(ui(620), 0));
-	ImGui::Begin("How to Play", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+	full_screen();
+	ImGui::Begin("How to Play", nullptr, ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	const float pad = open_column(ui(760), ui(52));
 	if (ImGui::BeginTable("keys", 2)) {
 		for (const ActionDef& action : all_actions()) {
 			// Every key bound to the action, or the word for none - the same
@@ -5371,22 +5428,30 @@ void draw_help (App& app) {
 	}
 	ImGui::Separator();
 	ImGui::TextUnformatted("The Fuse");
+	// Wrapped to the column, not hard-wrapped at the width one panel
+	// happened to be: the newlines that used to be written into these
+	// strings were sized for a six-hundred-pixel window and ran off the
+	// right of a phone.
+	ImGui::PushTextWrapPos(0.f);
 	ImGui::TextUnformatted(
-		"The board plays pure - no clock on your pieces. Three rooms of\n"
-		"the Forge burn, and only those three: in a burn room each piece\n"
-		"carries a fuse, and when it runs out the piece is slammed down\n"
-		"where it stands. Clears refuel the pieces to come; spins, quads\n"
-		"and perfect clears refuel hardest. A duel never burns - what\n"
+		"The board plays pure - no clock on your pieces. Three rooms of "
+		"the Forge burn, and only those three: in a burn room each piece "
+		"carries a fuse, and when it runs out the piece is slammed down "
+		"where it stands. Clears refuel the pieces to come; spins, quads "
+		"and perfect clears refuel hardest. A duel never burns - what "
 		"presses you there is the foe.");
+	ImGui::PopTextWrapPos();
 	ImGui::TextUnformatted("");
 	ImGui::TextUnformatted("Flow and Overdrive");
+	ImGui::PushTextWrapPos(0.f);
 	ImGui::TextUnformatted(
-		"In a burning room the Flow rail climbs on quality: spins, quads,\n"
-		"back-to-backs, combos and perfect clears fill it. A full rail\n"
-		"ignites Overdrive: the fuse freezes, everything you send is\n"
-		"multiplied, and every clear also burns a garbage row off your\n"
+		"In a burning room the Flow rail climbs on quality: spins, quads, "
+		"back-to-backs, combos and perfect clears fill it. A full rail "
+		"ignites Overdrive: the fuse freezes, everything you send is "
+		"multiplied, and every clear also burns a garbage row off your "
 		"own floor - until it gutters out.");
-	ImGui::Separator();
+	ImGui::PopTextWrapPos();
+	close_column(pad);
 	if (ImGui::Button("Back", ImVec2(ui(240), 0))) {
 		app.screen = app.help_back;
 	}
@@ -5589,32 +5654,40 @@ void draw_viewer (App& app) {
 }
 
 void draw_replays (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(60)),
-		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(ui(580), 0));
-	ImGui::Begin("Replays", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+	full_screen();
+	ImGui::Begin("Replays", nullptr, ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	const float pad = open_column(ui(820), ui(52));
 	if (app.shelf.empty()) {
 		ImGui::TextDisabled("No replays yet. Finish a game first.");
 	}
 	for (size_t i = 0; i < app.shelf.size(); ++i) {
 		ImGui::PushID(static_cast<int>(i));
 		ImGui::TextUnformatted(app.shelf[i].title().c_str());
-		ImGui::SameLine(ui(380));
+		// Both buttons ride the right edge of the column, whatever width
+		// the screen gave it - measured rather than guessed, because a
+		// number that clears the text on a desktop clips it on a phone,
+		// where the same label is drawn at twice the size.
+		const float pad = ImGui::GetStyle().FramePadding.x * 2;
+		const float gap = ImGui::GetStyle().ItemSpacing.x;
+		const float seen = ImGui::CalcTextSize("Watch").x + pad;
+		const float read = ImGui::CalcTextSize("Analysis").x + pad;
+		const float right = ImGui::GetContentRegionMax().x;
+		ImGui::SameLine(std::max(ui(200), right - seen - read - gap));
 		if (ImGui::SmallButton("Analysis")) {
 			app.studying = app.shelf[i];
 			app.study_back = Screen::Replays;
 			app.screen = Screen::Analysis;
 		}
-		ImGui::SameLine(ui(470));
+		ImGui::SameLine(std::max(ui(280), right - seen));
 		if (ImGui::SmallButton("Watch")) {
 			watch(app, app.shelf[i], Screen::Replays);
 		}
 		ImGui::PopID();
 	}
-	ImGui::Separator();
+	close_column(pad);
 	if (ImGui::Button("Back", ImVec2(ui(140), 0))) {
 		app.screen = Screen::Menu;
 	}
@@ -5622,10 +5695,8 @@ void draw_replays (App& app) {
 }
 
 void draw_scores (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(50)),
-		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	ImGui::SetNextWindowSize(ImVec2(ui(660), 0));
-	ImGui::Begin("High scores", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+	full_screen();
+	ImGui::Begin("High scores", nullptr, ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
@@ -5758,18 +5829,12 @@ void draw_chart (const char* label, const std::vector<double>& values,
 }
 
 void draw_profile (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(24)),
-		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	const float wide
-		= std::min(ui(680), ImGui::GetIO().DisplaySize.x - ui(16));
-	// Tall content - the growth charts - scrolls instead of running off
-	// the screen's bottom.
-	ImGui::SetNextWindowSizeConstraints(ImVec2(wide, 0),
-		ImVec2(wide, ImGui::GetIO().DisplaySize.y - ui(48)));
-	ImGui::Begin("Profile", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+	full_screen();
+	ImGui::Begin("Profile", nullptr, ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	const float pad = open_column(ui(820), ui(52));
 
 	// The mode filter every tab reads.
 	// Each filter matches its mode family under either ruleset's key - the
@@ -5934,7 +5999,7 @@ void draw_profile (App& app) {
 		force = -1;
 		ImGui::EndTabBar();
 	}
-	ImGui::Separator();
+	close_column(pad);
 	if (ImGui::Button("Back", ImVec2(ui(140), 0))) {
 		app.screen = Screen::Menu;
 	}
@@ -6390,25 +6455,6 @@ void draw_lava_bed (App& app, ImDrawList* bed) {
 		IM_COL32(255, 140, 34, 0), IM_COL32(255, 140, 34, 0),
 		IM_COL32(255, 170, 54, static_cast<int>(165 * heat)),
 		IM_COL32(255, 170, 54, static_cast<int>(165 * heat)));
-}
-
-// A content screen takes the whole window.
-//
-// Every one of these used to be a centred panel of some hand-picked width
-// - four hundred and ninety here, five hundred and eighty there - sitting
-// in the middle of a screen with the backdrop showing all round it. On a
-// small window that is fine; on anything modern it is a postage stamp,
-// and the Forge Map in particular had grown a tree too wide for its own
-// panel and was clipping and scrolling inside a box while two thirds of
-// the display sat empty.
-//
-// These are screens, not dialogs: they take the screen. The backdrop is
-// still drawn behind, and the panel keeps its own chrome, so nothing about
-// the look changes except that it is now the size of what it holds.
-void full_screen (float top = 0.f) {
-	const ImVec2 all = ImGui::GetIO().DisplaySize;
-	ImGui::SetNextWindowPos(ImVec2(0.f, top), ImGuiCond_Always);
-	ImGui::SetNextWindowSize(ImVec2(all.x, all.y - top), ImGuiCond_Always);
 }
 
 // A number with its coin: the icon when the art exists, then the figure.

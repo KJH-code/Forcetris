@@ -194,16 +194,36 @@ made ready. The **cooldown** puts it out again over half a second under
 the verdict - the board stays drawn underneath the whole time, because a
 loss screen over a well that vanished reads as a crash.
 
-**The map takes the screen.** It was a centred panel of some hand-picked
-width - and every other content screen still is - sitting in the middle of
-the display with the backdrop showing all round it. On a small window that
-is fine; on anything modern it is a postage stamp, and this one had grown
-a tree too wide for its own panel and was clipping on the right and
-scrolling inside a box while two thirds of the screen sat empty behind it.
-The plates are sized from the room there actually is now, too: the widest
-row is measured and the width shared out between its lanes, so the tree
-spreads across a desktop and shrinks to fit four lanes on a phone rather
-than either one being a number typed once.
+**The screens take the screen.** Every content screen used to be a centred
+panel of some hand-picked width - four hundred and ninety here, five
+hundred and eighty there - sitting in the middle of the display with the
+backdrop showing all round it. On a small window that is fine; on anything
+modern it is a postage stamp, and the map in particular had grown a tree
+too wide for its own panel and was clipping on the right and scrolling
+inside a box while two thirds of the screen sat empty behind it. The map,
+the scores, the settings, the analysis, the replay shelf, the help and the
+profile all take the display now. The menu, the mode picker and the game
+over panel deliberately do not: those are hero panels that auto-fit what
+they hold, and a column of five buttons stretched over a display is not a
+menu, it is a menu with a lot of nothing beside it.
+
+**Width alone was not the point, which the first pass got wrong.** A form
+of sliders or a list of key bindings stretched across nineteen hundred
+pixels is a label pinned to the far left and its value pinned to the far
+right with a hand's width of nothing between them - harder to read than
+the small panel it replaced, not easier. So the window is full-bleed - the
+chrome, the header and the ground fill the display - and the content sits
+in a column of its own down the middle (`open_column`), with the footer
+lined up under that column rather than out at the rim. Wide content skips
+the column and uses the whole width, because a score table has somewhere
+to put it. On a phone the column is wider than the screen, so it collapses
+to the full width on its own and nothing needed a second code path.
+
+The map is the one screen whose content genuinely wants every pixel, and
+its plates are sized from the room there actually is: the widest row is
+measured and the width shared out between its lanes, so the tree spreads
+across a desktop and shrinks to fit four lanes on a phone rather than
+either one being a number typed once.
 
 **A chapter has several endings.** The top row of a map used to be a
 single node, and every path in the graph funnelled into it - that, more
