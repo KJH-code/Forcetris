@@ -194,6 +194,17 @@ made ready. The **cooldown** puts it out again over half a second under
 the verdict - the board stays drawn underneath the whole time, because a
 loss screen over a well that vanished reads as a crash.
 
+**The map takes the screen.** It was a centred panel of some hand-picked
+width - and every other content screen still is - sitting in the middle of
+the display with the backdrop showing all round it. On a small window that
+is fine; on anything modern it is a postage stamp, and this one had grown
+a tree too wide for its own panel and was clipping on the right and
+scrolling inside a box while two thirds of the screen sat empty behind it.
+The plates are sized from the room there actually is now, too: the widest
+row is measured and the width shared out between its lanes, so the tree
+spreads across a desktop and shrinks to fit four lanes on a phone rather
+than either one being a number typed once.
+
 **A chapter has several endings.** The top row of a map used to be a
 single node, and every path in the graph funnelled into it - that, more
 than anything else, is what made a run feel like a corridor with a bulge

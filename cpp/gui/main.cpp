@@ -6307,6 +6307,25 @@ void draw_lava_bed (App& app, ImDrawList* bed) {
 	}
 }
 
+// A content screen takes the whole window.
+//
+// Every one of these used to be a centred panel of some hand-picked width
+// - four hundred and ninety here, five hundred and eighty there - sitting
+// in the middle of a screen with the backdrop showing all round it. On a
+// small window that is fine; on anything modern it is a postage stamp,
+// and the Forge Map in particular had grown a tree too wide for its own
+// panel and was clipping and scrolling inside a box while two thirds of
+// the display sat empty.
+//
+// These are screens, not dialogs: they take the screen. The backdrop is
+// still drawn behind, and the panel keeps its own chrome, so nothing about
+// the look changes except that it is now the size of what it holds.
+void full_screen (float top = 0.f) {
+	const ImVec2 all = ImGui::GetIO().DisplaySize;
+	ImGui::SetNextWindowPos(ImVec2(0.f, top), ImGuiCond_Always);
+	ImGui::SetNextWindowSize(ImVec2(all.x, all.y - top), ImGuiCond_Always);
+}
+
 // A number with its coin: the icon when the art exists, then the figure.
 void coin_stat (const char* icon, const ImVec4& ink, const char* text) {
 	if (SDL_Texture* tex = gfx::get(icon)) {
@@ -6318,16 +6337,12 @@ void coin_stat (const char* icon, const ImVec4& ink, const char* text) {
 }
 
 void draw_career (App& app) {
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(24)),
-		ImGuiCond_Always, ImVec2(0.5f, 0.f));
-	// Wide enough for the map's widest row. The tree grew to three or four
-	// lanes when it stopped funnelling into one boss, and at the old width
-	// the right-hand lane ran off the panel.
-	const float wide
-		= std::min(ui(680), ImGui::GetIO().DisplaySize.x - ui(16));
-	ImGui::SetNextWindowSizeConstraints(ImVec2(wide, 0),
-		ImVec2(wide, ImGui::GetIO().DisplaySize.y - ui(48)));
-	ImGui::Begin("Career", nullptr, ImGuiWindowFlags_AlwaysAutoResize
+	// The map takes the screen. It was a six-hundred-pixel panel in the
+	// middle of the display with a tree too wide for it, clipping on the
+	// right and scrolling inside a box while two thirds of the screen sat
+	// empty behind it.
+	full_screen();
+	ImGui::Begin("Career", nullptr, ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
@@ -6550,13 +6565,33 @@ void draw_career (App& app) {
 		bed->ChannelsSetCurrent(1);
 		std::vector<ImVec2> tops(app.run_map.size());
 		std::vector<ImVec2> bottoms(app.run_map.size());
-		// Narrower plates than the two-lane map wore: four of them and
-		// their gaps have to sit inside the panel on a phone too.
-		const float node_w = ui(150);
 		const float node_h = ui(34);
-		const float row_gap = ui(26);
-		const float lane_gap = ui(10);
+		const float lane_gap = ui(14);
 		const float panel_w = ImGui::GetContentRegionAvail().x;
+		// The plates are sized from the room there actually is, not from a
+		// number typed once: the widest row is measured and the width
+		// shared out between its lanes. On a full screen that spreads the
+		// tree across the display instead of huddling it in the middle;
+		// on a phone it shrinks the plates until four of them fit.
+		int widest = 1;
+		for (int r = 0; r < campaign::kMapDepth; ++r) {
+			int lanes = 0;
+			for (const campaign::MapNode& node : app.run_map) {
+				lanes += node.depth == r ? 1 : 0;
+			}
+			widest = std::max(widest, lanes);
+		}
+		const float node_w = std::clamp(
+			(panel_w - ui(24) - (widest - 1) * lane_gap) / widest,
+			ui(104), ui(260));
+		// And the rows breathe into whatever height is left, within
+		// reason - a map that fits the screen should not leave a third of
+		// it blank under the entrance.
+		const float row_gap = std::clamp(
+			(ImGui::GetContentRegionAvail().y
+				- campaign::kMapDepth * node_h - ui(150))
+				/ std::max(1, campaign::kMapDepth - 1),
+			ui(24), ui(64));
 		for (int r = campaign::kMapDepth - 1; r >= 0; --r) {
 			int lanes = 0;
 			for (const campaign::MapNode& node : app.run_map) {
@@ -6746,7 +6781,14 @@ void draw_career (App& app) {
 			if (feet > 0) {
 				app.map_foot = ImVec2(foot_x / feet, foot_y);
 				app.map_head = ImVec2((lo + hi) / 2, head_y);
-				app.map_span = ImVec2(lo - ui(90), hi + ui(90));
+				// The bed runs the whole panel, not just the tree's own
+				// width: lava banked in a column behind the nodes with
+				// bare panel either side reads as a rug, not a forge.
+				const ImVec2 edge = ImGui::GetWindowPos();
+				app.map_span = ImVec2(edge.x,
+					edge.x + ImGui::GetWindowSize().x);
+				(void)lo;
+				(void)hi;
 				app.map_seen = true;
 			}
 		}
