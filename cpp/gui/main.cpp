@@ -349,6 +349,12 @@ const SDL_Color kFormColors[8] = {
 	{122, 122, 122, 255},  // garbage
 };
 
+// How long the polish beats run, in frames at the 50Hz sim clock the
+// render loop is paced against.
+constexpr int kCurtain = 16;   // A screen change: quick, or it is a wait.
+constexpr int kCooling = 26;   // The well going out under a verdict.
+constexpr int kStrike = 96;    // The maul, on a run's first frame.
+
 enum class Screen {
 	Menu, Modes, Game, Over, Replays, Viewer, Scores, Help, Analysis,
 	Profile, Career };
@@ -437,6 +443,29 @@ struct App {
 	int run_node = -1;
 	bool map_reward = false;
 	bool run_ended = false;
+	// --- The polish timers. Every one of these counts down to zero and
+	// does nothing at all while it is there, so a screen that forgets to
+	// start one simply looks the way it always did.
+	//
+	// The curtain, lifted on every screen change. Watched rather than
+	// wired: there are forty-odd places that assign a screen, and a
+	// transition every one of them had to remember would be a transition
+	// half the game did not have.
+	Screen screen_was = Screen::Menu;
+	int curtain = 0;
+	// The well coming up to heat behind the count, and cooling after the
+	// last piece: a game should start and stop, not blink.
+	int cool_down = 0;
+	// The maul, on a run's first frame. Long, because it is the one
+	// flourish in the game that is allowed to be.
+	int forge_strike = 0;
+	// Where the tree stands, filled by the map each frame it draws: the
+	// foot it is struck at, the head the shock travels to, and the span
+	// the light sweeps across.
+	ImVec2 map_foot{0.f, 0.f};
+	ImVec2 map_head{0.f, 0.f};
+	ImVec2 map_span{0.f, 0.f};
+	bool map_seen = false;
 	// How much of the room each foe's board is holding, eased toward the
 	// aim so a switch is a movement and not a jump.
 	static constexpr int kSeats = 6;
@@ -1426,6 +1455,11 @@ void begin_run (App& app, int chapter, int difficulty, unsigned seed,
 		return found != app.campaign.forge.end() ? found->second : 0;
 	};
 	app.curse_shown.clear();
+	// The blow that opens a climb. It waits for the map to have drawn at
+	// least once (draw_forge_strike checks), so a run resumed from a save
+	// gets it too - and nothing about the run is gated on it.
+	app.forge_strike = kStrike;
+	app.map_seen = false;
 	run.lives += level("lifeblood");
 	run.embers += 12 * level("warchest");
 	app.run_map = endless ? campaign::build_endless_map(0, seed)
@@ -1443,6 +1477,13 @@ void begin_run (App& app, int chapter, int difficulty, unsigned seed,
 // reach.
 bool node_pickable (const App& app, int node) {
 	const campaign::Run& run = app.campaign.run;
+	// Not while the maul is still in the air. A run that opens with a blow
+	// and can be clicked through before it lands has neither the blow nor
+	// the click - and it is under two seconds, which is less than it takes
+	// to read the bottom row.
+	if (app.forge_strike > 0) {
+		return false;
+	}
 	if (!run.active || node < 0
 		|| node >= static_cast<int>(app.run_map.size())
 		|| app.run_map[static_cast<size_t>(node)].depth != run.depth) {
@@ -1751,6 +1792,12 @@ void end_game (App& app) {
 	// Saved rather than offered, the way the Python game does it: the moment
 	// a run ends is the worst moment to ask someone whether they will want
 	// to look at it.
+	//
+	// The well goes out under the verdict rather than the board simply
+	// stopping - half a second of cooling, which is the pause a verdict
+	// needs to land in. The board stays drawn underneath the whole time: a
+	// loss screen over a well that vanished reads as a crash.
+	app.cool_down = kCooling;
 	app.screen = Screen::Over;
 	app.audio.fade_music(2.5);
 	// A game that ended mid-Overdrive leaves the sim's flag stuck on; the
@@ -4301,6 +4348,206 @@ void draw_countdown (App& app) {
 		IM_COL32(255, 214, 94, 255), text);
 }
 
+// --- The polish pass: what happens between the things that happen. -------
+
+// The curtain, over everything including ImGui.
+//
+// Screens used to cut. Forty-odd places in this file assign a screen, and
+// a transition each of them had to remember to start would have been a
+// transition half the game did not have - so nothing announces a change;
+// the curtain watches for one. What it draws is a soot veil lifting off a
+// hot seam: the seam runs across at the height the veil has reached, so
+// the eye follows one bright line up and out rather than watching a
+// rectangle get less grey.
+void draw_curtain (App& app) {
+	if (app.curtain <= 0) {
+		return;
+	}
+	--app.curtain;
+	int w = 0;
+	int h = 0;
+	SDL_GetRendererOutputSize(app.renderer, &w, &h);
+	const float part = app.curtain / static_cast<float>(kCurtain);
+	// Cubic out: most of the veil is gone in the first third, so a screen
+	// change feels quick and only the seam lingers.
+	const float lift = 1.f - part * part * part;
+	const float edge = h * lift;
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	draw->AddRectFilled(ImVec2(0.f, edge), ImVec2(static_cast<float>(w),
+		static_cast<float>(h)),
+		IM_COL32(16, 10, 7, static_cast<int>(236 * part)));
+	// The seam: a hot line at the veil's edge, with its own falloff above
+	// and below, brightest while there is still veil to burn off.
+	const int glow = static_cast<int>(210 * part);
+	draw->AddRectFilledMultiColor(
+		ImVec2(0.f, edge - ui(26)), ImVec2(static_cast<float>(w), edge),
+		IM_COL32(255, 122, 46, 0), IM_COL32(255, 122, 46, 0),
+		IM_COL32(255, 176, 60, glow), IM_COL32(255, 176, 60, glow));
+	draw->AddRectFilled(ImVec2(0.f, edge - ui(2)),
+		ImVec2(static_cast<float>(w), edge + ui(2)),
+		IM_COL32(255, 236, 190, glow));
+}
+
+// The well coming up to heat, behind the count.
+//
+// A game used to begin with a board that was simply there. Now the
+// crucible lights from the floor up over the three seconds - the rim
+// heats, the grid arrives - so the first piece falls into somewhere that
+// was made ready rather than somewhere that was always on.
+void draw_preheat (App& app) {
+	if (app.countdown <= 0 || !app.session.has_value()) {
+		return;
+	}
+	const float part = std::clamp(
+		app.countdown / static_cast<float>(std::max(1, app.start_delay)),
+		0.f, 1.f);
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	// Soot over the well, thinning as the heat comes up.
+	draw->AddRectFilled(
+		ImVec2(static_cast<float>(kBoardX), static_cast<float>(kBoardY)),
+		ImVec2(static_cast<float>(kBoardX + kBoardW),
+			static_cast<float>(kBoardY + kBoardH)),
+		IM_COL32(12, 8, 6, static_cast<int>(200 * part)));
+	// And the floor's own glow climbing the well as it thins.
+	const float reach = kBoardH * (1.f - part) * 0.7f;
+	if (reach > 1.f) {
+		draw->AddRectFilledMultiColor(
+			ImVec2(static_cast<float>(kBoardX),
+				kBoardY + kBoardH - reach),
+			ImVec2(static_cast<float>(kBoardX + kBoardW),
+				static_cast<float>(kBoardY + kBoardH)),
+			IM_COL32(255, 122, 46, 0), IM_COL32(255, 122, 46, 0),
+			IM_COL32(255, 148, 52, 90), IM_COL32(255, 148, 52, 90));
+	}
+}
+
+// And the well going out, after the last piece. The board is still drawn
+// underneath - a loss screen over a board that vanished reads as a crash -
+// but it cools to soot over half a second, which is the pause the verdict
+// needs to land in.
+void draw_cooldown (App& app) {
+	if (app.cool_down <= 0) {
+		return;
+	}
+	--app.cool_down;
+	const float part = 1.f - app.cool_down / static_cast<float>(kCooling);
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	draw->AddRectFilled(
+		ImVec2(static_cast<float>(kBoardX), static_cast<float>(kBoardY)),
+		ImVec2(static_cast<float>(kBoardX + kBoardW),
+			static_cast<float>(kBoardY + kBoardH)),
+		IM_COL32(10, 7, 5, static_cast<int>(150 * part)));
+}
+
+// The maul, on the first frame of a run.
+//
+// A climb used to begin with a map appearing. It is the one moment in the
+// game that deserves a flourish, so it gets one: the maul comes down out
+// of the top right, lands on the foot of the tree - the bottom row, where
+// a run is actually started - and the shock runs up the map lighting the
+// road as it goes.
+//
+// It is drawn over ImGui rather than inside the map window, so the swing
+// can start off-screen and the impact can shake the whole frame. If the
+// map has not drawn yet (`map_seen`), nothing happens at all - the blow
+// has nowhere to land, and a hammer hitting the middle of a blank screen
+// would be worse than no hammer.
+void draw_forge_strike (App& app) {
+	if (app.forge_strike <= 0) {
+		return;
+	}
+	--app.forge_strike;
+	if (!app.map_seen || app.screen != Screen::Career) {
+		app.forge_strike = 0;
+		return;
+	}
+	const int gone = kStrike - app.forge_strike;
+	const int kLands = 38;
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	const ImVec2 hit(app.map_foot.x, app.map_foot.y);
+	SDL_Texture* tex = gfx::get("maul");
+	if (gone <= kLands && tex != nullptr) {
+		// The swing: in from the upper right, turning as it comes, and
+		// accelerating - a maul is heavy and the last third of a swing is
+		// where all of it happens.
+		const float t = gone / static_cast<float>(kLands);
+		const float fall = t * t * t;
+		const float reach = ui(520);
+		const ImVec2 head(hit.x + reach * (1.f - fall) * 0.85f,
+			hit.y - reach * (1.f - fall) - ui(30));
+		const float turn = -1.15f * (1.f - fall);
+		const float size = ui(190);
+		// The head of the sprite sits at its top; the blow lands there, so
+		// the quad is hung from that point and turned about it.
+		const float cos = std::cos(turn);
+		const float sin = std::sin(turn);
+		const auto put = [&] (float ox, float oy) {
+			return ImVec2(head.x + ox * cos - oy * sin,
+				head.y + ox * sin + oy * cos);
+		};
+		draw->AddImageQuad(reinterpret_cast<ImTextureID>(tex),
+			put(-size * 0.5f, 0.f), put(size * 0.5f, 0.f),
+			put(size * 0.5f, size), put(-size * 0.5f, size),
+			ImVec2(0.f, 0.f), ImVec2(1.f, 0.f), ImVec2(1.f, 1.f),
+			ImVec2(0.f, 1.f), IM_COL32(255, 244, 232, 255));
+		// A smear behind the head through the fast part of the swing, so
+		// the eye reads speed rather than a sprite teleporting.
+		if (t > 0.55f) {
+			const float lag = std::min(1.f, (t - 0.55f) * 3.f);
+			draw->AddLine(ImVec2(head.x + reach * 0.30f * lag,
+				head.y - reach * 0.34f * lag), head,
+				IM_COL32(255, 214, 94, static_cast<int>(90 * lag)),
+				ui(10) * lag);
+		}
+	}
+	if (gone == kLands) {
+		// Landed. Everything the game already has for a heavy event, at
+		// once: the shake, the sparks, the shards, the ring.
+		app.shake_until = app.session.has_value()
+			? app.session->sim().frame() + 10 : 0;
+		app.audio.play("crit");
+	}
+	if (gone >= kLands) {
+		const float since = (gone - kLands) / static_cast<float>(
+			std::max(1, kStrike - kLands));
+		// The flash at the anvil, gone in a few frames. Small on purpose:
+		// a first attempt used a hundred and twenty pixels at nearly full
+		// alpha and it simply erased the bottom third of the map, hammer
+		// included.
+		const float flare = std::max(0.f, 1.f - since * 9.f);
+		if (flare > 0.f) {
+			draw->AddCircleFilled(hit, ui(52) * flare,
+				IM_COL32(255, 244, 214, static_cast<int>(150 * flare)));
+			draw->AddCircleFilled(hit, ui(20) * flare,
+				IM_COL32(255, 255, 246, static_cast<int>(220 * flare)));
+		}
+		// A ring off the impact, and sparks thrown along the ground.
+		const float ring = ui(40) + ui(300) * std::min(1.f, since * 2.2f);
+		const int ink = static_cast<int>(
+			220 * std::max(0.f, 1.f - since * 2.2f));
+		if (ink > 0) {
+			draw->AddCircle(hit, ring, IM_COL32(255, 176, 60, ink), 64,
+				ui(5) * std::max(0.2f, 1.f - since * 2.f));
+		}
+		// And the shock running up the tree: a band of light climbing from
+		// the foot to the head, lighting the road on its way. This is the
+		// part that says the run has started rather than merely appeared.
+		const float climb = std::min(1.f, since * 1.35f);
+		const float y = hit.y + (app.map_head.y - hit.y) * climb;
+		const int band = static_cast<int>(200 * (1.f - climb));
+		if (band > 0) {
+			draw->AddRectFilledMultiColor(
+				ImVec2(app.map_span.x, y - ui(70)),
+				ImVec2(app.map_span.y, y),
+				IM_COL32(255, 176, 60, 0), IM_COL32(255, 176, 60, 0),
+				IM_COL32(255, 214, 94, band), IM_COL32(255, 214, 94, band));
+			draw->AddRectFilled(ImVec2(app.map_span.x, y - ui(2)),
+				ImVec2(app.map_span.y, y + ui(2)),
+				IM_COL32(255, 236, 190, band * 3 / 4));
+		}
+	}
+}
+
 // The F3 overlay: what the render loop has actually been doing, as numbers,
 // so "it stutters" can arrive as a report someone can act on. On a healthy
 // vsync-off desktop the frame time sits near a millisecond and the tick
@@ -6336,6 +6583,42 @@ void draw_career (App& app) {
 				ImGui::Dummy(ImVec2(0.f, row_gap));
 			}
 		}
+		// The foot of the tree is where a run starts and where the maul
+		// lands, so that is what the map shows while the blow is in the
+		// air - here, at the cursor just under the bottom row, rather than
+		// at the window's own end, which is the Anvil and the Daily.
+		// Only for the first frames, so the view is the player's again the
+		// moment the blow is over.
+		if (app.forge_strike > kStrike - 4) {
+			ImGui::SetScrollHereY(1.f);
+		}
+		// Where the tree stands, remembered for the maul: the foot of it
+		// is the bottom row's middle, which is where a run is started and
+		// so where the blow lands.
+		{
+			float foot_y = 0.f;
+			float head_y = FLT_MAX;
+			float lo = FLT_MAX;
+			float hi = 0.f;
+			int feet = 0;
+			float foot_x = 0.f;
+			for (size_t at = 0; at < app.run_map.size(); ++at) {
+				lo = std::min(lo, tops[at].x);
+				hi = std::max(hi, tops[at].x);
+				head_y = std::min(head_y, tops[at].y);
+				foot_y = std::max(foot_y, bottoms[at].y);
+				if (app.run_map[at].depth == 0) {
+					foot_x += bottoms[at].x;
+					++feet;
+				}
+			}
+			if (feet > 0) {
+				app.map_foot = ImVec2(foot_x / feet, foot_y);
+				app.map_head = ImVec2((lo + hi) / 2, head_y);
+				app.map_span = ImVec2(lo - ui(90), hi + ui(90));
+				app.map_seen = true;
+			}
+		}
 		// The edges, drawn in the gaps: the path walked in bright gold,
 		// the doors open right now in ember orange, the rest as ash.
 		ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -8298,6 +8581,17 @@ int run (bool smoke, long smoke_frames) {
 			app.show_settings = true;
 		}
 		draw_menus(app);
+		// The polish, last, so it sits over the screen it is about. The
+		// curtain watches for a change rather than being told about one -
+		// see draw_curtain.
+		if (app.screen != app.screen_was) {
+			app.screen_was = app.screen;
+			app.curtain = kCurtain;
+		}
+		draw_preheat(app);
+		draw_cooldown(app);
+		draw_forge_strike(app);
+		draw_curtain(app);
 		if (app.show_frames) {
 			draw_frame_stats(app);
 		}

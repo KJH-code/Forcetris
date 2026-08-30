@@ -174,6 +174,39 @@ length), and a short jolt that snaps rather than rumbles. Nothing in the
 graded engine changed to get any of this; the mask, the pending-garbage
 count and the locked piece are all public, and the screen reads them.
 
+**What happens between the things that happen.** Screens used to cut, a
+game used to begin with a board that was simply there, and a climb used to
+begin with a map appearing. Four beats fix that, and all four are timers
+that do nothing at all while they are at zero, so anything that forgets to
+start one simply looks the way it always did.
+
+The **curtain** lifts on every screen change. Nothing announces one:
+forty-odd places in the code assign a screen, and a transition each of
+them had to remember would have been a transition half the game did not
+have, so the curtain watches instead. What it draws is a soot veil lifting
+off a hot seam, the seam running across at whatever height the veil has
+reached, so the eye follows one bright line up and out.
+
+The **preheat** brings the well up to temperature behind the count: the
+soot over the board thins across the three seconds while the floor's own
+glow climbs the well, so the first piece falls into somewhere that was
+made ready. The **cooldown** puts it out again over half a second under
+the verdict - the board stays drawn underneath the whole time, because a
+loss screen over a well that vanished reads as a crash.
+
+And a run opens with **the maul**. The blow comes down out of the top
+right onto the foot of the tree - the bottom row, which is where a run is
+actually started - and the shock runs up the map lighting the road as it
+goes. The map scrolls to that foot while the blow is in the air and no
+node is pickable until it lands: a flourish you can click through before
+it arrives is neither a flourish nor a click, and it is under two seconds,
+which is less than it takes to read the bottom row anyway. The maul is a
+generated asset like everything else, and it took three passes - a wide
+thin head read as a signpost, the same head moved to the foot of the
+sprite read as a pedestal, and what finally says *hammer* is the asymmetry
+a real one has: a flat pale striking face at one end, a tapered peen at
+the other.
+
 There are two hand-built sprites and no image files. The first is a soft
 falloff, which every glow in the game is a stamp of, so the light is
 smooth instead of banding into rectangles. The second is fire, and it is

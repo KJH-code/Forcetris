@@ -258,6 +258,40 @@ def hammer(d, s, angle):
     return rot
 
 
+def ic_maul(d, s, img=None):
+    """The maul itself, for the blow that opens a run.
+
+    Not the crossed pair the battle node wears: that one is a badge and
+    cannot be swung. Drawn upright in the classic T - a head across the top
+    of a haft - because that silhouette is what says "hammer" at any size,
+    and the animation turns the whole sprite anyway.
+
+    It took three tries. A wide thin head read as a signpost; the same head
+    moved to the foot read as a pedestal. What fixes it is the asymmetry a
+    real one has: a flat pale striking face at one end and a tapered peen
+    at the other, so the bar across the haft is a tool and not a crossbeam.
+    """
+    cx = s * 0.5
+    haft = [(cx - s * 0.05, s * 0.27), (cx + s * 0.05, s * 0.27),
+            (cx + s * 0.042, s * 0.97), (cx - s * 0.042, s * 0.97)]
+    head = [(cx - s * 0.37, s * 0.05), (cx + s * 0.20, s * 0.05),
+            (cx + s * 0.33, s * 0.13), (cx + s * 0.33, s * 0.24),
+            (cx + s * 0.20, s * 0.32), (cx - s * 0.37, s * 0.32)]
+    face = [(cx - s * 0.37, s * 0.05), (cx - s * 0.29, s * 0.05),
+            (cx - s * 0.29, s * 0.32), (cx - s * 0.37, s * 0.32)]
+    # The wedge that holds the haft in the eye.
+    wedge = [(cx - s * 0.075, s * 0.28), (cx + s * 0.075, s * 0.28),
+             (cx + s * 0.062, s * 0.38), (cx - s * 0.062, s * 0.38)]
+    if img is not None:
+        shaded_poly(img, haft, (156, 132, 104), (88, 70, 52), KEY)
+        shaded_poly(img, wedge, (196, 170, 138), (120, 100, 78), KEY)
+        shaded_poly(img, head, IRON_HI, IRON_LO, KEY)
+        shaded_poly(img, face, (224, 210, 192), (160, 146, 130), KEY)
+    else:
+        d.polygon(haft, fill=INK)
+        d.polygon(head, fill=INK)
+
+
 def ic_battle(d, s, img=None):
     """Crossed hammers - but with a haft you can see and a head with mass."""
     for angle in (math.radians(48), math.radians(-48)):
@@ -695,6 +729,7 @@ def main():
     backdrop()
     frame("plate", 48, 14, rivets=False)
     icon("node_battle", 64, ic_battle)
+    icon("maul", 160, ic_maul, glow=False)
     icon("node_boss", 64, ic_boss)
     icon("node_forge", 64, ic_forge)
     icon("node_event", 64, ic_event)
