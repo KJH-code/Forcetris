@@ -218,12 +218,41 @@ narrower than the doors, that every ending is a genuinely different
 watch, and that the miniboss belongs to one of them - the risky branch
 leads toward a finale rather than being a fourth thing on its own.
 
-The tree also stands in something now. A **molten bed** is drawn behind
-the nodes - the window's draw list is split so the lava goes under the
-buttons - with a pool banked along the foot and veins climbing between
-the lanes. It runs hot while the maul's shock is travelling and settles
-to an ember glow afterwards. Without it the map was a diagram on a flat
-panel; with it the map is a thing standing over a forge.
+**The map is a casting floor.** Every node is an octagon - a square
+chamfered on the anvil - drawn as a mould cut into the floor, with a
+keyline round it, a lit bevel along its top and upper chamfers and a dark
+one down its shadow side. Rounded rectangles were the shape of a button,
+which is to say the shape of a form to fill in; a row of identical
+octagons at identical angles reads as machined instead of arranged.
+
+The edges are **channels cut in that floor**, and this is where the metal
+lives. A groove is routed square - up out of the plate below, across at
+the halfway line, up into the plate above - with both turns chamfered at
+forty-five degrees, so no angle anywhere on the screen is a right one and
+the edges are made of the same geometry as the nodes. Each is drawn as a
+raised lip either side of a dark cut, and what is in the cut is the whole
+state of the run: a road already walked holds metal that has **set**, gold
+and still glowing; a door open right now has a **head of molten metal
+travelling up the groove** toward the mould it will fill; everything else
+is an empty channel waiting to be poured. The first row has nothing above
+it, so it is fed by short stubs running straight up out of the furnace -
+without them a map that has just been struck shows no metal moving
+anywhere, which is the moment it most needs to.
+
+The flow is a moving window onto the groove's own points (`route_slice`),
+not a second path kept in step with the first, so it follows every corner
+exactly. All of it goes on the lower half of a split draw list, under the
+plates, where a groove belongs; the edges used to be drawn last, straight,
+and over the top of the nodes, which is the one arrangement that makes a
+tree look like a diagram lying on a panel.
+
+The first version of this poured lava across the *background* instead -
+a pool at the foot and veins wandering up between the lanes - and it was
+wrong for a reason worth writing down: the lava was decoration behind a
+diagram rather than the thing the diagram is made of. What is left of it
+is the floor the channels are cut into: scale and sand, level cast lines
+far apart, and the furnace banked along the very bottom, hot while the
+maul's shock is climbing and an ember glow the rest of the time.
 
 And a run opens with **the maul**. The blow comes down out of the top
 right onto an **anvil** at the foot of the tree - the bottom row, which is
@@ -249,6 +278,18 @@ thin head read as a signpost, the same head moved to the foot of the
 sprite read as a pedestal, and what finally says *hammer* is the asymmetry
 a real one has: a flat pale striking face at one end, a tapered peen at
 the other.
+
+**Both of these are pixel art**, and they are the only two sprites in the
+set that are. Everything else is drawn at four times size and brought down
+with a LANCZOS filter, which is right for a 24px icon and wrong for the
+two things that are drawn large and on their own: at that size a smooth
+vector silhouette reads as clip art. So the maul and the anvil take a
+different last step - box-average down to a 32-square grid, throw away
+partial coverage so the outline is a staircase and not a fade, snap every
+surviving pixel to a flat ten-step ramp, and blow it back up
+nearest-neighbour. The alpha cut is what makes it pixel art rather than a
+small blurry picture: a cell the shape only half covers is either in or
+out, so the edge lands on the grid instead of feathering across it.
 
 There are two hand-built sprites and no image files. The first is a soft
 falloff, which every glow in the game is a stamp of, so the light is

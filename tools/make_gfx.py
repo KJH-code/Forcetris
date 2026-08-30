@@ -74,6 +74,56 @@ def add_noise(img, strength=6, mono=True):
                         max(0, min(255, b + n)), a)
     return img
 
+# --- Pixel art: the same shapes, cut to a coarse grid. ----------------------
+# Two sprites are drawn large and on their own - the maul and the anvil it
+# lands on - and at that size a smooth vector silhouette reads as clip art.
+# So those two take a different last step: box-average down to a coarse grid,
+# throw away the partial coverage so the outline is a staircase and not a
+# fade, snap every surviving pixel to a flat ramp, and blow it back up square.
+# Everything else in the set keeps the LANCZOS path.
+
+PIXEL_RAMP = (
+    (18, 13, 10),      # The keyline, and the dark side of everything.
+    (44, 34, 26),
+    (86, 70, 52),      # Haft, in shadow.
+    (128, 104, 78),    # Haft.
+    (176, 148, 114),   # Haft, lit.
+    (74, 62, 50),      # Iron, deep.
+    (120, 106, 92),    # IRON_LO.
+    (166, 152, 134),
+    (214, 200, 180),   # IRON_HI.
+    (242, 234, 220),   # The struck face.
+)
+
+
+def _snap(rgb, ramp):
+    best, dist = ramp[0], None
+    for step in ramp:
+        d = ((rgb[0] - step[0]) ** 2 + (rgb[1] - step[1]) ** 2
+             + (rgb[2] - step[2]) ** 2)
+        if dist is None or d < dist:
+            best, dist = step, d
+    return best
+
+
+def pixelate(img, grid, ramp=PIXEL_RAMP, cover=132):
+    """Down to `grid` squares, snapped to `ramp`, alpha all-or-nothing.
+
+    The alpha cut is what makes it pixel art rather than a small blurry
+    picture: a cell the shape only half covers is either in or out, so the
+    edge lands on the grid instead of feathering across it.
+    """
+    small = img.resize((grid, grid), Image.BOX)
+    px = small.load()
+    for y in range(grid):
+        for x in range(grid):
+            r, g, b, a = px[x, y]
+            if a < cover:
+                px[x, y] = (0, 0, 0, 0)
+            else:
+                px[x, y] = _snap((r, g, b), ramp) + (255,)
+    return small
+
 
 # --- The backdrop: a dark hall with the furnace somewhere below. ------------
 
@@ -162,7 +212,7 @@ def frame(name, size, border, rivets):
 
 # --- Icons: warm ivory line-work with an ember breath. ----------------------
 
-def icon(name, size, paint, glow=True, ink=INK):
+def icon(name, size, paint, glow=True, ink=INK, pixel=0):
     img = canvas(size, size)
     d = ImageDraw.Draw(img)
     # A painter may want the image itself - the shaded helpers composite a
@@ -171,6 +221,14 @@ def icon(name, size, paint, glow=True, ink=INK):
         paint(d, size * SS, img)
     except TypeError:
         paint(d, size * SS)
+    if pixel:
+        # No soften, no halo, no LANCZOS: every one of those would put a
+        # gradient back across the grid we just cut.
+        small = pixelate(img, pixel)
+        small.resize((size, size), Image.NEAREST).save(
+            os.path.join(OUT, name + ".png"))
+        print("gfx/%s.png  %dx%d  (%d px grid)" % (name, size, size, pixel))
+        return ink
     img = soften(img, 1.1)
     if glow:
         halo = img.split()[3].filter(ImageFilter.GaussianBlur(SS * 3))
@@ -758,8 +816,8 @@ def main():
     backdrop()
     frame("plate", 48, 14, rivets=False)
     icon("node_battle", 64, ic_battle)
-    icon("maul", 160, ic_maul, glow=False)
-    icon("stithy", 192, ic_stithy, glow=False)
+    icon("maul", 160, ic_maul, glow=False, pixel=32)
+    icon("stithy", 192, ic_stithy, glow=False, pixel=32)
     icon("node_boss", 64, ic_boss)
     icon("node_forge", 64, ic_forge)
     icon("node_event", 64, ic_event)

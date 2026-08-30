@@ -6239,17 +6239,116 @@ void nine_patch (ImDrawList* dl, SDL_Texture* tex, ImVec2 a, ImVec2 b,
 	}
 }
 
-// The molten bed under the map.
+// The map's one shape: a plate with its corners cut.
 //
-// A run's tree used to stand on a flat panel, which is why the whole
-// screen read as a diagram - a list of rooms with lines between them
-// rather than a road out of a forge. The lava is drawn behind the nodes:
-// a pool at the foot, veins climbing between the lanes, and a heat that
-// runs high while the maul's shock is travelling and settles to an ember
-// glow once it has passed.
+// Every node on the Forge Map used to be a rounded rectangle, which is the
+// shape of a button - a form to fill in, not a thing that was made. An
+// octagon is cast: it is what a square becomes once it has been chamfered
+// on the anvil, and because every plate is the same octagon at the same
+// angles, a row of them reads as machined rather than arranged.
+void forge_plate (ImDrawList* dl, ImVec2 a, ImVec2 b, float cut,
+	ImU32 fill, ImU32 rim, float rim_w) {
+	cut = std::min(cut, std::min((b.x - a.x) * 0.4f, (b.y - a.y) * 0.4f));
+	const ImVec2 pts[8] = {
+		ImVec2(a.x + cut, a.y), ImVec2(b.x - cut, a.y),
+		ImVec2(b.x, a.y + cut), ImVec2(b.x, b.y - cut),
+		ImVec2(b.x - cut, b.y), ImVec2(a.x + cut, b.y),
+		ImVec2(a.x, b.y - cut), ImVec2(a.x, a.y + cut)};
+	dl->AddConvexPolyFilled(pts, 8, fill);
+	if (rim_w > 0.f) {
+		dl->AddPolyline(pts, 8, rim, ImDrawFlags_Closed, rim_w);
+	}
+}
+
+// The route an edge takes between two plates.
 //
-// Everything here is a pure function of the frame count and the map's own
-// extent, so it costs nothing to keep running and nothing to leave out.
+// A straight line drawn corner to corner is a diagram. What the map wants
+// is a channel cut into a foundry floor, and a channel is cut square: up
+// out of the plate below, across at the halfway line, and up into the plate
+// above - with both turns chamfered at forty-five degrees, so that no angle
+// anywhere on the screen is a right one and the edges are made of the same
+// geometry as the nodes they join. Returns how many points it wrote.
+int groove_route (ImVec2 from, ImVec2 to, ImVec2* out) {
+	const float across = to.x - from.x;
+	const float gap = from.y - to.y;
+	if (std::fabs(across) < 1.5f || gap <= 4.f) {
+		out[0] = from;
+		out[1] = to;
+		return 2;
+	}
+	const float side = across < 0.f ? -1.f : 1.f;
+	const float cut = std::min(std::min(ui(12), gap * 0.34f),
+		std::fabs(across) * 0.5f);
+	const float mid = (from.y + to.y) * 0.5f;
+	out[0] = from;
+	out[1] = ImVec2(from.x, mid + cut);
+	out[2] = ImVec2(from.x + side * cut, mid);
+	out[3] = ImVec2(to.x - side * cut, mid);
+	out[4] = ImVec2(to.x, mid - cut);
+	out[5] = to;
+	return 6;
+}
+
+// The stretch of a route between two fractions of its own length.
+//
+// This is what lets a run of molten metal travel a channel: the groove is
+// drawn once as a shape, and the metal in it is a moving window onto the
+// same points, so the flow follows every corner exactly instead of being a
+// second path that has to be kept in step with the first.
+void route_slice (const ImVec2* pts, int n, float from, float to,
+	std::vector<ImVec2>& out) {
+	out.clear();
+	float total = 0.f;
+	for (int at = 1; at < n; ++at) {
+		total += std::hypot(pts[at].x - pts[at - 1].x,
+			pts[at].y - pts[at - 1].y);
+	}
+	if (total <= 0.f) {
+		return;
+	}
+	const float lo = std::clamp(from, 0.f, 1.f) * total;
+	const float hi = std::clamp(to, 0.f, 1.f) * total;
+	if (hi <= lo) {
+		return;
+	}
+	float walked = 0.f;
+	for (int at = 1; at < n; ++at) {
+		const ImVec2 p = pts[at - 1];
+		const ImVec2 q = pts[at];
+		const float len = std::hypot(q.x - p.x, q.y - p.y);
+		if (len <= 0.f) {
+			continue;
+		}
+		const float head = walked;
+		walked += len;
+		if (walked < lo || head > hi) {
+			continue;
+		}
+		const float ts = (std::max(lo, head) - head) / len;
+		const float te = (std::min(hi, walked) - head) / len;
+		const ImVec2 one(p.x + (q.x - p.x) * ts, p.y + (q.y - p.y) * ts);
+		if (out.empty() || std::fabs(out.back().x - one.x) > 0.01f
+			|| std::fabs(out.back().y - one.y) > 0.01f) {
+			out.push_back(one);
+		}
+		out.push_back(ImVec2(p.x + (q.x - p.x) * te,
+			p.y + (q.y - p.y) * te));
+	}
+}
+
+// The floor the map is cut into.
+//
+// The first try at this poured lava across the background - a pool at the
+// foot and veins wandering up between the lanes - and it was wrong, because
+// the lava was decoration behind a diagram rather than the thing the diagram
+// is made of. The metal belongs in the edges, which are channels; see
+// groove_route and the edge pass in draw_career.
+//
+// What is left here is the floor those channels are cut into: scale and
+// sand, level cast lines wide apart, and the furnace banked along the very
+// bottom - hot while the maul's shock is still climbing, an ember glow the
+// rest of the time. It is a pure function of the map's extent and the frame
+// count, so it costs nothing to keep running.
 void draw_lava_bed (App& app, ImDrawList* bed) {
 	const float lo = app.map_span.x;
 	const float hi = app.map_span.y;
@@ -6258,53 +6357,33 @@ void draw_lava_bed (App& app, ImDrawList* bed) {
 	if (hi <= lo || foot <= head) {
 		return;
 	}
-	// Hot while the blow's shock is climbing, ember the rest of the time.
 	const float heat = app.forge_strike > 0
-		? 0.45f + 0.55f * (app.forge_strike / static_cast<float>(kStrike))
-		: 0.45f;
-	const float clock = app.map_clock;
-	const float tall = foot - head;
-	// The pool: a deep glow banked along the foot, brightest at the very
-	// bottom and gone about a third of the way up.
-	bed->AddRectFilledMultiColor(ImVec2(lo, foot - tall * 0.42f),
-		ImVec2(hi, foot),
-		IM_COL32(120, 34, 8, 0), IM_COL32(120, 34, 8, 0),
-		IM_COL32(214, 74, 16, static_cast<int>(150 * heat)),
-		IM_COL32(214, 74, 16, static_cast<int>(150 * heat)));
-	bed->AddRectFilledMultiColor(ImVec2(lo, foot - tall * 0.16f),
-		ImVec2(hi, foot),
-		IM_COL32(255, 132, 30, 0), IM_COL32(255, 132, 30, 0),
-		IM_COL32(255, 168, 52, static_cast<int>(190 * heat)),
-		IM_COL32(255, 168, 52, static_cast<int>(190 * heat)));
-	// The veins: slow molten runs climbing between the lanes, each one
-	// wobbling on its own phase so the bed moves without anything in it
-	// being animation. They thin and dim as they rise, the way a run of
-	// metal does when it is losing its heat.
-	const int veins = 5;
-	for (int at = 0; at < veins; ++at) {
-		const float seat = (at + 0.5f) / veins;
-		const float base = lo + (hi - lo) * seat;
-		const float sway = ui(44) + ui(26) * std::sin(at * 2.1f);
-		const float lead = at * 1.7f + clock * 0.6f;
-		ImVec2 was(base, foot);
-		const int steps = 12;
-        for (int step = 1; step <= steps; ++step) {
-			const float up = step / static_cast<float>(steps);
-			const float y = foot - tall * up * 0.86f;
-			const float x = base + std::sin(lead + up * 3.1f) * sway * up;
-			const int ink = static_cast<int>(
-				(1.f - up) * (1.f - up) * 190 * heat);
-			if (ink > 3) {
-				bed->AddLine(was, ImVec2(x, y),
-					IM_COL32(255, 146, 40, ink),
-					ui(7) * (1.f - up * 0.75f));
-				bed->AddLine(was, ImVec2(x, y),
-					IM_COL32(255, 226, 170, ink / 2),
-					ui(2.5f) * (1.f - up * 0.8f));
-			}
-			was = ImVec2(x, y);
-		}
+		? 0.5f + 0.5f * (app.forge_strike / static_cast<float>(kStrike))
+		: 0.5f;
+	const float top = head - ui(24);
+	const float bed_y = foot + ui(46);
+	bed->AddRectFilled(ImVec2(lo, top), ImVec2(hi, bed_y),
+		IM_COL32(20, 16, 13, 242));
+	// Cast lines: level, far apart, barely there. A poured floor has them
+	// and a painted panel does not, and that is the whole difference.
+	for (float y = top + ui(30); y < bed_y; y += ui(40)) {
+		bed->AddLine(ImVec2(lo, y), ImVec2(hi, y),
+			IM_COL32(48, 39, 32, 95), 1.f);
 	}
+	bed->AddLine(ImVec2(lo, top), ImVec2(hi, top),
+		IM_COL32(72, 58, 46, 130), 1.f);
+	// The furnace mouth, at the bottom of the climb, where the maul lands.
+	const float bank = ui(96);
+	bed->AddRectFilledMultiColor(ImVec2(lo, bed_y - bank),
+		ImVec2(hi, bed_y),
+		IM_COL32(190, 62, 14, 0), IM_COL32(190, 62, 14, 0),
+		IM_COL32(216, 76, 18, static_cast<int>(130 * heat)),
+		IM_COL32(216, 76, 18, static_cast<int>(130 * heat)));
+	bed->AddRectFilledMultiColor(ImVec2(lo, bed_y - bank * 0.34f),
+		ImVec2(hi, bed_y),
+		IM_COL32(255, 140, 34, 0), IM_COL32(255, 140, 34, 0),
+		IM_COL32(255, 170, 54, static_cast<int>(165 * heat)),
+		IM_COL32(255, 170, 54, static_cast<int>(165 * heat)));
 }
 
 // A content screen takes the whole window.
@@ -6671,38 +6750,73 @@ void draw_career (App& app) {
 				} else if (stop) {
 					tint = IM_COL32(190, 205, 220, 255);
 				}
-				if (SDL_Texture* plate = gfx::get("plate")) {
-					nine_patch(pdl, plate, pen, plow, 14.f, ui(10), tint);
-				} else {
-					pdl->AddRectFilled(pen, plow, taken
-						? IM_COL32(122, 84, 40, 255)
-						: pickable ? IM_COL32(64, 48, 36, 255)
-						           : IM_COL32(42, 36, 32, 255), ui(5));
+				// The plate is a mould: an octagon, cut from the floor,
+				// with a keyline round it and its own face inside. The
+				// nine-slice frame that used to be here is a rectangle and
+				// could not be chamfered, so the node draws itself.
+				const float cut = std::min(ui(14), node_h * 0.42f);
+				forge_plate(pdl, pen, plow, cut,
+					IM_COL32(8, 6, 4, 245), 0, 0.f);
+				const ImU32 face = taken ? IM_COL32(101, 65, 29, 255)
+					: pickable ? IM_COL32(55, 44, 35, 255)
+					           : IM_COL32(35, 30, 27, 255);
+				forge_plate(pdl, ImVec2(pen.x + ui(3), pen.y + ui(3)),
+					ImVec2(plow.x - ui(3), plow.y - ui(3)), cut - ui(3),
+					face, 0, 0.f);
+				// The bevel: the four faces that catch the light are the
+				// top edge and the two upper chamfers, so those three get
+				// a lit line and the rest of the rim a dark one. Without
+				// it an octagon is a flat sticker; with it, it is a piece
+				// of metal that was cast in a mould and knocked out.
+				{
+					const float in = ui(3);
+					const float c = cut - in;
+					const ImVec2 a(pen.x + in, pen.y + in);
+					const ImVec2 b(plow.x - in, plow.y - in);
+					const ImVec2 lit[4] = {
+						ImVec2(a.x, b.y - c), ImVec2(a.x, a.y + c),
+						ImVec2(a.x + c, a.y), ImVec2(b.x - c, a.y)};
+					const ImVec2 dark[4] = {
+						ImVec2(b.x - c, a.y), ImVec2(b.x, a.y + c),
+						ImVec2(b.x, b.y - c), ImVec2(b.x - c, b.y)};
+					pdl->AddPolyline(lit, 4, taken
+						? IM_COL32(214, 158, 84, 210)
+						: IM_COL32(126, 108, 90, 190), 0, ui(2));
+					pdl->AddPolyline(dark, 4, IM_COL32(14, 11, 9, 210),
+						0, ui(2));
 				}
 				if (pickable) {
+					// The mould that is next to be filled keeps a rim of
+					// heat in it, and brightens under the cursor.
 					const float beat = 0.5f
 						+ 0.5f * std::sin(app.backdrop_tick * 0.06f);
-					pdl->AddRect(pen, plow, hot
-						? IM_COL32(255, 122, 46, 240)
+					forge_plate(pdl, pen, plow, cut, 0, hot
+						? IM_COL32(255, 132, 52, 245)
 						: IM_COL32(255, 122, 46,
-							static_cast<int>(90 + 110 * beat)),
-						ui(5), 0, ui(2));
+							static_cast<int>(95 + 115 * beat)),
+						ui(2));
+				} else if (taken) {
+					forge_plate(pdl, pen, plow, cut, 0,
+						IM_COL32(255, 200, 110, 200), ui(1.8f));
 				}
-				const char* face = node.kind == 1 ? "node_boss"
+				const char* icon_face = node.kind == 1 ? "node_boss"
 					: node.kind == 2 ? "node_forge"
 					: node.kind == 3 ? "node_event"
 					: node.kind == 4 ? "node_mini" : "node_battle";
 				// The kind's icon shows on every node, reachable or not -
 				// seeing where the forge and the events wait is what picking
 				// a path is about.
-				float name_x = pen.x + ui(8);
-				if (SDL_Texture* mark = gfx::get(face)) {
+				// Clear of the chamfer: the corner is cut away now, so
+				// anything sitting at the old five-pixel inset would hang
+				// over the edge of the plate.
+				float name_x = pen.x + ui(11);
+				if (SDL_Texture* mark = gfx::get(icon_face)) {
 					const float s = node_h - ui(10);
 					pdl->AddImage(reinterpret_cast<ImTextureID>(mark),
-						ImVec2(pen.x + ui(5), pen.y + ui(5)),
-						ImVec2(pen.x + ui(5) + s, pen.y + ui(5) + s),
+						ImVec2(pen.x + ui(9), pen.y + ui(5)),
+						ImVec2(pen.x + ui(9) + s, pen.y + ui(5) + s),
 						ImVec2(0, 0), ImVec2(1, 1), tint);
-					name_x = pen.x + ui(9) + s;
+					name_x = pen.x + ui(13) + s;
 				}
 				const ImU32 name_ink = !pickable && !taken
 					? IM_COL32(120, 112, 104, 255)
@@ -6792,16 +6906,73 @@ void draw_career (App& app) {
 				app.map_seen = true;
 			}
 		}
-		// And now the bed, on the lower channel, with the extent the rows
-		// just told us.
+		// And now the floor and the channels cut in it, on the lower
+		// channel of the draw list - under the plates, where a groove
+		// belongs. The edges used to be drawn last, straight, and over the
+		// top of the nodes, which is the one arrangement that makes a tree
+		// look like a diagram lying on a panel.
 		bed->ChannelsSetCurrent(0);
 		if (app.map_seen) {
 			draw_lava_bed(app, bed);
 		}
-		bed->ChannelsMerge();
-		// The edges, drawn in the gaps: the path walked in bright gold,
-		// the doors open right now in ember orange, the rest as ash.
-		ImDrawList* draw = ImGui::GetWindowDrawList();
+		// Every edge is a channel: a lip raised either side of a dark cut,
+		// routed square with its corners chamfered. What is in the cut says
+		// where the run has been and where it can go next - a path already
+		// walked holds metal that has set, a door open right now has a head
+		// of it running up the groove toward the mould it will fill, and
+		// everything else is an empty channel waiting to be poured.
+		std::vector<ImVec2> flow;
+		// One channel, in one of its three states. `phase` only matters
+		// while metal is running: it keeps two channels out of one node
+		// from pouring in step.
+		const auto cut_channel = [&](const ImVec2* route, int steps,
+			bool set, bool open, float phase) {
+			bed->AddPolyline(route, steps,
+				IM_COL32(74, 61, 50, 225), 0, ui(13));
+			bed->AddPolyline(route, steps,
+				IM_COL32(8, 6, 4, 250), 0, ui(8));
+			if (set) {
+				// Metal that has cooled in the road already walked: the
+				// channel full, its own heat still on it.
+				bed->AddPolyline(route, steps,
+					IM_COL32(255, 176, 60, 80), 0, ui(9));
+				bed->AddPolyline(route, steps,
+					IM_COL32(255, 214, 94, 240), 0, ui(3.5f));
+			} else if (open) {
+				// A run of it travelling the groove, upward, because that
+				// is the direction the climb goes.
+				const float head = std::fmod(
+					app.map_clock * 0.20f + phase, 1.4f);
+				route_slice(route, steps, head - 0.34f, head, flow);
+				if (flow.size() >= 2) {
+					bed->AddPolyline(flow.data(),
+						static_cast<int>(flow.size()),
+						IM_COL32(255, 128, 28, 110), 0, ui(9));
+					bed->AddPolyline(flow.data(),
+						static_cast<int>(flow.size()),
+						IM_COL32(255, 192, 84, 235), 0, ui(3.5f));
+				}
+				// A coal sits in the mouth of an open channel, so a door
+				// reads as open even between runs.
+				bed->AddCircleFilled(route[0], ui(3.5f),
+					IM_COL32(255, 152, 48, 210));
+			}
+		};
+		// The first row has nothing above it pouring in: it is fed by the
+		// furnace the whole map stands on. Without these stubs a map that
+		// has just been struck shows no metal moving anywhere, which is
+		// exactly the moment it most needs to.
+		for (size_t at = 0; at < app.run_map.size(); ++at) {
+			if (app.run_map[at].depth != 0
+				|| !node_pickable(app, static_cast<int>(at))) {
+				continue;
+			}
+			const ImVec2 feed[2] = {
+				ImVec2(bottoms[at].x, app.map_foot.y + ui(44)),
+				bottoms[at]};
+			cut_channel(feed, 2, false, true,
+				static_cast<float>(at) * 0.41f);
+		}
 		for (size_t at = 0; at < app.run_map.size(); ++at) {
 			const bool from_taken = std::find(run.path.begin(),
 				run.path.end(), static_cast<int>(at)) != run.path.end();
@@ -6810,31 +6981,21 @@ void draw_career (App& app) {
 			for (const int to : app.run_map[at].next) {
 				const bool to_taken = std::find(run.path.begin(),
 					run.path.end(), to) != run.path.end();
-				ImU32 ink = IM_COL32(90, 74, 60, 120);
-				ImU32 halo = 0;
-				float thick = ui(1);
-				if (from_taken && to_taken) {
-					ink = IM_COL32(255, 214, 94, 230);
-					halo = IM_COL32(255, 176, 60, 70);
-					thick = ui(2.5f);
-				} else if ((from_here
+				const bool set = from_taken && to_taken;
+				const bool open = !set
+					&& (from_here
 						|| (run.path.empty()
 							&& app.run_map[at].depth == 0))
-					&& node_pickable(app, to)) {
-					ink = IM_COL32(240, 140, 58, 220);
-					halo = IM_COL32(240, 120, 50, 60);
-					thick = ui(2);
-				}
-				// The glow is a fat soft pass under a thin bright core -
-				// a lit chain, not a diagram's line.
-				if (halo != 0) {
-					draw->AddLine(tops[at],
-						bottoms[static_cast<size_t>(to)], halo, thick * 3.f);
-				}
-				draw->AddLine(tops[at], bottoms[static_cast<size_t>(to)],
-					ink, thick);
+					&& node_pickable(app, to);
+				ImVec2 route[6];
+				const int steps = groove_route(tops[at],
+					bottoms[static_cast<size_t>(to)], route);
+				cut_channel(route, steps, set, open,
+					static_cast<float>(at) * 0.37f
+						+ static_cast<float>(to) * 0.13f);
 			}
 		}
+		bed->ChannelsMerge();
 		ImGui::Dummy(ImVec2(0.f, ui(4)));
 		ImGui::BeginDisabled(app.visiting >= 0 || !app.offers.empty());
 		if (ImGui::SmallButton("Abandon the climb")) {
