@@ -208,6 +208,15 @@ struct Run {
 	int seconds = 0;
 	int deaths = 0;
 };
+// What the stage asks, in a plain sentence, read off the recipe itself.
+//
+// The blurbs used to carry the win condition inside the flavour - "Old iron
+// on the floor. Fifteen lines through it." - which asks a new player to work
+// out which half of the sentence is the rule. Worse, a number written by
+// hand in prose can drift from the number the stage actually enforces. This
+// is computed from the recipe, so it cannot.
+std::string goal_line (const Stage& stage);
+
 // What a finished climb was worth, made of the run's own facts rather than
 // one board's. The TETR.IO estimate the loss screen used to print after
 // every stage grades a single game against public averages - a real number

@@ -372,6 +372,49 @@ int slag_percent (int difficulty) {
 	return difficulty == kWhite ? 200 : difficulty == kForged ? 150 : 100;
 }
 
+namespace {
+
+// "12000" -> "12,000". A five-figure target is unreadable without it.
+std::string grouped_count (long long value) {
+	std::string digits = std::to_string(value);
+	for (int at = static_cast<int>(digits.size()) - 3; at > 0; at -= 3) {
+		digits.insert(static_cast<size_t>(at), ",");
+	}
+	return digits;
+}
+
+} // namespace
+
+std::string goal_line (const Stage& stage) {
+	if (stage.mode == 5) {
+		if (stage.raid != nullptr) {
+			return "Put down every foe in the room.";
+		}
+		return stage.first_to > 1
+			? "Win " + std::to_string(stage.first_to) + " rounds."
+			: "Win one round.";
+	}
+	if (stage.mode == 4) {
+		// A watch is held on the clock when it has one, and dug out from
+		// under the rising floor when it does not.
+		if (stage.survive_seconds > 0) {
+			return "Survive " + std::to_string(stage.survive_seconds)
+				+ " seconds. Clearing lines is optional.";
+		}
+		return "Clear " + std::to_string(stage.quota)
+			+ " lines before the floor reaches the top.";
+	}
+	if (stage.mode == 3) {
+		return "Dig through " + std::to_string(stage.quota)
+			+ " rows of rubble.";
+	}
+	if (stage.score_quota > 0) {
+		return "Score " + grouped_count(stage.score_quota)
+			+ " points. Lines alone will not do it.";
+	}
+	return "Clear " + std::to_string(stage.quota) + " lines.";
+}
+
 Verdict grade_run (const Run& run, bool won) {
 	// Four terms, and the letter is only ever the sum of them - a grade a
 	// player cannot take apart is a grade they cannot chase.

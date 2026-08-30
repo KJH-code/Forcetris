@@ -7,6 +7,7 @@
 #include <deque>
 #include <optional>
 #include <random>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -584,6 +585,27 @@ int main () {
 			ignited = ignited || sim.overdrive();
 		}
 		check("the bot reaches overdrive on its own merit", ignited);
+	}
+
+	// --- How a foe's strength is said. --------------------------------------
+	// Every rung has a word, the words are all different, and asking off
+	// either end of the ladder answers rather than reads off the table.
+	{
+		std::set<std::string> said;
+		bool named = true;
+		for (size_t rung = 0; rung < bot::ranks().size(); ++rung) {
+			const char* word = bot::might_of(static_cast<int>(rung));
+			named = named && word != nullptr && word[0] != '\0';
+			said.insert(word);
+		}
+		check("every rung is a word, and no two rungs share one",
+			named && said.size() == bot::ranks().size(),
+			std::to_string(said.size()) + " words for "
+				+ std::to_string(bot::ranks().size()) + " rungs");
+		const int last = static_cast<int>(bot::ranks().size()) - 1;
+		check("and asking off the ladder clamps rather than reads past it",
+			std::string(bot::might_of(-5)) == bot::might_of(0)
+				&& std::string(bot::might_of(999)) == bot::might_of(last));
 	}
 
 	if (failures > 0) {

@@ -115,6 +115,17 @@ bool holds_the_board (const std::string& id) {
 
 } // namespace
 
+std::string VersusMatch::foe_title () const {
+	const std::string might = bot::might_of(rank_index);
+	const std::string name = foe_name.empty() ? "Bot" : foe_name;
+	// The road's names mostly carry their own article, and an epithet
+	// belongs inside it: "The Keen Underwarden", not "Keen The Underwarden".
+	if (name.rfind("The ", 0) == 0) {
+		return "The " + might + ' ' + name.substr(4);
+	}
+	return might + ' ' + name;
+}
+
 void VersusMatch::tick_skills (Session& player) {
 	if (skills.empty()) {
 		return;

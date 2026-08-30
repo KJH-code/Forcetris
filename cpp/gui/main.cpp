@@ -1193,7 +1193,7 @@ void start_stage (App& app, int index, int run_node = -1) {
 		// A campaign boss fights with its own kit: telegraphed skills the
 		// trainer's plain duels never carry.
 		app.versus->arm_skills(stage.id);
-		app.versus->caster_name = stage.name;
+		app.versus->foe_name = stage.name;
 		if (stage.raid != nullptr) {
 			// A raid walks its rank list one foe per round - every one of
 			// them moved by the run's fire the way a lone boss is.
@@ -3539,8 +3539,8 @@ void draw_caster_plate (App& app, const VersusMatch& match) {
 			static_cast<int>(255 * alpha)), ui(3), 0, ui(2));
 
 	ImFont* small_font = app.fonts.body;
-	if (!match.caster_name.empty()) {
-		const char* who = match.caster_name.c_str();
+	if (!match.foe_name.empty()) {
+		const char* who = match.foe_name.c_str();
 		const ImVec2 size = small_font->CalcTextSizeA(
 			small_font->FontSize, FLT_MAX, 0.f, who);
 		draw->AddText(small_font, small_font->FontSize,
@@ -3681,8 +3681,8 @@ void draw_versus_panel (App& app) {
 	ImGui::Begin("versus score", nullptr, ImGuiWindowFlags_NoTitleBar
 		| ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoSavedSettings);
-	ImGui::Text("You %d - %d Bot (%s)", match.player_wins, match.bot_wins,
-		bot::ranks()[match.rank_index].name);
+	ImGui::Text("You %d - %d %s", match.player_wins, match.bot_wins,
+		match.foe_title().c_str());
 	if (match.raid()) {
 		ImGui::TextDisabled("foe %d of %d",
 			std::min(match.round, match.first_to), match.first_to);
@@ -5619,7 +5619,24 @@ void draw_career (App& app) {
 					enter_node(app, static_cast<int>(at));
 				}
 				if (hot) {
-					ImGui::SetTooltip("%s", promise);
+					// The goal first and plainly, then what makes this
+					// room itself. They used to be one sentence, which
+					// asked a new player to work out which half was the
+					// rule - and let a number written by hand drift from
+					// the number the stage enforces.
+					if (stage != nullptr) {
+						ImGui::BeginTooltip();
+						ImGui::PushFont(app.fonts.head);
+						ImGui::TextColored(ImVec4(1.f, 0.84f, 0.38f, 1.f),
+							"%s", campaign::goal_line(*stage).c_str());
+						ImGui::PopFont();
+						ImGui::PushTextWrapPos(ui(320));
+						ImGui::TextDisabled("%s", promise);
+						ImGui::PopTextWrapPos();
+						ImGui::EndTooltip();
+					} else {
+						ImGui::SetTooltip("%s", promise);
+					}
 				}
 				tops[at] = ImVec2(
 					(ImGui::GetItemRectMin().x
@@ -6167,8 +6184,19 @@ void draw_menus (App& app) {
 					app.config.bot_rank = static_cast<int>(i);
 				}
 			}
-			ImGui::TextDisabled("A bot paced at that rank's league-average PPS,");
-			ImGui::TextDisabled("garbage, cancelling and surge included.");
+			// The letters are the compact handle the buttons need, but a
+			// letter teaches nobody: the line under them says the pick in
+			// the same word the fight will call it, and what that word
+			// costs in pieces a second.
+			{
+				const bot::Rank& picked = ladder[static_cast<size_t>(
+					std::clamp(app.config.bot_rank, 0,
+						static_cast<int>(ladder.size()) - 1))];
+				ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
+					"%s  -  %.2f pieces a second",
+					bot::might_of(app.config.bot_rank), picked.pps);
+			}
+			ImGui::TextDisabled("Garbage, cancelling and surge included.");
 			ImGui::Dummy(ImVec2(0.f, ui(4)));
 			ImGui::AlignTextToFramePadding();
 			ImGui::TextUnformatted("First to");
@@ -6441,10 +6469,9 @@ void draw_menus (App& app) {
 		}
 		if (app.versus.has_value()) {
 			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
-				"You %d - %d Bot (%s)  first to %d",
+				"You %d - %d %s  first to %d",
 				app.versus->player_wins, app.versus->bot_wins,
-				bot::ranks()[app.versus->rank_index].name,
-				app.versus->first_to);
+				app.versus->foe_title().c_str(), app.versus->first_to);
 		}
 		if (won && app.mode == 3) {
 			const double seconds = app.session->sim().frame() * 0.02;

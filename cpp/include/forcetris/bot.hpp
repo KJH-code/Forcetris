@@ -86,6 +86,15 @@ struct Rank {
 };
 const std::vector<Rank>& ranks ();
 
+// How strong a foe is, said as a word rather than a league letter.
+//
+// "Bot (B)" asks the player to know what B means before it means anything,
+// and outside TETR.IO nobody does. A word carries the same ordering - a
+// Keen foe is plainly worse news than a Rough one - without a lookup, and
+// it sits in front of a name the way an epithet should: "Keen Underwarden"
+// rather than "The Underwarden (B)". Out of range clamps to the ends.
+const char* might_of (int rank_index);
+
 // The hands: one key event per frame, paced to a speed, deterministic under
 // its seed. Call next() every frame the bot's sim is about to step and feed
 // whatever it returns in.

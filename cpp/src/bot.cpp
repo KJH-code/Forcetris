@@ -848,6 +848,23 @@ const std::vector<Rank>& ranks () {
 	return table;
 }
 
+const char* might_of (int rank_index) {
+	// One word a rung, climbing the way the ladder does: the two below the
+	// league are unfinished, the middle is worked metal, and the top is
+	// the stuff of stories.
+	static const char* words[] = {
+		"Half-forged", "Green", "Rough", "Tempered", "Keen",
+		"Honed", "Master", "Grandmaster", "Peerless", "Godmetal",
+	};
+	const int last = static_cast<int>(ranks().size()) - 1;
+	const int at = std::clamp(rank_index, 0, last);
+	// The table is written against the ladder; if the ladder ever grows
+	// past it, the last word carries rather than reading off the end.
+	const int words_last
+		= static_cast<int>(sizeof words / sizeof words[0]) - 1;
+	return words[std::min(at, words_last)];
+}
+
 Driver::Driver (unsigned seed, const Rank& rank)
 	: rng_(seed), rank_(rank) {}
 

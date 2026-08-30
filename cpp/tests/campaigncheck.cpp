@@ -1302,6 +1302,77 @@ int main () {
 		}
 	}
 
+	// --- What each stage says it wants. -------------------------------------
+	// The goal line is read off the recipe rather than written by hand, so
+	// the pin is that it always says something, always carries the number
+	// the stage actually enforces, and never offers a target of nothing.
+	{
+		bool spoken = true;
+		bool numbered = true;
+		std::string detail;
+		for (const campaign::Stage& stage : campaign::stages()) {
+			const std::string line = campaign::goal_line(stage);
+			if (line.empty() || line.back() != '.') {
+				spoken = false;
+				detail += std::string(stage.id) + " says nothing; ";
+				continue;
+			}
+			// The number in the sentence has to be the stage's own.
+			const long long want = stage.mode == 5 ? 0
+				: stage.mode == 4 && stage.survive_seconds > 0
+					? stage.survive_seconds
+				: stage.score_quota > 0 ? stage.score_quota : stage.quota;
+			if (want <= 0 && stage.mode != 5) {
+				numbered = false;
+				detail += std::string(stage.id) + " asks for nothing; ";
+				continue;
+			}
+			if (stage.mode != 5) {
+				// Written back the way the line groups it, so a five-figure
+				// score matches "16,000" and not "16000".
+				std::string digits = std::to_string(want);
+				for (int at = static_cast<int>(digits.size()) - 3; at > 0;
+						at -= 3) {
+					digits.insert(static_cast<size_t>(at), ",");
+				}
+				if (line.find(digits) == std::string::npos) {
+					numbered = false;
+					detail += std::string(stage.id) + " lost its number ("
+						+ digits + " not in \"" + line + "\"); ";
+				}
+			}
+		}
+		check("every stage says what it wants, in a sentence", spoken,
+			detail);
+		check("and the number it says is the number it enforces", numbered,
+			detail);
+		// A duel says how many falls it takes rather than a quota - except
+		// a raid, whose first_to is the length of the gauntlet and not a
+		// number of rounds, and which says so in words instead.
+		{
+			const campaign::Stage* boss = nullptr;
+			const campaign::Stage* pack = nullptr;
+			for (const campaign::Stage& stage : campaign::stages()) {
+				if (stage.mode != 5) {
+					continue;
+				}
+				if (stage.raid != nullptr) {
+					pack = pack != nullptr ? pack : &stage;
+				} else if (stage.first_to > 1 && boss == nullptr) {
+					boss = &stage;
+				}
+			}
+			check("and a duel counts rounds instead",
+				boss != nullptr && campaign::goal_line(*boss).find(
+					std::to_string(boss->first_to)) != std::string::npos,
+				boss != nullptr ? campaign::goal_line(*boss) : "no boss");
+			check("while a raid counts foes, not rounds",
+				pack != nullptr && campaign::goal_line(*pack).find("foe")
+					!= std::string::npos,
+				pack != nullptr ? campaign::goal_line(*pack) : "no raid");
+		}
+	}
+
 	// --- The climb's own grade. ---------------------------------------------
 	// A run is graded on run facts - rows, deaths, battle seconds - and not
 	// on one board's TETR.IO estimate. Every pin below is a shape the grade

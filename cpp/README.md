@@ -416,6 +416,16 @@ tension is the foe - its attack, its blade, and the skills it telegraphs
 at you. Above mild, a
 mid-fight restart is a surrender and costs what a death costs.
 
+Every stage says what it wants in a plain sentence, read off the recipe
+rather than written by hand: "Clear 15 lines.", "Dig through 10 rows of
+rubble.", "Survive 75 seconds. Clearing lines is optional." The blurb under
+it only says what makes that room itself. They used to be one sentence -
+"Old iron on the floor. Fifteen lines through it." - which asks a new
+player to work out which half is the rule, and lets a number typed into
+prose drift from the number the stage enforces. The computed line cannot
+drift, and campaigncheck pins that the number it prints is the number the
+recipe holds.
+
 A climb that ends - taken, broken or put down - is graded on its own
 facts: rows reached, deaths paid, and the seconds actually spent in
 battle rather than wall clock, since a run left open overnight is not a
@@ -545,7 +555,15 @@ spin set up now and hit two pieces later is seen and chosen, which no
 hard-drop lookahead can do. F and E sit below the league on purpose: D is
 a real TL average, and a real TL average already out-paces someone who met
 the game this week, which left the gentlest fire with no foe a beginner
-could beat. The bot is our own, written referencing the
+could beat.
+
+The letters stay on the picker, where they are the compact handle a row of
+buttons needs, and nowhere else. A fight names its foe in words - "The Keen
+Underwarden", not "The Underwarden (B)" - because a league letter asks the
+player to know what B means before it means anything, and outside TETR.IO
+nobody does. A word carries the same ordering without a lookup, and the
+picker prints the one it is offering under the buttons with the pace that
+goes with it. The bot is our own, written referencing the
 published techniques of the well-known bots (MisaMino, ColdClear, and
 the beam-search shape of the modern engines): a full-reachability search
 - taps, sonic drops, and rotations through the game's own kick tables,

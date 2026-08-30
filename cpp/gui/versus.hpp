@@ -96,10 +96,16 @@ struct VersusMatch {
 	// thing that hits you is the thing you watched coming. Presentation
 	// only - the effect still lands on `skill_fires_at` to the frame.
 	static constexpr long kFlight = 20;
-	// Whose kit this is, for the plate's upper line. Set by the screen
-	// from the stage it launched; a plain duel leaves it empty and the
-	// plate prints the skill alone.
-	std::string caster_name;
+	// Who the player is fighting, for the plate's upper line and for every
+	// place the screen used to print a league letter. Set by the screen
+	// from the stage it launched; a Training Yard duel leaves it empty and
+	// the screen falls back to naming the bot.
+	std::string foe_name;
+
+	// The foe named the way the player should read it: the strength as a
+	// word in front of the name, never a league letter. `foe_name` when
+	// the road supplied one, "the Bot" when it did not.
+	std::string foe_title () const;
 	// Sound cues the skills fired this tick, drained by the frame the way
 	// a session's cues are.
 	std::vector<std::string> skill_cues;
