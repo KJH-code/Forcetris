@@ -199,7 +199,33 @@ struct Run {
 	std::vector<std::string> oils;
 	int embers = 0;
 	int lives = kForgedLives;          // Meaningful under kForged only.
+	// What the run cost, for the grade it earns at the end. Seconds are
+	// battle seconds summed at each settlement, never wall clock: a run
+	// left open overnight is not a worse run, and a player reading a menu
+	// is not spending the climb. Deaths counts every battle lost and every
+	// mid-fight surrender, the free mild retry included - the grade is
+	// about how the climb went, not about what the economy charged.
+	int seconds = 0;
+	int deaths = 0;
 };
+// What a finished climb was worth, made of the run's own facts rather than
+// one board's. The TETR.IO estimate the loss screen used to print after
+// every stage grades a single game against public averages - a real number
+// in the Training Yard, and the wrong one twelve times over inside a climb
+// that has not ended yet.
+struct Verdict {
+	char grade[3] = "D";
+	int score = 0;      // 0..100, what the letter came from.
+	int rows = 0;       // Rows of the road taken (rings, when endless).
+	int deaths = 0;
+	int seconds = 0;    // Battle seconds, not wall clock.
+	bool finished = false;
+};
+
+// Grade a run. `won` says the last row actually fell rather than the climb
+// ending under it. Safe on a blank run: it grades at the floor.
+Verdict grade_run (const Run& run, bool won);
+
 // Slag awards scale with the weight of death: 100 / 150 / 200 percent.
 int slag_percent (int difficulty);
 // And so does the foe. The fire picked at the door was only ever a wager

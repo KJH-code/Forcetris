@@ -154,6 +154,10 @@ State load (const std::string& path) {
 		} else if (key == "run_embers") {
 			in >> state.run.embers;
 			state.run.embers = std::max(0, state.run.embers);
+		} else if (key == "run_seconds") {
+			in >> state.run.seconds;
+		} else if (key == "run_deaths") {
+			in >> state.run.deaths;
 		} else if (key == "run_lives") {
 			in >> state.run.lives;
 			state.run.lives = std::clamp(state.run.lives, 0, 9);
@@ -233,6 +237,8 @@ bool save (const std::string& path, const State& state) {
 		}
 		out << "run_embers " << state.run.embers << "\n";
 		out << "run_lives " << state.run.lives << "\n";
+		out << "run_seconds " << state.run.seconds << "\n";
+		out << "run_deaths " << state.run.deaths << "\n";
 		if (state.run.endless) {
 			out << "run_endless 1\n";
 			out << "run_ring " << state.run.ring << "\n";
@@ -364,6 +370,56 @@ bool chapter_open (const State& state, int chapter) {
 
 int slag_percent (int difficulty) {
 	return difficulty == kWhite ? 200 : difficulty == kForged ? 150 : 100;
+}
+
+Verdict grade_run (const Run& run, bool won) {
+	// Four terms, and the letter is only ever the sum of them - a grade a
+	// player cannot take apart is a grade they cannot chase.
+	//
+	// Progress dominates because a climb is about how far it got. Blood is
+	// next: the roguelite's whole tension is spending lives, so a clean run
+	// has to be visibly worth more than a bought one. Pace is last and
+	// deliberately gentle - this is a casual-first game and a player who
+	// thinks about their stack is not playing it wrong. Nothing here can
+	// push a slow, bloody, short run above a fast, clean, deep one.
+	Verdict out;
+	out.rows = std::max(0, run.endless
+		? run.ring * kMapDepth + run.depth : run.depth);
+	out.deaths = std::max(0, run.deaths);
+	out.seconds = std::max(0, run.seconds);
+	out.finished = won && !run.endless && run.depth >= kMapDepth;
+
+	// Progress, out of 55. Endless has no end, so its rows score against a
+	// road's worth of climbing per ring and simply saturate.
+	const double reach = run.endless
+		? std::min(1., out.rows / static_cast<double>(kMapDepth * 4))
+		: std::min(1., out.rows / static_cast<double>(kMapDepth));
+	double score = 55. * reach;
+
+	// Blood, out of 25.
+	score += std::max(0., 25. - 8. * out.deaths);
+
+	// Pace, out of 20: full value under par, nothing left at three times
+	// it. A run with no rows behind it has no pace to judge and scores
+	// none - it cannot earn the term by ending early.
+	if (out.rows > 0) {
+		const double par = 150. * out.rows;
+		const double ratio = out.seconds <= 0 ? 1. : out.seconds / par;
+		score += 20. * std::clamp(1.5 - 0.5 * ratio, 0., 1.);
+	}
+
+	// The fire the wager was made at.
+	score *= run.difficulty == kWhite ? 1.15
+		: run.difficulty == kForged ? 1.0 : 0.85;
+	out.score = static_cast<int>(std::clamp(score, 0., 100.));
+
+	const char* grade = out.score >= 90 ? "S"
+		: out.score >= 75 ? "A"
+		: out.score >= 60 ? "B"
+		: out.score >= 40 ? "C" : "D";
+	out.grade[0] = grade[0];
+	out.grade[1] = '\0';
+	return out;
 }
 
 int rank_for (int rank, int difficulty) {

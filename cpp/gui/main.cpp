@@ -437,6 +437,9 @@ struct App {
 	int run_node = -1;
 	bool map_reward = false;
 	bool run_ended = false;
+	// The grade the last climb earned, kept after the run keys are gone so
+	// the settlement screen can print it.
+	campaign::Verdict last_verdict;
 	// A won map battle is spent: no retry may fight the same node twice.
 	bool node_done = false;
 	int pick_difficulty = campaign::kMild;
@@ -1304,11 +1307,15 @@ void deal_reward (App& app) {
 // slag - scaled by the difficulty, the prestige - and the keys leave the
 // file. The stars already written stay written; they are the door to the
 // next chapter.
-void end_run (App& app) {
+void end_run (App& app, bool won) {
 	campaign::Run& run = app.campaign.run;
 	if (!run.active) {
 		return;
 	}
+	// The grade, taken before the keys are cleared: it is the only thing
+	// the climb leaves behind besides slag, and the run is about to stop
+	// existing.
+	app.last_verdict = campaign::grade_run(run, won);
 	app.campaign.slag += (run.embers / 5)
 		* campaign::slag_percent(run.difficulty) / 100;
 	run = campaign::Run{};
@@ -1498,8 +1505,13 @@ void restart_stage (App& app) {
 	campaign::Run& run = app.campaign.run;
 	if (app.screen == Screen::Game && run.active && app.run_node >= 0
 		&& run.difficulty != campaign::kMild) {
+		// A surrender is a death, and the grade counts it as one.
+		++run.deaths;
+		if (app.session.has_value()) {
+			run.seconds += static_cast<int>(app.session->sim().frame() / 50);
+		}
 		if (run.difficulty == campaign::kWhite || --run.lives <= 0) {
-			end_run(app);
+			end_run(app, false);
 			app.run_ended = false;
 			app.campaign_stage = -1;
 			app.run_node = -1;
@@ -1739,6 +1751,16 @@ void end_game (App& app) {
 		app.last_slag_gain = slag;
 		app.run_ended = false;
 		if (on_map) {
+			// What the climb has cost so far, for the grade it earns when
+			// it ends. Battle seconds, not wall clock - a player reading
+			// the map is not spending the run.
+			if (app.session.has_value()) {
+				run.seconds += static_cast<int>(
+					app.session->sim().frame() / 50);
+			}
+			if (!won) {
+				++run.deaths;
+			}
 			if (won) {
 				// The battle's unspent embers bank into the climb, and the
 				// path takes the node. The boss row banks nothing to spend -
@@ -1766,7 +1788,7 @@ void end_game (App& app) {
 							run.ring, run.seed);
 						app.map_reward = true;
 					} else {
-						end_run(app);
+						end_run(app, true);
 						app.run_ended = true;
 					}
 				} else {
@@ -1778,7 +1800,7 @@ void end_game (App& app) {
 				// White heat breaks on any death; a forged run breaks when
 				// the lives run out. Either way the climb is over and the
 				// leftover embers render down - the prestige.
-				end_run(app);
+				end_run(app, false);
 				app.run_ended = true;
 			}
 			// A mild death changes nothing: the same node is still open
@@ -5657,7 +5679,7 @@ void draw_career (App& app) {
 			ImGui::TextUnformatted("Put the run down? The embers render");
 			ImGui::TextUnformatted("to slag; the map is lost.");
 			if (ImGui::Button("Abandon", ImVec2(ui(100), 0))) {
-				end_run(app);
+				end_run(app, false);
 				ImGui::CloseCurrentPopup();
 			}
 			ImGui::SameLine();
@@ -6483,11 +6505,37 @@ void draw_menus (App& app) {
 			ImGui::PopFont();
 		}
 		ImGui::Spacing();
-		{
+		// Two different ranks, and they belong on two different screens.
+		//
+		// The TETR.IO estimate grades ONE board against public averages,
+		// which is exactly what the Training Yard is for. Inside a climb it
+		// was the wrong number in the wrong place: it appeared after every
+		// stage, twelve times before the run had an outcome, and it said
+		// nothing about the run. So a climb gets its own grade instead, at
+		// the end, made of the climb's own facts.
+		const bool in_a_climb = app.run_node >= 0 || app.run_ended;
+		if (app.run_ended) {
+			const campaign::Verdict& verdict = app.last_verdict;
+			ImGui::TextDisabled("%s", "THE CLIMB");
+			rank_badge(verdict.grade, IM_COL32(216, 124, 44, 255),
+				IM_COL32(28, 16, 8, 255), ui(70), 1.5f);
+			ImGui::SameLine();
+			ImGui::PushFont(app.fonts.head);
+			ImGui::TextColored(ImVec4(1.f, 0.541f, 0.227f, 1.f),
+				" %d / 100", verdict.score);
+			ImGui::PopFont();
+			// The three numbers the letter was made of, so it is never a
+			// mystery which one to go after next run.
+			ImGui::TextDisabled("%d row%s%s  -  %d death%s  -  %d:%02d",
+				verdict.rows, verdict.rows == 1 ? "" : "s",
+				verdict.finished ? " (the road)" : "",
+				verdict.deaths, verdict.deaths == 1 ? "" : "s",
+				verdict.seconds / 60, verdict.seconds % 60);
+		} else if (!in_a_climb) {
 			// The same estimate the analysis window's Rating tab reports,
 			// out of the same call, so the two screens cannot name different
-			// ranks for one run. An empty rank is the module's way of saying
-			// the run was too small to place at all.
+			// ranks for one game. An empty rank is the module's way of
+			// saying the game was too small to place at all.
 			rating::Estimate guess;
 			if (app.last_replay.has_value()) {
 				const replay::Summary sum = app.last_replay->summary(false);

@@ -416,6 +416,17 @@ tension is the foe - its attack, its blade, and the skills it telegraphs
 at you. Above mild, a
 mid-fight restart is a surrender and costs what a death costs.
 
+A climb that ends - taken, broken or put down - is graded on its own
+facts: rows reached, deaths paid, and the seconds actually spent in
+battle rather than wall clock, since a run left open overnight is not a
+worse run. Progress carries the most weight, blood the next, pace the
+least (this is a casual-first game and a player who thinks about their
+stack is not playing it wrong), and the fire wagered at the door scales
+the lot. The letter is printed with the three numbers it came from, so
+it is never a mystery which one to go after. The per-game TETR.IO
+estimate stays where it belongs - the Training Yard - rather than
+appearing after every stage of a climb that has not finished.
+
 The road runs three chapters now. **The White Heart** is where the
 lessons combine: every one of its rooms stacks two gimmicks the first
 two chapters taught one at a time - darkness over sealed columns, a

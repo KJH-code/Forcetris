@@ -1268,12 +1268,21 @@ int main () {
 			state.run.difficulty = campaign::kWhite;
 			state.run.depth = 1;
 			state.run.path = {0};
+			// What the grade is made of rides the file too: a climb
+			// resumed after a restart must not have forgotten what it
+			// already cost.
+			state.run.seconds = 934;
+			state.run.deaths = 3;
 			check("a climb saves", campaign::save(file, state));
 			const campaign::State back = campaign::load(file);
 			check("and resumes on its ring with its record",
 				back.endless_best == 27 && back.run.active
 					&& back.run.endless && back.run.ring == 4
 					&& back.run.seed == 0xF00Du);
+			check("and remembers what the climb has cost so far",
+				back.run.seconds == 934 && back.run.deaths == 3,
+				std::to_string(back.run.seconds) + "s, "
+					+ std::to_string(back.run.deaths) + " deaths");
 			state.run.active = false;
 			check("the record outlives the run",
 				campaign::save(file, state)
@@ -1290,6 +1299,103 @@ int main () {
 				bent.run.active && bent.run.endless
 					&& bent.run.ring == 999 && bent.endless_best == 0);
 			fs::remove_all(folder, ignored);
+		}
+	}
+
+	// --- The climb's own grade. ---------------------------------------------
+	// A run is graded on run facts - rows, deaths, battle seconds - and not
+	// on one board's TETR.IO estimate. Every pin below is a shape the grade
+	// has to hold whatever the numbers are tuned to, so a retune can move
+	// the letters without quietly inverting the meaning.
+	{
+		const auto run_of = [] (int depth, int deaths, int seconds,
+				int difficulty) {
+			campaign::Run run;
+			run.active = true;
+			run.depth = depth;
+			run.deaths = deaths;
+			run.seconds = seconds;
+			run.difficulty = difficulty;
+			return run;
+		};
+		const campaign::Verdict clean = campaign::grade_run(
+			run_of(campaign::kMapDepth, 0, 600, campaign::kForged), true);
+		const campaign::Verdict bloody = campaign::grade_run(
+			run_of(2, 3, 2400, campaign::kForged), false);
+		check("a clean fast climb outgrades a slow bloody short one",
+			clean.score > bloody.score,
+			std::to_string(clean.score) + " vs "
+				+ std::to_string(bloody.score));
+		check("and the road taken is marked as taken",
+			clean.finished && !bloody.finished);
+
+		// Monotone in the two things a player controls. A death can never
+		// help, and neither can spending longer.
+		{
+			bool sane = true;
+			std::string detail;
+			for (int deaths = 0; deaths < 5; ++deaths) {
+				const int here = campaign::grade_run(
+					run_of(4, deaths, 900, campaign::kForged), false).score;
+				const int worse = campaign::grade_run(
+					run_of(4, deaths + 1, 900, campaign::kForged),
+					false).score;
+				if (worse > here) {
+					sane = false;
+					detail += std::to_string(deaths) + " deaths graded up; ";
+				}
+			}
+			for (int mins = 2; mins < 40; mins += 4) {
+				const int here = campaign::grade_run(
+					run_of(4, 1, mins * 60, campaign::kForged), false).score;
+				const int slower = campaign::grade_run(
+					run_of(4, 1, (mins + 4) * 60, campaign::kForged),
+					false).score;
+				if (slower > here) {
+					sane = false;
+					detail += std::to_string(mins) + "min graded up; ";
+				}
+			}
+			check("a death never raises a grade, and neither does time",
+				sane, detail);
+		}
+		// And monotone in the two the map controls: deeper is better, and
+		// the same climb at a hotter fire is worth at least as much.
+		{
+			bool climbs = true;
+			for (int depth = 0; depth < campaign::kMapDepth; ++depth) {
+				climbs = climbs
+					&& campaign::grade_run(
+						run_of(depth, 1, 600, campaign::kForged), false).score
+					<= campaign::grade_run(
+						run_of(depth + 1, 1, 600, campaign::kForged),
+						false).score;
+			}
+			check("a deeper climb never grades lower", climbs);
+			const int mild = campaign::grade_run(
+				run_of(4, 1, 900, campaign::kMild), false).score;
+			const int forged = campaign::grade_run(
+				run_of(4, 1, 900, campaign::kForged), false).score;
+			const int white = campaign::grade_run(
+				run_of(4, 1, 900, campaign::kWhite), false).score;
+			check("and a hotter fire is worth at least as much",
+				mild <= forged && forged <= white,
+				std::to_string(mild) + "/" + std::to_string(forged) + "/"
+					+ std::to_string(white));
+		}
+		// The floor and the ceiling both hold, and a blank run does not
+		// reach into anything it should not.
+		{
+			const campaign::Verdict nothing
+				= campaign::grade_run(campaign::Run{}, false);
+			const campaign::Verdict best = campaign::grade_run(
+				run_of(campaign::kMapDepth, 0, 60, campaign::kWhite), true);
+			check("a blank run grades at the floor and survives it",
+				nothing.score >= 0 && nothing.rows == 0
+					&& nothing.grade[0] == 'D');
+			check("and the grade never leaves 0..100",
+				best.score <= 100 && best.score > 0,
+				std::to_string(best.score));
 		}
 	}
 
