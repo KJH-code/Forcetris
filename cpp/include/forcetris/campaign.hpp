@@ -323,6 +323,23 @@ int endless_rank_owed (int rank, int ring);
 // ladder is exhausted.
 SimConfig endless_edge (SimConfig foe, int rank, int ring);
 
+// How hard a boss's skills land, as a multiplier on the rows they throw,
+// the gauge they drain and the seconds they hold a gimmick down.
+//
+// A recipe writes one number for the blow; the fire chosen at the door
+// decides what that number is worth. The gentlest fire takes most of the
+// sting out (a rustfall of three rows becomes two - a beginner who cannot
+// yet clear a quad should not be handed one), the forged fire is the
+// recipe as written, and white heat lands nearly half again as hard. A
+// climb keeps going past that, because everything about a climb does.
+double skill_scale (int difficulty, bool endless, int ring);
+
+// A blow's rows and seconds, after that scale. A skill that fires always
+// does something: the floors are one row and one second, so the gentlest
+// fire softens a blow and never deletes it.
+int skill_rows (int rows, double scale);
+long skill_frames (long frames, double scale);
+
 // The player's own squeeze: the flood lands heavier every ring. Unbounded,
 // and the one dial that never hits a floor.
 SimConfig endless_press (SimConfig mine, int ring);

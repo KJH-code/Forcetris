@@ -148,6 +148,14 @@ struct VersusMatch {
 	// plain duel, the daily - arms nothing.
 	void arm_skills (const std::string& stage_id);
 
+	// What a blow off this kit is worth. One number, set at the door from
+	// the fire the player chose (campaign::skill_scale), and applied to
+	// every row a skill throws, every share of the gauge it takes and
+	// every second it holds a gimmick down. The recipe writes the shape of
+	// a boss; this writes how hard it hits. Left at one by the trainer's
+	// own duels, which have no fire to read.
+	double skill_scale = 1.0;
+
 	// The blade the bot carries: a fixed build applied to its rules at
 	// round start rather than drafted mid-round - a duel is real time, and
 	// the freeze that lets a hand read cards has no business in one. Kept

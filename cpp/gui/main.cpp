@@ -437,6 +437,10 @@ struct App {
 	int run_node = -1;
 	bool map_reward = false;
 	bool run_ended = false;
+	// How much of the room each foe's board is holding, eased toward the
+	// aim so a switch is a movement and not a jump.
+	static constexpr int kSeats = 6;
+	std::array<float, kSeats> room_focus{};
 	// The curse the climb just laid, named on the map header until the
 	// next ring: it was not chosen, so it has to be told.
 	std::string curse_shown;
@@ -1267,6 +1271,13 @@ void start_stage (App& app, int index, int run_node = -1) {
 		// A campaign boss fights with its own kit: telegraphed skills the
 		// trainer's plain duels never carry.
 		app.versus->arm_skills(stage.id);
+		// How hard that kit lands: the recipe writes the blow, the fire
+		// chosen at the door writes what it is worth, and a climb keeps
+		// raising it ring by ring.
+		app.versus->skill_scale = run_node >= 0
+			? campaign::skill_scale(app.campaign.run.difficulty,
+				app.campaign.run.endless, app.campaign.run.ring)
+			: campaign::skill_scale(campaign::kForged, false, 0);
 		app.versus->foe_name = stage.name;
 		if (stage.raid != nullptr) {
 			// A raid walks its rank list one foe per round - every one of
@@ -3988,23 +3999,74 @@ void draw_versus_panel (App& app) {
 	// side at a third of the cell, one board at full size. The player's
 	// well never moves for either.
 	const int room = static_cast<int>(match.foes.size());
-	// The room is fitted into the width one foe had rather than divided by
-	// eye: a phone gives the opponent about a tenth of the screen, and
-	// three boards at a third of the cell each would run off the edge of
-	// it. Everything below is derived from this, so nothing can overflow.
-	const int gap = room > 1 ? std::max(px(2), px(8) / room) : 0;
-	const int seat = room > 1
-		? std::max(px(2), (kWidth * cell - (room - 1) * gap)
-			/ (kWidth * room))
-		: cell;
-	const int seat_w = kWidth * seat;
 	const int left = kMiniX + static_cast<int>(kick.x);
 	const int top = kMiniY + static_cast<int>(kick.y);
-	for (int slot = 0; slot < room; ++slot) {
+	// A room takes the whole band to the right of the player, not the
+	// width one foe had. Squeezing three boards into one board's width put
+	// them at four pixels a cell with the rest of that half of the screen
+	// empty underneath - unreadable, and it looked like a mistake because
+	// it was one. The band is measured off the real window so nothing can
+	// overflow a phone.
+	int out_w = 0;
+	int out_h = 0;
+	SDL_GetRendererOutputSize(renderer, &out_w, &out_h);
+	const int band = room > 1
+		? std::max(kWidth * cell, out_w - left - px(30))
+		: kWidth * cell;
+	const int gap = room > 1 ? px(10) : 0;
+	// And the room is not three equal thumbnails. The one decision this
+	// mode has is who you are aiming at, so the aimed board is the big one
+	// and the others sit back - and the sizes travel when the aim moves,
+	// which is what makes the switch felt rather than merely noted. A
+	// beaten board shrinks further still: it is furniture now.
+	std::array<float, App::kSeats> weight{};
+	float shares = 0.f;
+	for (int slot = 0; slot < room && slot < App::kSeats; ++slot) {
+		const VersusMatch::Foe& foe = *match.foes[static_cast<size_t>(slot)];
+		const bool aimed = slot == match.target && !foe.down;
+		float& focus = app.room_focus[static_cast<size_t>(slot)];
+		focus += ((aimed ? 1.f : 0.f) - focus) * 0.16f;
+		weight[static_cast<size_t>(slot)]
+			= (foe.down ? 0.68f : 1.f) + 0.85f * focus;
+		shares += weight[static_cast<size_t>(slot)];
+	}
+	const int usable = band - (room - 1) * gap;
+	std::array<int, App::kSeats> seats{};
+	int tallest = cell;
+	for (int slot = 0; slot < room && slot < App::kSeats; ++slot) {
+		seats[static_cast<size_t>(slot)] = room > 1
+			? std::max(px(2), static_cast<int>(
+				usable * weight[static_cast<size_t>(slot)] / shares)
+				/ kWidth)
+			: cell;
+		tallest = std::max(tallest, seats[static_cast<size_t>(slot)]);
+	}
+	if (room == 1) {
+		tallest = cell;
+	} else {
+		// The band is wide enough to make the aimed board taller than the
+		// window has room for, and the scoreboard lives under the room.
+		// Height is capped last so the width above can be generous without
+		// pushing the readout off the bottom of the screen.
+		const int fits = (out_h - top - static_cast<int>(ui(120))) / kHeight;
+		tallest = std::max(px(2), std::min(tallest, fits));
+		for (int slot = 0; slot < room && slot < App::kSeats; ++slot) {
+			int& seat = seats[static_cast<size_t>(slot)];
+			seat = std::min(seat, tallest);
+		}
+	}
+	// One floor under all of them, so boards of different heights read as
+	// a room rather than as a misaligned row.
+	const int floor_y = top + kHeight * tallest;
+	int pen = left;
+	for (int slot = 0; slot < room && slot < App::kSeats; ++slot) {
 		const VersusMatch::Foe& foe = *match.foes[static_cast<size_t>(slot)];
 		const Sim& board = foe.sim.sim();
-		const int bx = left + slot * (seat_w + gap);
-		const int by = top;
+		const int seat = seats[static_cast<size_t>(slot)];
+		const int seat_w = kWidth * seat;
+		const int bx = pen;
+		const int by = floor_y - kHeight * seat;
+		pen += seat_w + gap;
 		const bool marked = slot == match.target && !foe.down;
 		// The seat: the aimed foe wears an ember frame, because where the
 		// player's garbage is going has to be legible at a glance in a
@@ -4070,6 +4132,30 @@ void draw_versus_panel (App& app) {
 				}
 			}
 		}
+		if (room > 1) {
+			// In a room every board carries its own two readouts, because
+			// the decision here is which of three to bury and both of
+			// these are how you make it. A single rail drawn at the old
+			// fixed offset landed on top of the next board along.
+			const int rail_h = kHeight * seat;
+			if (charging(board) && !foe.down) {
+				const int rail_x = bx + seat_w + px(2);
+				fill(renderer, rail_x, by, px(3), rail_h, {36, 27, 20, 255});
+				const bool burning = board.overdrive();
+				const int charge = burning ? rail_h
+					: static_cast<int>(rail_h * (board.flow() / 100.));
+				if (charge > 0) {
+					fill(renderer, rail_x, by + rail_h - charge, px(3),
+						charge, burning ? SDL_Color{255, 214, 94, 255}
+							: SDL_Color{255, 122, 46, 255});
+				}
+			}
+			const int owed = std::min(board.pending_garbage(), kHeight);
+			if (owed > 0 && !foe.down) {
+				fill(renderer, bx - px(6), by + rail_h - owed * seat,
+					px(4), owed * seat, {224, 82, 82, 255});
+			}
+		}
 		// Who this is, and whether it is still in the fight. A board too
 		// narrow to carry a word gets its slot number instead - the
 		// scoreboard names who is aimed at, and the frame shows which one
@@ -4100,12 +4186,13 @@ void draw_versus_panel (App& app) {
 	// it rides in the scoreboard instead.
 	if (!match.bot_tempers.empty() && !kPortrait) {
 		draw_label(temper_line(match.bot_tempers).c_str(),
-			static_cast<float>(left), top + kHeight * cell + px(6),
+			static_cast<float>(left), floor_y + px(6),
 			IM_COL32(176, 158, 140, 255));
 	}
 	// The bot's Flow rail on its board's right flank - watching the gauge
-	// creep up is the warning the ignition deserves.
-	if (charging(theirs)) {
+	// creep up is the warning the ignition deserves. A room draws its own,
+	// one per board, up in the loop.
+	if (room == 1 && charging(theirs)) {
 		const int rail_x = left + kWidth * cell + px(4);
 		const int rail_h = kHeight * cell;
 		fill(renderer, rail_x, top, px(4), rail_h, {36, 27, 20, 255});
@@ -4129,14 +4216,21 @@ void draw_versus_panel (App& app) {
 	};
 	meter(kBoardX - px(10), kBoardY + kBoardH,
 		app.session->sim().pending_garbage(), kCell);
-	meter(left - px(10), top + kHeight * cell,
-		theirs.pending_garbage(), cell);
+	if (room == 1) {
+		meter(left - px(10), top + kHeight * cell,
+			theirs.pending_garbage(), cell);
+	}
 	// The scoreboard: beside the opponent's full board in the duel layout,
 	// under the mini board otherwise - except in portrait, where the right
 	// margin is too narrow for it and it sits under the player's.
 	if (kPortrait) {
 		ImGui::SetNextWindowPos(ImVec2(static_cast<float>(kBoardX),
 			static_cast<float>(kBoardY + kBoardH) + ui(24)));
+	} else if (room > 1) {
+		// Under the room, not beside it: the boards want the whole band,
+		// and there is a screen's worth of empty floor below them.
+		ImGui::SetNextWindowPos(ImVec2(static_cast<float>(left) - ui(4),
+			static_cast<float>(floor_y) + ui(26)));
 	} else if (kDuelSide) {
 		ImGui::SetNextWindowPos(ImVec2(
 			static_cast<float>(left + kWidth * cell) + ui(16),

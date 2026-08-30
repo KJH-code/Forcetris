@@ -466,9 +466,36 @@ three streams of garbage arrive on one board, the roster sits well under
 the rung a lone foe of that row would carry, and campaign_check pins
 that every foe in a room is weaker than one met alone.
 
+The room is drawn as a focus, not as three thumbnails. It used to be
+fitted into the width a single foe had, which put the boards at four
+pixels a cell with half that side of the screen empty underneath - it was
+unreadable and it looked like a mistake, because it was one. The room
+takes the whole band to the right of the player now, measured off the
+real window so a phone cannot overflow, and it does not split that band
+evenly: the aimed board is the big one and the other two sit back, with
+the sizes travelling when the aim moves so a switch is felt rather than
+merely noted. A downed board shrinks further - it is furniture now - and
+all of them stand on one floor, so different heights read as a room
+instead of a misaligned row. Each board carries its own Flow rail and its
+own incoming-garbage meter, because choosing which of three to bury is
+made out of exactly those two readings, and the scoreboard moved from
+beside the room to under it.
+
 A campaign boss fights with its own kit: telegraphed skills, two seconds of warning
 before rust falls on it, a column seals shut, the iron cold-snaps, or a
 heat wave leans on your gauge.
+
+How hard that kit lands is the fire's business, not the recipe's. A
+recipe writes one number for a blow and `campaign::skill_scale` decides
+what the number is worth: the gentlest fire takes most of the sting out,
+the forged fire is the recipe as written, white heat lands nearly half
+again as hard, and a climb goes on raising it ring by ring with no
+ceiling, the way everything about a climb does. It scales the rows a
+skill throws, the share of the gauge it takes and the seconds it holds a
+gimmick down - so a rustfall is two rows on mild, three on forged and
+four at white heat. There are floors under all of it: at least one row
+and at least one second, because a blow the player watched arrive for two
+seconds and then felt nothing from is worse than no blow at all.
 
 A cast is drawn as one thing happening in three places. The foe's well
 gathers it: the rim heats through the skill's own colour, motes draw in

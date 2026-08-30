@@ -1206,6 +1206,51 @@ int main () {
 						== mine.garbage_scale);
 		}
 
+		// What a blow is worth, by the fire chosen at the door.
+		//
+		// The recipe writes the number; the fire decides what it buys. A
+		// rustfall of three rows is two on the gentlest fire, three on the
+		// forged one and four at white heat - and a climb goes on past
+		// that, because everything about a climb does. The floors matter
+		// as much as the scale: a skill the player watched arrive for two
+		// seconds and then felt nothing from is worse than no skill.
+		{
+			const double mild = campaign::skill_scale(campaign::kMild,
+				false, 0);
+			const double forged = campaign::skill_scale(campaign::kForged,
+				false, 0);
+			const double white = campaign::skill_scale(campaign::kWhite,
+				false, 0);
+			check("a hotter fire lands harder",
+				mild < forged && forged < white && forged == 1.0);
+			check("and a climb keeps raising it past white heat",
+				campaign::skill_scale(campaign::kWhite, true, 0) >= white
+					&& campaign::skill_scale(campaign::kWhite, true, 8)
+						> campaign::skill_scale(campaign::kWhite, true, 2));
+			bool climbs = true;
+			for (int ring = 0; ring < 40; ++ring) {
+				climbs = climbs
+					&& campaign::skill_scale(campaign::kWhite, true, ring + 1)
+						> campaign::skill_scale(campaign::kWhite, true, ring);
+			}
+			check("ring by ring, without a ceiling", climbs);
+			check("rustfall reads two, three, four across the fires",
+				campaign::skill_rows(3, mild) == 2
+					&& campaign::skill_rows(3, forged) == 3
+					&& campaign::skill_rows(3, white) == 4,
+				std::to_string(campaign::skill_rows(3, mild)) + "/"
+					+ std::to_string(campaign::skill_rows(3, forged)) + "/"
+					+ std::to_string(campaign::skill_rows(3, white)));
+			// The floors. A skill that fires always does something, and a
+			// skill with no duration in the recipe never grows one.
+			bool floors = campaign::skill_rows(1, 0.05) >= 1
+				&& campaign::skill_rows(6, 0.) >= 1
+				&& campaign::skill_rows(0, 4.) == 0
+				&& campaign::skill_frames(0, 4.) == 0
+				&& campaign::skill_frames(250, 0.01) >= 50;
+			check("a blow that lands is never nothing", floors);
+		}
+
 		// What the smith charges, as the climb goes on. A price at the door
 		// is the door price; every rung after it costs more, and the
 		// ceiling is what keeps the last chapter a shop rather than a

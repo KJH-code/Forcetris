@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "forcetris/campaign.hpp"
 #include "forcetris/temper.hpp"
 
 namespace forcetris {
@@ -240,24 +241,33 @@ void VersusMatch::tick_skills (Session& player) {
 				continue;
 			}
 			skill.telegraphing = false;
-			skill.active_until = frame + skill.duration;
+			// The fire chosen at the door decides what the recipe's number
+			// is worth - the rows thrown, the gauge taken, and how long a
+			// gimmick sits on the board.
+			skill.active_until = frame
+				+ campaign::skill_frames(skill.duration, skill_scale);
 			skill.landed_at = frame;
 			skill.next_fire += skill.period;
 			held = held || holds_the_board(skill.id);
 			if (skill.id == "rustfall") {
 				// Three rows of rust thrown at the player's floor, riding
 				// the same pending-garbage rail an attack does.
-				player.receive_attack(3);
+				player.receive_attack(
+					campaign::skill_rows(3, skill_scale));
 				skill_cues.push_back("hit");
 			} else if (skill.id == "forgestrike") {
 				// The long wind-up, and the blow to match it.
-				player.receive_attack(6);
+				player.receive_attack(
+					campaign::skill_rows(6, skill_scale));
 				skill_cues.push_back("hit");
 			} else if (skill.id == "heatwave") {
 				// The gauge, taken. With no clock in a duel, Overdrive is
 				// the one resource a fight is fought over - so taking it
-				// is the pressure the wick used to be.
-				player.sim_mutable().drain_flow(0.5);
+				// is the pressure the wick used to be. Capped at nine
+				// tenths: a climb deep enough to scale past a full drain
+				// would leave nothing to take and no reason to fear it.
+				player.sim_mutable().drain_flow(
+					std::min(0.9, 0.5 * skill_scale));
 				skill_cues.push_back("pressure");
 			} else if (skill.id == "coldsnap") {
 				skill_cues.push_back("freeze");

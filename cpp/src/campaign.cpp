@@ -682,6 +682,35 @@ SimConfig endless_edge (SimConfig foe, int rank, int ring) {
 	return foe;
 }
 
+double skill_scale (int difficulty, bool endless, int ring) {
+	// The three fires, and then the climb on top of the hottest of them.
+	// A climb is always played at white heat, so its ring rides on 1.4
+	// rather than starting over.
+	double scale = difficulty == kMild ? 0.6
+		: difficulty == kWhite ? 1.4 : 1.0;
+	if (endless) {
+		scale = 1.4 + 0.08 * std::max(0, ring);
+	}
+	return scale;
+}
+
+int skill_rows (int rows, double scale) {
+	if (rows <= 0) {
+		return 0;
+	}
+	// Never nothing: a blow the player watched arrive for two seconds and
+	// then felt nothing from is worse than no blow at all.
+	return std::max(1, py_round(rows * std::max(0., scale)));
+}
+
+long skill_frames (long frames, double scale) {
+	if (frames <= 0) {
+		return 0;
+	}
+	return std::max(50L,
+		static_cast<long>(frames * std::max(0., scale)));
+}
+
 SimConfig endless_press (SimConfig mine, int ring) {
 	// And the flood on the player's own board gets heavier every ring, from
 	// the first one. A rung of rank is a foe that plays better; this is the
