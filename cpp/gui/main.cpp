@@ -3667,8 +3667,11 @@ void draw_versus_panel (App& app) {
 		if (room > 1) {
 			// A generous target: the board plus its label strip, because a
 			// thumb is wider than a three-pixel cell.
-			app.foe_rects.push_back(SDL_Rect{bx - px(3), by - ui(24),
-				seat_w + px(6), kHeight * seat + ui(26)});
+			// ui() is a float and SDL_Rect is not: the NDK's clang refuses
+			// the narrowing that gcc waved through.
+			app.foe_rects.push_back(SDL_Rect{bx - px(3),
+				by - static_cast<int>(ui(24)), seat_w + px(6),
+				kHeight * seat + static_cast<int>(ui(26))});
 		}
 		for (int y = 0; y < kHeight; ++y) {
 			for (int x = 0; x < kWidth; ++x) {
