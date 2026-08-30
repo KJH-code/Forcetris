@@ -36,6 +36,14 @@ SimConfig fused () {
 	config.das_ms = 330;
 	config.fall_delay = 1000;   // Gravity out of the way; the fuse is the clock.
 	config.fuse = true;
+	// The wick's own numbers, stated here rather than borrowed from the
+	// shipped defaults. Everything below tests the schedule's ARITHMETIC -
+	// base, shave, floor - and it should keep testing that when the
+	// shipped tuning is retuned for whoever is meant to be playing. Those
+	// values get their own pin, first thing in main().
+	config.fuse_base = 3.0;
+	config.fuse_decay = 0.15;
+	config.fuse_min = 0.8;
 	return config;
 }
 
@@ -123,6 +131,26 @@ void clear_a_row (Sim& sim) {
 } // namespace
 
 int main () {
+	// What the game actually ships, on purpose and in one place.
+	//
+	// These used to be read off SimConfig's defaults by five checks that
+	// were really testing the arithmetic, so retuning the wick for a new
+	// player broke all five and none of them said why. The arithmetic has
+	// its own ground in fused() now; this is the tuning, and it is a
+	// decision: the fuse a first game meets is long, the shave is gentle,
+	// and the floor is somewhere a human can still place a piece.
+	{
+		const SimConfig ships;
+		const double at_ten = ships.fuse_base - 10 * ships.fuse_decay;
+		check("the wick ships long, for a first game",
+			ships.fuse_base == 5.0 && ships.fuse_decay == 0.10
+				&& ships.fuse_min == 1.2,
+			number(ships.fuse_base) + " / " + number(ships.fuse_decay)
+				+ " / " + number(ships.fuse_min));
+		check("and a hundred lines in it is still over three seconds",
+			at_ten > 3.0 && ships.fuse_min > 1.0, number(at_ten));
+	}
+
 	// The schedule: base at level zero, shaved per level, floored.
 	{
 		SimConfig config = fused();

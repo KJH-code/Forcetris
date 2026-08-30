@@ -48,6 +48,12 @@ constexpr int kHandlingRev = 2;
 // moved up by two and a remembered pick has to move with them.
 constexpr int kLadderRev = 1;
 
+// The board ships bare. A file written before that decision holds the old
+// seven-panel default, and its owner never chose it - it was simply what
+// the first launch wrote down - so it is cleared once, and anything they
+// did choose afterwards is what the check below reads.
+constexpr int kStatsRev = 1;
+
 // The three handling sets the settings screen offers. Named rather than typed
 // in twice, so no set's numbers are ever lost and each is one click away.
 enum class Handling {
@@ -83,6 +89,8 @@ struct Config {
 	// below D, which shifted every index by two: a file written before it
 	// remembers a rank by a number that now names a gentler foe.
 	int ladder_rev = kLadderRev;
+	// Which stats-default this file was written under; see kStatsRev.
+	int stats_rev = kStatsRev;
 	// The board's shudder on quads, spins and Overdrive. Purely cosmetic.
 	bool shake = true;
 	// Uncapped rendering: vsync off, the loop paced by a millisecond nap.
@@ -120,7 +128,8 @@ struct Config {
 	std::map<std::string, std::vector<int>> keys = default_keys();
 
 	// Which named preset the layout started from, for the settings screen.
-	std::string preset = "tetrastats";
+	// Nothing pinned beside the board until the player asks for it.
+	std::string preset = "none";
 
 	// Lines this build did not understand, preserved verbatim.
 	std::vector<std::string> unknown;

@@ -154,9 +154,19 @@ struct SimConfig {
 	// off the Forge Road does. What still needs a clock stays behind
 	// `fuse`: the Flash bonus, the burn loss, heat pressure.
 	bool flow_rail = false;
-	double fuse_base = 3.0;       // Seconds a piece burns at level zero.
-	double fuse_min = 0.8;        // The schedule never shrinks below this.
-	double fuse_decay = 0.15;     // Seconds shaved off per level.
+	// The wick, set for someone who has not played this before.
+	//
+	// Three seconds at level zero, shrinking a sixth of a second every ten
+	// lines to a floor of eight tenths, is a schedule for a player who
+	// already places a piece without thinking about it. Anyone else meets
+	// the slam before they have learned what the board wants, and a room
+	// that ends because the clock ran out teaches nothing except that
+	// there was a clock. A run's own difficulty (the fire at the door) and
+	// each burn room's fuse_scale still tighten it from here - the base is
+	// the gentlest the game ever is, and it should be gentle.
+	double fuse_base = 5.0;       // Seconds a piece burns at level zero.
+	double fuse_min = 1.2;        // The schedule never shrinks below this.
+	double fuse_decay = 0.10;     // Seconds shaved off per level.
 	double fuse_bank_cap = 6.0;   // The refuel reservoir's ceiling.
 	double fuse_draw_cap = 1.0;   // Most a spawn may draw from the bank.
 	double fuse_refuel_line = 0.4;   // Seconds banked per cleared line...

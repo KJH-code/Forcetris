@@ -194,6 +194,33 @@ made ready. The **cooldown** puts it out again over half a second under
 the verdict - the board stays drawn underneath the whole time, because a
 loss screen over a well that vanished reads as a crash.
 
+**The board ships bare, and the wick ships long.** Two defaults, both
+chosen for someone opening this for the first time rather than for the
+person who wrote it.
+
+Nothing is pinned beside the well until the player asks for it. The old
+default lit seven live figures - PPS, APM, VS, time, pieces, lines,
+finesse - which is a dashboard, and a dashboard is for someone who already
+knows which number they are trying to move; anyone else reads it as noise
+between them and the piece. Every panel is one tick away in Settings -
+Layout, the presets are still there, and there is a `none` preset to get
+back to bare. A config file written under the old default is cleared once
+on load and stamped, exactly the way the handling bring-forward works, and
+only if its layout is still on that shipped set - a player who picked
+their own panels keeps them.
+
+And the fuse starts at five seconds a piece rather than three, shaves a
+tenth every ten lines rather than a sixth, and floors at 1.2s rather than
+0.8s. The old schedule was written for a player who already places a piece
+without thinking about it; anyone else met the slam before they had
+learned what the board wants, and a room that ends because the clock ran
+out teaches nothing except that there was a clock. A run's chosen fire and
+each burn room's own `fuse_scale` still tighten it from there - this is the
+gentlest the game ever is, and it should be gentle. fusecheck states these
+three numbers in one deliberate pin now; the five checks that used to read
+them off the defaults while really testing the schedule's arithmetic have
+their own fixed ground.
+
 **The screens take the screen.** Every content screen used to be a centred
 panel of some hand-picked width - four hundred and ninety here, five
 hundred and eighty there - sitting in the middle of the display with the

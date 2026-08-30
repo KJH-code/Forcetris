@@ -120,6 +120,7 @@ Config load_config (const std::string& path) {
 	// below unless it says otherwise.
 	config.handling_rev = 0;
 	config.ladder_rev = 0;
+	config.stats_rev = 0;
 	// A file exists, so its stat lines are the whole layout: the preset's is
 	// only the starting point for a config that has never been saved.
 	bool saw_stat = false;
@@ -143,6 +144,7 @@ Config load_config (const std::string& path) {
 		else if (key == "cleardelay") { int flag = 1; in >> flag; config.clear_delay = flag != 0; }
 		else if (key == "handlingrev") in >> config.handling_rev;
 		else if (key == "ladderrev") in >> config.ladder_rev;
+		else if (key == "statsrev") in >> config.stats_rev;
 		else if (key == "shake") { int flag = 1; in >> flag; config.shake = flag != 0; }
 		else if (key == "lowlatency") { int flag = 1; in >> flag; config.lowlatency = flag != 0; }
 		else if (key == "smooth") { int flag = 1; in >> flag; config.smooth = flag != 0; }
@@ -223,6 +225,29 @@ Config load_config (const std::string& path) {
 		config.bot_rank += 2;
 		config.ladder_rev = kLadderRev;
 	}
+	// The board ships bare now. A file from before that carries the old
+	// seven-panel default, which nobody chose - it was what the first
+	// launch wrote down - so it is cleared once, exactly like the handling
+	// bring-forward above, and only for a layout still on that set. A
+	// player who picked their own panels keeps them and takes the stamp.
+	if (config.stats_rev < kStatsRev) {
+		static const char* kOldDefault[] = {"pps", "apm", "vs", "time",
+			"pieces", "lines", "finesse"};
+		size_t lit = 0;
+		for (const auto& [id, spot] : config.stats) {
+			lit += spot.shown ? 1 : 0;
+		}
+		bool as_shipped = lit == sizeof kOldDefault / sizeof kOldDefault[0];
+		for (const char* id : kOldDefault) {
+			const auto found = config.stats.find(id);
+			as_shipped = as_shipped && found != config.stats.end()
+				&& found->second.shown;
+		}
+		if (as_shipped) {
+			apply_preset(config, "none");
+		}
+		config.stats_rev = kStatsRev;
+	}
 	// A hand-edited or damaged file must not smuggle values the sliders
 	// cannot reach - the sim divides gravity by sdf, and the Python side
 	// clamps its own file the same way on load.
@@ -258,6 +283,7 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "cleardelay " << (config.clear_delay ? 1 : 0) << "\n";
 	out << "handlingrev " << config.handling_rev << "\n";
 	out << "ladderrev " << config.ladder_rev << "\n";
+	out << "statsrev " << config.stats_rev << "\n";
 	out << "shake " << (config.shake ? 1 : 0) << "\n";
 	out << "lowlatency " << (config.lowlatency ? 1 : 0) << "\n";
 	out << "smooth " << (config.smooth ? 1 : 0) << "\n";
@@ -293,14 +319,20 @@ bool save_config (const Config& config, const std::string& path) {
 }
 
 std::vector<std::string> preset_names () {
-	return {"tetrastats", "battle", "minimal", "full"};
+	return {"none", "tetrastats", "battle", "minimal", "full"};
 }
 
 void apply_preset (Config& config, const std::string& name) {
 	// Which stats each preset shows, top to bottom in one column; dragging
 	// them somewhere else afterwards is what the free layout is for.
 	std::vector<const char*> shown;
-	if (name == "battle") {
+	if (name == "none") {
+		// Nothing beside the board, which is where a first game should
+		// start. Seven live figures next to a well is a dashboard, and a
+		// dashboard is for someone who already knows which number they are
+		// trying to move; anyone else reads it as noise between them and
+		// the piece. Every panel is one tick away in Settings - Layout.
+	} else if (name == "battle") {
 		shown = {"attack", "apm", "aps", "vs", "b2b", "combo"};
 	} else if (name == "minimal") {
 		shown = {"time", "pps"};
@@ -313,6 +345,15 @@ void apply_preset (Config& config, const std::string& name) {
 		shown = {"pps", "apm", "vs", "time", "pieces", "lines", "finesse"};
 	}
 	config.stats.clear();
+	// Every stat is registered, off, so the Layout tab lists them all and a
+	// panel switched on later already knows where to stand.
+	{
+		float rest = 0.f;
+		for (const StatDef& stat : all_stats()) {
+			config.stats[stat.id] = StatSpot{false, 0.f, rest};
+			rest += 78.f;
+		}
+	}
 	float y = 0.f;
 	for (const char* id : shown) {
 		config.stats[id] = StatSpot{true, 0.f, y};
