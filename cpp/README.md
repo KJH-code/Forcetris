@@ -355,8 +355,8 @@ and gamble). Every duel on the road is a rung of the bot ladder and the
 rungs only climb: a chapter runs skirmish, miniboss, boss one rung apart
 (C-B-A, then B-A-S, then A-S-SS) and opens a rung under the boss just
 beaten, so an S never arrives before an A has been fought twice - a
-raid, being three fights with no second chance, stands a rung under its
-own chapter. `campaign_check` pins that climb, and the fire picked at
+raid, being three foes in the room at once, stands well under its own
+chapter. `campaign_check` pins that climb, and the fire picked at
 the door shifts the whole ladder a rung either way.
 
 Which face stands at the top is the seed's to choose. Every chapter
@@ -381,11 +381,26 @@ ever meets one of them.
 
 One row under the boss a **miniboss** duel bars the risky
 branch, and the battle pool itself now fields **skirmishes** (a lesser
-foe on an ordinary node), a **raid** (three hounds back to back - one
-loss closes the kennel), and **watches** (outlast the rising floor;
+foe on an ordinary node), a **raid** (three hounds in the room at once,
+all of them sending), and **watches** (outlast the rising floor;
 the stars are the lines you cleared while holding on). A duel is fought
-face to face now - both boards full size, side by side - and a campaign
-boss fights with its own kit: telegraphed skills, two seconds of warning
+face to face now - both boards full size, side by side.
+
+A raid is not a queue. All three foes play at once, the way a
+multiplayer lobby does: every one of them sends at you, and you send at
+one of them. Which one is the whole fight - the board closest to topping
+out, or the one hitting hardest - so the aim is yours to move, with Tab
+on a keyboard and by touching the board you want buried on a phone. The
+aimed foe wears an ember frame and the slot over your own well names it.
+A foe that tops out does not end anything; its board cools where it
+stands and comes off the wire, and the room is beaten when the last of
+them falls. They used to be fought one per round, which is a gauntlet
+and not what three boards on a screen looks like anywhere else. Because
+three streams of garbage arrive on one board, the roster sits well under
+the rung a lone foe of that row would carry, and campaign_check pins
+that every foe in a room is weaker than one met alone.
+
+A campaign boss fights with its own kit: telegraphed skills, two seconds of warning
 before rust falls on it, a column seals shut, the iron cold-snaps, or a
 heat wave leans on your gauge.
 

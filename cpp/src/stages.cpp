@@ -313,17 +313,24 @@ const std::vector<Stage>& stages () {
 		s.slag_first = 30; s.slag_repeat = 7;
 		list.push_back(s);
 
-		// V2.1: a raid - three lesser foes back to back, one loss and the
-		// gauntlet closes. first_to is the gauntlet's length.
+		// A raid: three lesser foes in the room AT ONCE, the way a
+		// multiplayer lobby is, rather than queueing up to be fought one
+		// per round. They all send at you; you send at one of them, and
+		// choosing which is the fight. `raid` is the roster and `first_to`
+		// its size - one round, and the room is cleared or you are.
+		//
+		// Three streams of garbage on one board is a lot of garbage, so
+		// the roster sits well under the rung a lone foe of this row would
+		// carry. Weak alone is the whole idea.
 		s = Stage{};
 		s.id = "c2r1"; s.name = "The Kennel";
-		s.blurb = "The hounds come one after another. Weak alone, and there are"
-			" three.";
+		s.blurb = "Three hounds at once, all of them sending. Weak on their"
+			" own. Tab picks which one you bury first.";
 		// A gauntlet is priced by the whole run of it, not by one foe: three
 		// fights with no second chance, so every hound stands a rung under
 		// the chapter's own ladder.
 		s.mode = 5; s.rank = 3; s.first_to = 3;
-		s.raid = "1,2,2";
+		s.raid = "1,1,2";
 		s.slag_first = 36; s.slag_repeat = 8;
 		list.push_back(s);
 
@@ -473,9 +480,10 @@ const std::vector<Stage>& stages () {
 
 		s = Stage{};
 		s.id = "c3r1"; s.name = "The Pack";
-		s.blurb = "Three of the forge's own, loose and hungry.";
+		s.blurb = "Three of the forge's own, loose at the same time. Tab"
+			" picks which one you bury first.";
 		s.mode = 5; s.rank = 4; s.first_to = 3;
-		s.raid = "2,3,3";
+		s.raid = "2,2,3";
 		s.slag_first = 58; s.slag_repeat = 12;
 		list.push_back(s);
 

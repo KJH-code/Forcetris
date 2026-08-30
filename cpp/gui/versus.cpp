@@ -1,5 +1,7 @@
 #include "versus.hpp"
 
+#include <algorithm>
+
 #include "forcetris/temper.hpp"
 
 namespace forcetris {
@@ -114,6 +116,64 @@ bool holds_the_board (const std::string& id) {
 }
 
 } // namespace
+
+int VersusMatch::standing () const {
+	int up = 0;
+	for (const std::unique_ptr<Foe>& foe : foes) {
+		up += foe->down ? 0 : 1;
+	}
+	return up;
+}
+
+VersusMatch::Foe* VersusMatch::aimed () {
+	if (foes.empty()) {
+		return nullptr;
+	}
+	// An aim left on someone already down would swallow the player's whole
+	// output, so it walks to whoever is still up before it is read.
+	if (target < 0 || target >= static_cast<int>(foes.size())
+		|| foes[static_cast<size_t>(target)]->down) {
+		for (size_t at = 0; at < foes.size(); ++at) {
+			if (!foes[at]->down) {
+				target = static_cast<int>(at);
+				return foes[at].get();
+			}
+		}
+		return nullptr;
+	}
+	return foes[static_cast<size_t>(target)].get();
+}
+
+const VersusMatch::Foe* VersusMatch::aimed () const {
+	// The reading half of the same walk, for the screen: it reports who
+	// would be hit without moving the aim to say so.
+	if (foes.empty()) {
+		return nullptr;
+	}
+	if (target >= 0 && target < static_cast<int>(foes.size())
+		&& !foes[static_cast<size_t>(target)]->down) {
+		return foes[static_cast<size_t>(target)].get();
+	}
+	for (const std::unique_ptr<Foe>& foe : foes) {
+		if (!foe->down) {
+			return foe.get();
+		}
+	}
+	return nullptr;
+}
+
+void VersusMatch::aim_next () {
+	if (foes.size() < 2) {
+		return;
+	}
+	for (size_t step = 1; step <= foes.size(); ++step) {
+		const size_t at = (static_cast<size_t>(target) + step) % foes.size();
+		if (!foes[at]->down) {
+			target = static_cast<int>(at);
+			return;
+		}
+	}
+}
 
 std::string VersusMatch::foe_title () const {
 	const std::string might = bot::might_of(rank_index);
@@ -286,36 +346,51 @@ void VersusMatch::begin_round (unsigned seed, const replay::Meta& player_meta,
 	// alike - the driver types inside it), no finesse retry handing its
 	// pieces back, instant soft drop so a planned sonic drop is one press,
 	// and DAS parked out of reach of its tap pairs.
-	// A raid walks its rank list one foe per round, each carrying its own
-	// rank's standard blade; a plain match keeps the rank and blade it
-	// was given.
+	// The roster. A duel is one foe at the rank it was given; a raid is
+	// the whole rank list at once - a room, not a queue. They used to be
+	// fought one per round, which is a gauntlet and not what three foes on
+	// a screen looks like anywhere else.
+	std::vector<int> roster
+		= raid() ? raid_ranks : std::vector<int>{rank_index};
 	if (raid()) {
-		const size_t foe = std::min(static_cast<size_t>(round - 1),
-			raid_ranks.size() - 1);
-		rank_index = raid_ranks[foe];
+		// The headline rank is the strongest thing in the room, which is
+		// what the room should be called after.
+		rank_index = *std::max_element(roster.begin(), roster.end());
 	}
-	const std::vector<std::string> worn
-		= raid() ? temper::blade_for(rank_index) : blade;
-	SimConfig config = temper::tempered(bot_base, worn);
-	config.forced_delay = 0.;
-	config.finesse_rule = 0;
-	config.sdf = 40;
-	config.das_ms = 330;
-	config.cleartype = 0;   // The belt: blades never carry collapse either.
-	// Its recording carries the same stamp and rules, with the handling it
-	// actually played under and the blade written down the way a drafted
-	// build would have been - so an embedded bot side analyses truthfully.
-	replay::Meta meta = player_meta;
-	meta.gametype = player_meta.gametype;
-	meta.forced_delay = config.forced_delay;
-	meta.finesse = config.finesse_rule;
-	meta.cleartype = config.cleartype;
-	meta.das = config.das_ms;
-	meta.sdf = config.sdf;
-	meta.tempers = worn;
-	bot.emplace(config, seed, meta);
-	driver.emplace(seed, bot::ranks()[rank_index]);
-	bot_tempers = worn;
+	foes.clear();
+	target = 0;
+	for (size_t at = 0; at < roster.size(); ++at) {
+		const int rung = roster[at];
+		// Each foe carries its own rung's standard blade in a raid; a lone
+		// foe keeps the blade the road handed it.
+		const std::vector<std::string> worn
+			= raid() ? temper::blade_for(rung) : blade;
+		SimConfig config = temper::tempered(bot_base, worn);
+		config.forced_delay = 0.;
+		config.finesse_rule = 0;
+		config.sdf = 40;
+		config.das_ms = 330;
+		config.cleartype = 0;   // The belt: blades never carry collapse.
+		// Its recording carries the same stamp and rules, with the handling
+		// it actually played under and the blade written down the way a
+		// drafted build would have been - so an embedded bot side analyses
+		// truthfully.
+		replay::Meta meta = player_meta;
+		meta.gametype = player_meta.gametype;
+		meta.forced_delay = config.forced_delay;
+		meta.finesse = config.finesse_rule;
+		meta.cleartype = config.cleartype;
+		meta.das = config.das_ms;
+		meta.sdf = config.sdf;
+		meta.tempers = worn;
+		// A shared seed would have the whole room playing the same game in
+		// unison, which reads as one foe drawn three times. Each gets its
+		// own stream, still derived from the round's seed so the fight
+		// replays.
+		const unsigned own = seed + static_cast<unsigned>(at) * 7919u;
+		foes.push_back(std::make_unique<Foe>(config, own, meta, rung, worn));
+	}
+	bot_tempers = foes.front()->blade;
 	phase = Phase::Playing;
 	phase_frames = 0;
 	round_player_won = false;
@@ -344,15 +419,27 @@ void VersusMatch::begin_round (unsigned seed, const replay::Meta& player_meta,
 }
 
 bool VersusMatch::step (Session& player) {
-	if (phase != Phase::Playing || !bot.has_value()) {
+	if (phase != Phase::Playing || foes.empty()) {
 		return false;
 	}
-	const auto event = driver->next(bot->sim());
-	if (event.has_value()) {
-		bot->key(event->key, event->down);
+	// Every foe still up plays this frame. One of them going down does not
+	// end the round in a raid - it just stops that board and takes it off
+	// the wire; the room is beaten when the last of them falls.
+	for (const std::unique_ptr<Foe>& foe : foes) {
+		if (foe->down) {
+			continue;
+		}
+		const auto event = foe->driver.next(foe->sim.sim());
+		if (event.has_value()) {
+			foe->sim.key(event->key, event->down);
+		}
+		if (!foe->sim.step()) {
+			foe->down = true;
+		}
+		// Their sounds stay on their side of the table.
+		foe->sim.take_cues();
 	}
-	const bool bot_alive = bot->step();
-	bot->take_cues();   // The bot's sounds stay on its side of the table.
+	const bool bot_alive = standing() > 0;
 	// The boss's skills run on the player's clock, before the pressure
 	// line reads what they want.
 	tick_skills(player);
@@ -369,21 +456,42 @@ bool VersusMatch::step (Session& player) {
 	// Heat pressure, both ways: an Overdrive burning on one board makes
 	// the other board's fuse burn faster - and a heat wave holds it hot
 	// from the skill side. Igniting is an attack.
-	player.sim_mutable().set_pressure(
-		bot->sim().overdrive() || skill_pressure);
-	bot->sim_mutable().set_pressure(player.sim().overdrive());
-	const bool player_alive = !player.over();
-	// The wire: both sides' outgoing first, then both deliveries, so this
-	// frame's attack cannot cancel against itself in flight.
-	const int from_player = player.take_outgoing();
-	const int from_bot = bot->take_outgoing();
-	if (from_player > 0) {
-		bot->receive_attack(from_player);
-		wire_to_bot += from_player;
+	bool any_burning = false;
+	for (const std::unique_ptr<Foe>& foe : foes) {
+		any_burning = any_burning
+			|| (!foe->down && foe->sim.sim().overdrive());
 	}
-	if (from_bot > 0) {
-		player.receive_attack(from_bot);
-		wire_to_player += from_bot;
+	player.sim_mutable().set_pressure(any_burning || skill_pressure);
+	for (const std::unique_ptr<Foe>& foe : foes) {
+		if (!foe->down) {
+			foe->sim.sim_mutable().set_pressure(player.sim().overdrive());
+		}
+	}
+	const bool player_alive = !player.over();
+	// The wire: every side's outgoing first, then every delivery, so this
+	// frame's attack cannot cancel against itself in flight.
+	//
+	// The player's fire all goes to one foe. Spreading it would be easier
+	// to write and duller to play: with three boards in the room, choosing
+	// who to bury first - the one closest to topping out, or the one
+	// hitting hardest - is the only decision that makes a raid a fight
+	// rather than three times the garbage.
+	const int from_player = player.take_outgoing();
+	int from_foes = 0;
+	for (const std::unique_ptr<Foe>& foe : foes) {
+		if (!foe->down) {
+			from_foes += foe->sim.take_outgoing();
+		}
+	}
+	if (from_player > 0) {
+		if (Foe* mark = aimed()) {
+			mark->sim.receive_attack(from_player);
+			wire_to_bot += from_player;
+		}
+	}
+	if (from_foes > 0) {
+		player.receive_attack(from_foes);
+		wire_to_player += from_foes;
 	}
 	if (player_alive && bot_alive) {
 		return true;
@@ -395,9 +503,10 @@ bool VersusMatch::step (Session& player) {
 	if (!round_draw) {
 		(round_player_won ? player_wins : bot_wins) += 1;
 	}
-	// A raid ends on the player's first fall; a match runs to first_to
+	// A raid is one round: the room is cleared or the player falls in it,
+	// and either way there is nothing to replay. A match runs to first_to
 	// both ways.
-	phase = (player_wins >= first_to
+	phase = (raid() || player_wins >= first_to
 			|| bot_wins >= (raid() ? 1 : first_to))
 		? Phase::MatchOver : Phase::RoundOver;
 	phase_frames = 0;

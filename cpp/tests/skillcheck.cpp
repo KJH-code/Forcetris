@@ -367,6 +367,80 @@ int main () {
 			clean);
 	}
 
+	// --- The room: a raid is three foes at once, not three in a queue. ------
+	{
+		SimConfig plain;
+		plain.gametype = 5;
+		replay::Meta meta;
+		gui::VersusMatch match(4, 3);
+		match.raid_ranks = {1, 1, 2};
+		match.begin_round(4242u, meta, plain, {});
+		check("a raid stands its whole roster up at once",
+			match.foes.size() == 3 && match.standing() == 3,
+			std::to_string(match.foes.size()) + " foes, "
+				+ std::to_string(match.standing()) + " up");
+		// Three boards playing the same seed would be one foe drawn three
+		// times; each gets its own stream.
+		{
+			gui::Session player(plain, 7u, meta);
+			for (int f = 0; f < 400; ++f) {
+				player.step();
+				match.step(player);
+			}
+			const auto shape = [] (const Sim& sim) {
+				std::string cells;
+				for (int y = 0; y < kHeight; ++y) {
+					for (int x = 0; x < kWidth; ++x) {
+						cells += sim.board().at(x, y) >= 0 ? '#' : '.';
+					}
+				}
+				return cells;
+			};
+			bool apart = false;
+			for (size_t at = 1; at < match.foes.size(); ++at) {
+				apart = apart || shape(match.foes[at]->sim.sim())
+					!= shape(match.foes[0]->sim.sim());
+			}
+			check("and no two of them play the same game", apart);
+		}
+		// The aim: it starts somewhere real, it moves, and it never rests
+		// on a foe already beaten.
+		const int first = match.target;
+		match.aim_next();
+		check("the aim moves off the foe it was on",
+			match.target != first,
+			std::to_string(first) + " -> " + std::to_string(match.target));
+		match.foes[static_cast<size_t>(match.target)]->down = true;
+		const gui::VersusMatch::Foe* now = match.aimed();
+		check("and never rests on one already down",
+			now != nullptr && !now->down);
+		// With the room emptied but for one, the aim has nowhere else to
+		// go and stays put rather than walking off the end.
+		for (auto& foe : match.foes) {
+			foe->down = true;
+		}
+		match.foes.front()->down = false;
+		match.aim_next();
+		check("a last foe standing keeps the aim",
+			match.aimed() == match.foes.front().get()
+				&& match.standing() == 1);
+	}
+	// A lone duel is the same machinery with one thing in the room, and
+	// nothing about it may have changed.
+	{
+		SimConfig plain;
+		plain.gametype = 5;
+		replay::Meta meta;
+		gui::VersusMatch match(4, 1);
+		match.begin_round(11u, meta, plain, {});
+		check("a plain duel stands exactly one foe up",
+			match.foes.size() == 1 && match.standing() == 1
+				&& match.aimed() == match.foes.front().get());
+		const int held = match.target;
+		match.aim_next();
+		check("and its aim has nowhere to go", match.target == held);
+	}
+
 	std::printf("%s\n",
 		failures == 0 ? "all skill checks passed" : "FAILURES");
 	return failures == 0 ? 0 : 1;

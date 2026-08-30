@@ -1302,6 +1302,68 @@ int main () {
 		}
 	}
 
+	// --- The rooms. ---------------------------------------------------------
+	// A raid is a roomful fought at once, so the roster has to be a roster:
+	// as many foes as the stage claims, every one of them a real rung, and
+	// all of them under what a lone foe on that row would be - three
+	// streams of garbage arriving on one board is the whole difference.
+	{
+		bool sane = true;
+		bool gentle = true;
+		std::string detail;
+		int rooms = 0;
+		for (const campaign::Stage& stage : campaign::stages()) {
+			if (stage.mode != 5 || stage.raid == nullptr) {
+				continue;
+			}
+			++rooms;
+			std::vector<int> roster;
+			int held = 0;
+			bool digit = false;
+			for (const char* c = stage.raid; ; ++c) {
+				if (*c >= '0' && *c <= '9') {
+					held = held * 10 + (*c - '0');
+					digit = true;
+				} else {
+					if (digit) {
+						roster.push_back(held);
+					}
+					held = 0;
+					digit = false;
+					if (*c == '\0') {
+						break;
+					}
+				}
+			}
+			if (static_cast<int>(roster.size()) != stage.first_to) {
+				sane = false;
+				detail += std::string(stage.id) + " counts "
+					+ std::to_string(roster.size()) + " but claims "
+					+ std::to_string(stage.first_to) + "; ";
+			}
+			for (const int rung : roster) {
+				if (rung < 0
+					|| rung >= static_cast<int>(bot::ranks().size())) {
+					sane = false;
+					detail += std::string(stage.id) + " has no rung "
+						+ std::to_string(rung) + "; ";
+				}
+				if (rung >= stage.rank) {
+					gentle = false;
+					detail += std::string(stage.id) + " fields a "
+						+ bot::ranks()[static_cast<size_t>(rung)].name
+						+ " in a room, which is not weaker than its own "
+						+ bot::ranks()[static_cast<size_t>(stage.rank)].name
+						+ "; ";
+				}
+			}
+		}
+		check("every room's roster is as long as the stage claims",
+			rooms > 0 && sane, detail);
+		check("and everything in a room is weaker than a foe met alone",
+			gentle, detail);
+	}
+
 	// --- What each stage says it wants. -------------------------------------
 	// The goal line is read off the recipe rather than written by hand, so
 	// the pin is that it always says something, always carries the number

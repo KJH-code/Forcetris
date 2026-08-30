@@ -7,6 +7,7 @@
 // typing into it, plus the first-to-N bookkeeping.
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -35,8 +36,41 @@ struct VersusMatch {
 	bool round_player_won = false;
 	bool round_draw = false;
 
-	std::optional<Session> bot;
-	std::optional<bot::Driver> driver;
+	// One foe in the room. A duel has one; a raid has a roomful, all of
+	// them playing at once the way a multiplayer lobby does rather than
+	// queueing up to be fought one at a time.
+	struct Foe {
+		Session sim;
+		bot::Driver driver;
+		int rank_index = 0;
+		bool down = false;      // Topped out; its board stops where it is.
+		std::vector<std::string> blade;
+		Foe (const SimConfig& config, unsigned seed,
+			const replay::Meta& meta, int rank,
+			std::vector<std::string> worn)
+			: sim(config, seed, meta),
+			  driver(seed, bot::ranks()[static_cast<size_t>(rank)]),
+			  rank_index(rank), blade(std::move(worn)) {}
+	};
+	// Held by pointer because a Session is not a thing to shuffle about in
+	// a vector while three of them are mid-game.
+	std::vector<std::unique_ptr<Foe>> foes;
+
+	// Which foe the player's garbage is aimed at. A room of three is only
+	// a strategy if the player chooses who to bury first, so the target is
+	// theirs to move; it steps past anyone already down on its own.
+	int target = 0;
+
+	bool armed () const { return !foes.empty(); }
+	Foe& lead () { return *foes.front(); }
+	const Foe& lead () const { return *foes.front(); }
+	// How many are still playing, and the one taking the player's fire.
+	int standing () const;
+	Foe* aimed ();
+	const Foe* aimed () const;
+	// Move the aim to the next foe still standing, wrapping. A no-op when
+	// there is only one thing in the room to hit.
+	void aim_next ();
 
 	// The boss's skills: telegraphed, periodic, armed only for campaign
 	// bosses and minibosses (arm_skills below). Each one warns over the

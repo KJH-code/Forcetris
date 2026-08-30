@@ -440,6 +440,10 @@ struct App {
 	// The grade the last climb earned, kept after the run keys are gone so
 	// the settlement screen can print it.
 	campaign::Verdict last_verdict;
+	// Where each foe's board was drawn last frame. A phone has no Tab key,
+	// so the aim is moved by touching the board you want buried - which is
+	// the gesture anyone would try first anyway.
+	std::vector<SDL_Rect> foe_rects;
 	// A won map battle is spent: no retry may fight the same node twice.
 	bool node_done = false;
 	int pick_difficulty = campaign::kMild;
@@ -776,7 +780,7 @@ void start_game (App& app, int mode,
 // run itself, because the duel screen scrubs the display list.
 void apply_brands (App& app) {
 	if (app.campaign_stage < 0 || !app.versus.has_value()
-		|| !app.versus->bot.has_value()) {
+		|| !app.versus->armed()) {
 		return;
 	}
 	const std::vector<std::string>& worn = app.campaign.run.tempers;
@@ -785,10 +789,14 @@ void apply_brands (App& app) {
 			!= worn.end();
 	};
 	if (has("frostbrand") || app.oil_frost) {
-		app.versus->bot->sim_mutable().impose_gimmick(0, true);
+		for (auto& foe : app.versus->foes) {
+			foe->sim.sim_mutable().impose_gimmick(0, true);
+		}
 	}
 	if (has("hobnails")) {
-		app.versus->bot->receive_attack(2);
+		for (auto& foe : app.versus->foes) {
+			foe->sim.receive_attack(2);
+		}
 	}
 }
 
@@ -867,8 +875,8 @@ void start_versus (App& app, int career_stage = -1) {
 std::optional<replay::Replay> finish_round (App& app) {
 	std::optional<replay::Replay> done = app.session->finish();
 	if (done.has_value() && app.versus.has_value()
-		&& app.versus->bot.has_value()) {
-		if (auto other = app.versus->bot->finish(true)) {
+		&& app.versus->armed()) {
+		if (auto other = app.versus->lead().sim.finish(true)) {
 			done->opponent.emplace(replay::Opponent{
 				std::move(other->meta), std::move(other->placements)});
 		}
@@ -1933,6 +1941,22 @@ void handle_event (App& app, const SDL_Event& event) {
 		const int y = static_cast<int>(event.tfinger.y * h);
 		if (event.type == SDL_FINGERDOWN) {
 			app.touch_shown = true;   // Any touch calls the buttons back.
+			// Touching a foe's board aims at it. Tried before the play
+			// buttons because the two never overlap and this is the more
+			// specific target.
+			if (app.versus.has_value() && app.versus->foes.size() > 1) {
+				for (size_t i = 0; i < app.foe_rects.size()
+					&& i < app.versus->foes.size(); ++i) {
+					const SDL_Rect& box = app.foe_rects[i];
+					if (x >= box.x && x < box.x + box.w
+						&& y >= box.y && y < box.y + box.h
+						&& !app.versus->foes[i]->down) {
+						app.versus->target = static_cast<int>(i);
+						app.audio.play("rotate");
+						return;
+					}
+				}
+			}
 			if (app.screen == Screen::Game && !app.paused && !app.editing
 				&& app.countdown <= 0 && app.offers.empty()
 				&& app.session.has_value()) {
@@ -2103,6 +2127,15 @@ void handle_event (App& app, const SDL_Event& event) {
 	}
 	if (app.screen != Screen::Game || app.paused || app.editing
 		|| app.countdown > 0 || ImGui::GetIO().WantCaptureKeyboard) {
+		return;
+	}
+	// The aim, in a room with more than one thing in it. Tab is the key
+	// every game with a target list already uses, and it is not a game key
+	// so it cannot collide with a bind.
+	if (down && event.key.keysym.scancode == SDL_SCANCODE_TAB
+		&& app.versus.has_value() && app.versus->foes.size() > 1) {
+		app.versus->aim_next();
+		app.audio.play("rotate");
 		return;
 	}
 	if (const auto key = key_for(app.config, event.key.keysym.scancode)) {
@@ -3579,11 +3612,11 @@ void draw_caster_plate (App& app, const VersusMatch& match) {
 // stack with its live piece, the scoreboard, and each side's incoming
 // garbage as a red column beside its board.
 void draw_versus_panel (App& app) {
-	if (!app.versus.has_value() || !app.versus->bot.has_value()) {
+	if (!app.versus.has_value() || !app.versus->armed()) {
 		return;
 	}
 	VersusMatch& match = *app.versus;
-	const Sim& theirs = match.bot->sim();
+	const Sim& theirs = match.lead().sim.sim();
 	SDL_Renderer* renderer = app.renderer;
 	const int cell = kMiniCell;
 	// The whole foe board rides its own cast: a tremor building through the
@@ -3591,42 +3624,103 @@ void draw_versus_panel (App& app) {
 	// two, so the stack, the piece and the frame move together the way a
 	// struck object does.
 	const ImVec2 kick = cast_kick(app, match);
+	app.foe_rects.clear();
+	// A room of foes shares the width one foe had: three boards side by
+	// side at a third of the cell, one board at full size. The player's
+	// well never moves for either.
+	const int room = static_cast<int>(match.foes.size());
+	// The room is fitted into the width one foe had rather than divided by
+	// eye: a phone gives the opponent about a tenth of the screen, and
+	// three boards at a third of the cell each would run off the edge of
+	// it. Everything below is derived from this, so nothing can overflow.
+	const int gap = room > 1 ? std::max(px(2), px(8) / room) : 0;
+	const int seat = room > 1
+		? std::max(px(2), (kWidth * cell - (room - 1) * gap)
+			/ (kWidth * room))
+		: cell;
+	const int seat_w = kWidth * seat;
 	const int left = kMiniX + static_cast<int>(kick.x);
 	const int top = kMiniY + static_cast<int>(kick.y);
-	fill(renderer, left - px(2), top - px(2),
-		kWidth * cell + px(4), kHeight * cell + px(4), {58, 42, 30, 255});
-	// The bot's Overdrive shows the way the player's does, scaled down:
-	// the board rimmed in gold while it burns.
-	if (theirs.overdrive()) {
-		const SDL_Color rim{255, 214, 94, 255};
-		const int wide = kWidth * cell;
-		const int tall = kHeight * cell;
-		fill(renderer, left - px(3), top - px(3), wide + px(6), px(3), rim);
-		fill(renderer, left - px(3), top + tall, wide + px(6), px(3), rim);
-		fill(renderer, left - px(3), top, px(3), tall, rim);
-		fill(renderer, left + wide, top, px(3), tall, rim);
-	}
-	fill(renderer, left, top, kWidth * cell, kHeight * cell, {17, 12, 9, 255});
-	for (int y = 0; y < kHeight; ++y) {
-		for (int x = 0; x < kWidth; ++x) {
-			const int form = theirs.board().at(x, y);
-			if (form >= 0) {
-				fill(renderer, left + x * cell + 1, top + y * cell + 1,
-					cell - 2, cell - 2, kFormColors[std::min(form, 7)]);
+	for (int slot = 0; slot < room; ++slot) {
+		const VersusMatch::Foe& foe = *match.foes[static_cast<size_t>(slot)];
+		const Sim& board = foe.sim.sim();
+		const int bx = left + slot * (seat_w + gap);
+		const int by = top;
+		const bool marked = slot == match.target && !foe.down;
+		// The seat: the aimed foe wears an ember frame, because where the
+		// player's garbage is going has to be legible at a glance in a
+		// room where three boards are moving at once.
+		fill(renderer, bx - px(2), by - px(2), seat_w + px(4),
+			kHeight * seat + px(4), foe.down ? SDL_Color{40, 34, 30, 255}
+				: marked ? SDL_Color{188, 96, 40, 255}
+				         : SDL_Color{58, 42, 30, 255});
+		if (board.overdrive() && !foe.down) {
+			const SDL_Color rim{255, 214, 94, 255};
+			const int wide = seat_w;
+			const int tall = kHeight * seat;
+			fill(renderer, bx - px(3), by - px(3), wide + px(6), px(3), rim);
+			fill(renderer, bx - px(3), by + tall, wide + px(6), px(3), rim);
+			fill(renderer, bx - px(3), by, px(3), tall, rim);
+			fill(renderer, bx + wide, by, px(3), tall, rim);
+		}
+		fill(renderer, bx, by, seat_w, kHeight * seat, {17, 12, 9, 255});
+		if (room > 1) {
+			// A generous target: the board plus its label strip, because a
+			// thumb is wider than a three-pixel cell.
+			app.foe_rects.push_back(SDL_Rect{bx - px(3), by - ui(24),
+				seat_w + px(6), kHeight * seat + ui(26)});
+		}
+		for (int y = 0; y < kHeight; ++y) {
+			for (int x = 0; x < kWidth; ++x) {
+				const int form = board.board().at(x, y);
+				if (form >= 0) {
+					SDL_Color ink = kFormColors[std::min(form, 7)];
+					if (foe.down) {
+						// A beaten board cools rather than vanishing: the
+						// room should show what is already finished.
+						ink = SDL_Color{
+							static_cast<Uint8>(ink.r / 3),
+							static_cast<Uint8>(ink.g / 3),
+							static_cast<Uint8>(ink.b / 3), 255};
+					}
+					fill(renderer, bx + x * seat + 1, by + y * seat + 1,
+						seat - 2, seat - 2, ink);
+				}
 			}
 		}
-	}
-	if (theirs.entry() && theirs.piece().form <= 6) {
-		for (const Offset at : cells_of(theirs.piece())) {
-			if (at.y >= 0) {
-				fill(renderer, left + at.x * cell + 1, top + at.y * cell + 1,
-					cell - 2, cell - 2, kFormColors[theirs.piece().form]);
+		if (!foe.down && board.entry() && board.piece().form <= 6) {
+			for (const Offset at : cells_of(board.piece())) {
+				if (at.y >= 0) {
+					fill(renderer, bx + at.x * seat + 1,
+						by + at.y * seat + 1, seat - 2, seat - 2,
+						kFormColors[board.piece().form]);
+				}
 			}
 		}
+		// Who this is, and whether it is still in the fight. A board too
+		// narrow to carry a word gets its slot number instead - the
+		// scoreboard names who is aimed at, and the frame shows which one
+		// that is, so the label here only has to tell them apart.
+		std::string tag;
+		if (room == 1) {
+			tag = "BOT";
+		} else if (seat_w >= ui(52)) {
+			tag = bot::might_of(foe.rank_index);
+			if (foe.down) {
+				tag += " - down";
+			}
+		} else {
+			tag = std::to_string(slot + 1);
+			if (foe.down) {
+				tag += "x";
+			}
+		}
+		draw_label(tag.c_str(), static_cast<float>(bx), by - ui(22),
+			foe.down ? IM_COL32(120, 112, 104, 255)
+				: marked ? IM_COL32(255, 176, 60, 255)
+				: board.overdrive() ? IM_COL32(255, 214, 94, 255)
+				: IM_COL32(176, 158, 140, 255));
 	}
-	draw_label("BOT", static_cast<float>(left), top - ui(22),
-		theirs.overdrive() ? IM_COL32(255, 214, 94, 255)
-			: IM_COL32(176, 158, 140, 255));
 	// What the bot has drafted, under its board - the same build line the
 	// player's pause screen shows, because an opponent's tempers are half
 	// of reading the fight. Portrait has no width for the line there, so
@@ -3684,8 +3778,8 @@ void draw_versus_panel (App& app) {
 	ImGui::Text("You %d - %d %s", match.player_wins, match.bot_wins,
 		match.foe_title().c_str());
 	if (match.raid()) {
-		ImGui::TextDisabled("foe %d of %d",
-			std::min(match.round, match.first_to), match.first_to);
+		ImGui::TextDisabled("%d of %d still standing  -  Tab to switch aim",
+			match.standing(), static_cast<int>(match.foes.size()));
 	} else {
 		ImGui::TextDisabled("first to %d  round %d",
 			match.first_to, match.round);
@@ -7517,9 +7611,13 @@ int run (bool smoke, long smoke_frames) {
 				const VersusMatch& match = *app.versus;
 				char round[48];
 				if (match.raid()) {
-					std::snprintf(round, sizeof round, "FOE %d / %d",
-						std::min(match.round, match.first_to),
-						match.first_to);
+					// The room, not a queue: how many are left up, and
+					// which of them the player's garbage is going to.
+					std::snprintf(round, sizeof round,
+						"%d FOES UP  -  AIMED AT %s", match.standing(),
+						match.aimed() != nullptr
+							? bot::might_of(match.aimed()->rank_index)
+							: "-");
 				} else if (match.first_to > 1) {
 					std::snprintf(round, sizeof round, "ROUND %d  -  FIRST TO %d",
 						match.round, match.first_to);
