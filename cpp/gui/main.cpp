@@ -437,6 +437,9 @@ struct App {
 	int run_node = -1;
 	bool map_reward = false;
 	bool run_ended = false;
+	// The curse the climb just laid, named on the map header until the
+	// next ring: it was not chosen, so it has to be told.
+	std::string curse_shown;
 	// The grade the last climb earned, kept after the run keys are gone so
 	// the settlement screen can print it.
 	campaign::Verdict last_verdict;
@@ -1204,8 +1207,11 @@ void start_stage (App& app, int index, int run_node = -1) {
 			app.tongs_sticky = has("sticky_tongs");
 		}
 		if (app.campaign.run.endless) {
-			// The climb's tightening, on top of everything else.
+			// The climb's tightening, on top of everything else - the room
+			// rules, then the flood's own weight, which is the dial that
+			// keeps climbing after the rest have bottomed out.
 			mine = campaign::endless_scaled(mine, app.campaign.run.ring);
+			mine = campaign::endless_press(mine, app.campaign.run.ring);
 		}
 		// The oils spend themselves as the doors close: hot lands on this
 		// config, frost is held for the duel wiring, and both are struck
@@ -1248,6 +1254,11 @@ void start_stage (App& app, int index, int run_node = -1) {
 			// same squeeze, and its rank climbs half a rung a ring.
 			app.versus_bot_base = campaign::endless_scaled(
 				app.versus_bot_base, app.campaign.run.ring);
+			// The steel first, off the rank it is about to be given: past
+			// the ladder's top there is no rung left, so the promotion is
+			// paid in what it sends instead.
+			app.versus_bot_base = campaign::endless_edge(
+				app.versus_bot_base, rank, app.campaign.run.ring);
 			rank = campaign::endless_rank(rank, app.campaign.run.ring);
 		}
 		app.versus_blade = campaign::blade_of(stage);
@@ -1317,11 +1328,6 @@ void start_stage (App& app, int index, int run_node = -1) {
 // one death and done - which is also every ring of the Endless Climb, so
 // the climb is the one place the chaos cards turn up as a matter of
 // course. Asked in one place so no screen can open the tier by accident.
-bool chaos_open (const App& app) {
-	return app.campaign.run.active
-		&& app.campaign.run.difficulty == campaign::kWhite;
-}
-
 int ember_price (const App& app, int base) {
 	return campaign::priced(base, app.campaign.run);
 }
@@ -1356,8 +1362,7 @@ void deal_reward (App& app) {
 	app.offer_salt = 0;
 	app.extra_picks = 0;
 	app.offer_taken = false;
-	app.offers = temper::offer(app.temper_seed, app.heat, run.tempers, 0,
-		chaos_open(app));
+	app.offers = temper::offer(app.temper_seed, app.heat, run.tempers);
 	app.offer_at = 0;
 	app.offer_shown = 0;
 	app.offer_reward = !app.offers.empty();
@@ -1409,8 +1414,9 @@ void begin_run (App& app, int chapter, int difficulty, unsigned seed,
 		const auto found = app.campaign.forge.find(id);
 		return found != app.campaign.forge.end() ? found->second : 0;
 	};
+	app.curse_shown.clear();
 	run.lives += level("lifeblood");
-	run.embers += 20 * level("warchest");
+	run.embers += 12 * level("warchest");
 	app.run_map = endless ? campaign::build_endless_map(0, seed)
 		: campaign::build_map(chapter, seed);
 	app.run_ended = false;
@@ -1494,8 +1500,7 @@ void apply_event (App& app, int id) {
 			// The spark is whatever the forge would have offered here; a
 			// dry pool pays embers instead of nothing.
 			const std::vector<std::string> hand = temper::offer(
-				run.seed ^ 0x27d4eb2fu, run.depth, run.tempers, 0,
-				chaos_open(app));
+				run.seed ^ 0x27d4eb2fu, run.depth, run.tempers);
 			if (!hand.empty()) {
 				run.tempers.push_back(hand.front());
 				app.tempers = run.tempers;
@@ -1610,8 +1615,7 @@ void offer_tempers (App& app) {
 	if (forged <= app.heat) {
 		return;
 	}
-	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers, 0,
-		chaos_open(app));
+	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers);
 	app.offer_at = 0;
 	app.offer_shown = 0;
 	app.offer_salt = 0;
@@ -1712,7 +1716,7 @@ void reroll_offer (App& app) {
 		app.ember_spent += cost;
 	}
 	app.offers = temper::offer(app.temper_seed, app.heat, app.tempers,
-		++app.offer_salt, chaos_open(app));
+		++app.offer_salt);
 	app.offer_at = 0;
 	app.audio.play("rotate");
 }
@@ -1847,6 +1851,27 @@ void end_game (App& app) {
 						run.ring += 1;
 						run.depth = 0;
 						run.path.clear();
+						// Every second ring the climb takes something back.
+						// The build only ever grew before - a card a node,
+						// forever - while the fights ran out of rungs to
+						// climb, and one bag of the right shape ended every
+						// room after that. A curse is the counterweight:
+						// it is not offered, it is laid, and it lands in
+						// the same list the cards do so everything that
+						// already reads a build reads it too.
+						const int want = temper::curses_by(run.ring);
+						for (int at = 0; at < want; ++at) {
+							const std::string curse
+								= temper::curse_at(run.seed, at);
+							if (curse.empty()
+								|| std::find(run.tempers.begin(),
+									run.tempers.end(), curse)
+									!= run.tempers.end()) {
+								continue;
+							}
+							run.tempers.push_back(curse);
+							app.curse_shown = curse;
+						}
 						app.run_map = campaign::build_endless_map(
 							run.ring, run.seed);
 						app.map_reward = true;
@@ -1971,11 +1996,35 @@ void player_key (App& app, Key key, bool down) {
 	app.session->key(key, down);
 }
 
+// Lift everything the board still thinks is held. The sim tracks a key as
+// down until a release arrives, so any moment the window can stop hearing
+// releases - alt-tab, a phone call, the task switcher - has to end with
+// every key let go, or the player comes back to a piece already running.
+void release_all_keys (App& app) {
+	if (!app.session.has_value()) {
+		return;
+	}
+	for (int at = static_cast<int>(Key::Left);
+			at <= static_cast<int>(Key::Flip); ++at) {
+		app.session->key(static_cast<Key>(at), false);
+	}
+}
+
 void handle_event (App& app, const SDL_Event& event) {
 	ImGui_ImplSDL2_ProcessEvent(&event);
 	if (event.type == SDL_QUIT) {
 		app.quit = true;
 		return;
+	}
+	// Focus gone, keys gone. Bypasses player_key deliberately: the cursed
+	// hands rewrite which key a press means, and a blanket release wants
+	// to reach every key the sim could be holding, crossed or not.
+	if (event.type == SDL_WINDOWEVENT
+		&& (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST
+			|| event.window.event == SDL_WINDOWEVENT_MINIMIZED
+			|| event.window.event == SDL_WINDOWEVENT_LEAVE)) {
+		release_all_keys(app);
+		app.input_nudge = true;
 	}
 	if (kMobile && event.type == SDL_WINDOWEVENT
 		&& event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
@@ -2182,6 +2231,19 @@ void handle_event (App& app, const SDL_Event& event) {
 	}
 	if (app.screen != Screen::Game || app.paused || app.editing
 		|| app.countdown > 0 || ImGui::GetIO().WantCaptureKeyboard) {
+		// A press is refused here; a RELEASE never is. Everything in this
+		// condition can turn true between a key going down and coming back
+		// up - ImGui wants the keyboard for a frame, the countdown starts,
+		// a panel opens - and a swallowed release leaves the sim holding a
+		// key the player let go of. The next press of that key is then a
+		// no-op, because it is already down, and the game reads as if it
+		// ate the input. Releases can only ever un-stick something, so they
+		// are always allowed through to the board that is still there.
+		if (!down && app.session.has_value()) {
+			if (const auto key = key_for(app.config, event.key.keysym.scancode)) {
+				player_key(app, *key, false);
+			}
+		}
 		return;
 	}
 	// The aim, in a room with more than one thing in it. Tab is the key
@@ -3970,6 +4032,20 @@ void draw_versus_panel (App& app) {
 				by - static_cast<int>(ui(24)), seat_w + px(6),
 				kHeight * seat + static_cast<int>(ui(26))});
 		}
+		// The same metal on both sides of the table. A duel seats the foe's
+		// board at the player's own cell size, so a flat swatch there next
+		// to a poured block here read as two different games; the bevel
+		// only gives up below the size where its own chamfer would be
+		// wider than the cell.
+		const bool cast = seat >= 6;
+		const auto put = [&] (int cx, int cy, SDL_Color ink) {
+			if (cast) {
+				draw_cell(renderer, bx + cx * seat, by + cy * seat, ink, seat);
+			} else {
+				fill(renderer, bx + cx * seat + 1, by + cy * seat + 1,
+					seat - 2, seat - 2, ink);
+			}
+		};
 		for (int y = 0; y < kHeight; ++y) {
 			for (int x = 0; x < kWidth; ++x) {
 				const int form = board.board().at(x, y);
@@ -3983,17 +4059,14 @@ void draw_versus_panel (App& app) {
 							static_cast<Uint8>(ink.g / 3),
 							static_cast<Uint8>(ink.b / 3), 255};
 					}
-					fill(renderer, bx + x * seat + 1, by + y * seat + 1,
-						seat - 2, seat - 2, ink);
+					put(x, y, ink);
 				}
 			}
 		}
 		if (!foe.down && board.entry() && board.piece().form <= 6) {
 			for (const Offset at : cells_of(board.piece())) {
 				if (at.y >= 0) {
-					fill(renderer, bx + at.x * seat + 1,
-						by + at.y * seat + 1, seat - 2, seat - 2,
-						kFormColors[board.piece().form]);
+					put(at.x, at.y, kFormColors[board.piece().form]);
 				}
 			}
 		}
@@ -5936,6 +6009,22 @@ void draw_career (App& app) {
 				campaign::endless_rows(run));
 			ImGui::SameLine();
 			ImGui::TextDisabled("BEST %d", app.campaign.endless_best);
+			// What the ring just took. Said in the header rather than in a
+			// panel that has to be dismissed: the player did not agree to
+			// this, so it should be readable without a click, and it stands
+			// there until the next ring replaces it.
+			if (!app.curse_shown.empty()) {
+				const temper::Temper* laid = temper::find(app.curse_shown);
+				if (laid != nullptr) {
+					ImGui::TextColored(ImVec4(0.85f, 0.42f, 0.9f, 1.f),
+						"THE RING TAKES: %s - %s", laid->name, laid->text);
+				}
+			}
+			if (temper::curses_by(run.ring)
+				>= static_cast<int>(temper::curses().size())) {
+				ImGui::TextDisabled(
+					"Every curse is down. From here the rooms tighten.");
+			}
 		} else {
 			ImGui::TextDisabled("%s fire", campaign::difficulty_name(
 				run.difficulty));
@@ -6297,27 +6386,41 @@ void draw_career (App& app) {
 			if (!visited.tempers.empty()) {
 				ImGui::Spacing();
 				ImGui::TextUnformatted("Melt down");
-				const int melt_cost = ember_price(app, temper::kRemoveCost);
 				int melted = -1;
+				int paid = 0;
 				for (size_t i = 0; i < visited.tempers.size(); ++i) {
 					const temper::Temper* card
 						= temper::find(visited.tempers[i]);
+					// A curse costs most of a good room to burn off. It is
+					// what the ring did to you, not something you picked,
+					// and one you could shed for the price of a card would
+					// not be a difficulty at all.
+					const bool cursed = card != nullptr
+						&& card->family == temper::Family::Chaos;
+					const int melt_cost = ember_price(app, cursed
+						? temper::kCurseCost : temper::kRemoveCost);
 					ImGui::PushID(static_cast<int>(i));
-					ImGui::TextUnformatted(card != nullptr
-						? card->name : visited.tempers[i].c_str());
+					if (cursed) {
+						ImGui::TextColored(ImVec4(0.85f, 0.42f, 0.9f, 1.f),
+							"%s", card->name);
+					} else {
+						ImGui::TextUnformatted(card != nullptr
+							? card->name : visited.tempers[i].c_str());
+					}
 					ImGui::SameLine();
 					ImGui::BeginDisabled(visited.embers < melt_cost);
 					char label[32];
-					std::snprintf(label, sizeof label, "Remove (%d)",
-						melt_cost);
+					std::snprintf(label, sizeof label, cursed
+						? "Burn off (%d)" : "Remove (%d)", melt_cost);
 					if (ImGui::SmallButton(label)) {
 						melted = static_cast<int>(i);
+						paid = melt_cost;
 					}
 					ImGui::EndDisabled();
 					ImGui::PopID();
 				}
 				if (melted >= 0) {
-					visited.embers -= melt_cost;
+					visited.embers -= paid;
 					visited.tempers.erase(visited.tempers.begin() + melted);
 					app.tempers = visited.tempers;
 					app.audio.play("clear");
@@ -6331,7 +6434,10 @@ void draw_career (App& app) {
 				std::vector<std::string> forgeable;
 				for (const std::string& id : visited.tempers) {
 					const temper::Temper* card = temper::find(id);
-					if (card == nullptr) {
+					// Never a second copy of a curse: the ring lays those,
+					// and the shop is not in that trade.
+					if (card == nullptr
+						|| card->family == temper::Family::Chaos) {
 						continue;
 					}
 					const long held = std::count(visited.tempers.begin(),

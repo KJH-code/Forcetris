@@ -76,45 +76,65 @@ int spin_of (const Sim& sim) {
 
 int main () {
 	// --- The Crooked Judge. -------------------------------------------------
-	// An O dropped straight into a two-wide well is boxed in on both flanks,
-	// so the crooked judge calls it a full spin - no rotation, no corner
-	// rule, nothing an honest rule would ever accept.
+	// The curse is that the judge has stopped listening: no spin scores.
+	//
+	// It used to mean the opposite - any lock with walls on both flanks
+	// counted as a FULL spin - which on a real stack is most locks. That is
+	// a back-to-back chain that never breaks and by a distance the strongest
+	// effect in the game, so a card meant to be a mixed blessing was a free
+	// win nobody would refuse. The flag's name always described this reading;
+	// only the arithmetic caught up.
+	//
+	// The positive control - that an honest judge does score a real spin -
+	// lives in botcheck, which drives a true TSD slot through this same sim.
+	// What belongs here is the curse: that nothing scores, and in particular
+	// that the placement the old reading paid for is worth nothing now.
 	{
-		SimConfig config = plain();
-		config.wild_spins = true;
-		Sim sim(config, std::vector<int>(20, static_cast<int>(O)));
-		sim.seed(notched(kSpawnX, 4));
-		wait_spawn(sim);
-		tap(sim, Key::Hard);
-		check("the crooked judge calls a wedged O a spin",
-			spin_of(sim) == attack::SPIN_FULL,
-			std::to_string(spin_of(sim)));
+		bool paid = false;
+		std::string detail;
+		// Every piece, into a wedge of every depth, from every column the
+		// well can sit in. Under the old reading a great many of these were
+		// full spins; under the curse not one of them may be.
+		for (int form = 0; form < 7; ++form) {
+			for (int hole = 1; hole + 2 < kWidth; hole += 2) {
+				for (int depth = 2; depth <= 6; depth += 2) {
+					SimConfig config = plain();
+					config.wild_spins = true;
+					Sim sim(config, std::vector<int>(20, form));
+					sim.seed(notched(hole, depth));
+					wait_spawn(sim);
+					for (int at = kSpawnX; at > hole; --at) {
+						tap(sim, Key::Left);
+					}
+					tap(sim, Key::Cw);
+					tap(sim, Key::Hard);
+					if (spin_of(sim) != attack::NOT_SPIN) {
+						paid = true;
+						detail += std::to_string(form) + "@"
+							+ std::to_string(hole) + "/"
+							+ std::to_string(depth) + "; ";
+					}
+				}
+			}
+		}
+		check("the crooked judge scores no spin, from any piece anywhere",
+			!paid, detail);
 	}
-	// The same drop with the judge honest is no spin at all: an O is never
-	// one, which is what makes the card's gift visible.
+	// And a wedged O is nothing under either judge - the exact placement the
+	// old reading paid a full spin for. This is the pin that would have
+	// caught the free chain the first time round.
 	{
-		SimConfig config = plain();
-		Sim sim(config, std::vector<int>(20, static_cast<int>(O)));
-		sim.seed(notched(kSpawnX, 4));
-		wait_spawn(sim);
-		tap(sim, Key::Hard);
-		check("and an honest judge never does",
-			spin_of(sim) == attack::NOT_SPIN,
-			std::to_string(spin_of(sim)));
-	}
-	// The price: a piece resting in the open is not wedged, so under the
-	// crooked judge a spin done with room to slide out stops counting -
-	// even for a T, even rotated on the spot.
-	{
-		SimConfig config = plain();
-		config.wild_spins = true;
-		Sim sim(config, std::vector<int>(20, static_cast<int>(T)));
-		wait_spawn(sim);
-		tap(sim, Key::Cw);
-		tap(sim, Key::Hard);
-		check("but a loose piece is nothing, however it was turned",
-			spin_of(sim) == attack::NOT_SPIN,
-			std::to_string(spin_of(sim)));
+		bool paid = false;
+		for (const bool cursed : {false, true}) {
+			SimConfig config = plain();
+			config.wild_spins = cursed;
+			Sim sim(config, std::vector<int>(20, static_cast<int>(O)));
+			sim.seed(notched(kSpawnX, 4));
+			wait_spawn(sim);
+			tap(sim, Key::Hard);
+			paid = paid || spin_of(sim) != attack::NOT_SPIN;
+		}
+		check("and a wedged O is never a spin, cursed or not", !paid);
 	}
 
 	// --- The Ring. ----------------------------------------------------------

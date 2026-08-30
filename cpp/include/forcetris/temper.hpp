@@ -72,15 +72,27 @@ SimConfig tempered (const SimConfig& start, const std::vector<std::string>& take
 // hand exactly as it always was, and each paid reroll deals the same heat
 // again under salt+1, deterministic like everything else here.
 // `chaos` opens the challenge tier. The chaos family bends what the hands
-// had learned to trust - the keys, the judge, the walls - and meeting one
-// of those on a mild fire is not a choice, it is an accident. So they are
-// dealt only where the run already said it wanted the worst of it: white
-// heat, one death and done, which is also every ring of the Endless Climb.
-// The default is closed, so a screen that forgets to ask never leaks them.
-// Even open, a hand carries at most one.
+// had learned to trust - the keys, the judge, the walls - and nobody ever
+// picked one. A card that takes has to give enough to be worth taking, and
+// giving that much made each of them a wash. They are not cards any more:
+// see curses() below.
 std::vector<std::string> offer (unsigned seed, int heat,
-	const std::vector<std::string>& taken, unsigned salt = 0,
-	bool chaos = false);
+	const std::vector<std::string>& taken, unsigned salt = 0);
+
+// The five Chaos effects, which are laid on a climb rather than drafted.
+// Same struct, same frozen ids, same apply() - only the door is different:
+// the Endless Climb hands one out every second ring and does not ask.
+const std::vector<Temper>& curses ();
+
+// The curse this climb lays at the given step (0-based), or empty once all
+// five are down. A pure function of (seed, step): the order is the run's
+// own, and a resumed climb lays exactly what it laid before.
+std::string curse_at (unsigned seed, int step);
+
+// How many curses a climb of this many rings is carrying. One every second
+// ring, and the table runs out at five - past that the climb tightens with
+// its own arithmetic instead.
+int curses_by (int ring);
 
 // How many heats this run has forged so far - the one owner of the count,
 // shared by the offer gate, the HUD, the stat panel and the bot's side of
@@ -110,11 +122,22 @@ std::vector<std::string> blade_for (int rank_index);
 // draft screen. The balance is derived (earned minus spent) rather than
 // accumulated, because lines_cleared and attack_sent are already monotone
 // live totals on the sim.
+// The rates are one and one, and the prices below are what they are,
+// because between them a run must never be able to buy the whole shop.
+// It used to: two and three a room banked several times the till's entire
+// stock, and no purchase was ever a decision.
 int embers_of (int lines, int attack);
-constexpr int kRerollCost = 6;      // Deal this heat's three again.
-constexpr int kExtraPickCost = 14;
+constexpr int kRerollCost = 8;      // Deal this heat's three again.
+constexpr int kExtraPickCost = 22;
 // Melting a picked temper back down at a forge node on the map.
-constexpr int kRemoveCost = 8;  // Take a second card from the offer.
+constexpr int kRemoveCost = 14;  // Take a second card from the offer.
+// Burning a curse off instead of a card. Deliberately most of a good
+// room's whole earnings: a climb's curses are the difficulty that keeps
+// climbing after the ladder runs out, and one you could buy off with
+// pocket change would be no difficulty at all. It is still buyable,
+// because the choice between shedding the ring's work and building on is
+// a better decision than either one alone.
+constexpr int kCurseCost = 45;
 // The rest of what the coin buys (V2.1e): a second copy of a held card
 // struck at the forge, a life bought back on forged fire, the two oils
 // painted on before a battle, and the small solace for walking past the

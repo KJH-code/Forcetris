@@ -267,6 +267,21 @@ diagnostics overlay - average and worst frame time, and how many engine
 ticks each drawn frame carried - so a stutter report can arrive with
 numbers attached.
 
+**A release is never refused.** The game gates presses in a lot of
+places - the screen is not the board, the game is paused, the layout
+editor is up, the countdown is running, ImGui wants the keyboard - and
+for a long time that same gate turned away the releases too. Every one of
+those conditions can turn true in the gap between a key going down and
+coming back up, and when it did the release was swallowed while the press
+was not: the engine went on holding a key the player had let go of, and
+the next press of it did nothing at all, because it was already down.
+That is the whole of "it eats my inputs", and it was not a handling
+setting or a frame rate - no DAS or ARR number can fix a key the engine
+thinks is still held. Releases now pass the gate unconditionally, since
+letting go of a key can only ever un-stick something, and losing the
+window - focus, minimize, the phone's task switcher - lifts every key the
+board could be holding, which is the same bug wearing an alt-tab.
+
 **The fuse punishes; the Flow rail rewards.** They were one flag once,
 and turning the fuse into a room's gimmick took the reward with it by
 accident. They are two flags now (`fuse`, `flow_rail`): the fuse is the
@@ -296,23 +311,34 @@ attack). **Risk** trades: *Overheat* (all Flow gains doubled, the wick
 half a second shorter), *Gamble* (`overdrive_mult +1.0`, a burnt piece
 costs `15` more Flow). **Rule** rewrites: *Collapse* (clears become a
 sticky cascade), *Every Twist* (every spin scores, minis included).
-**Chaos** breaks something the hands trusted and pays for it in the same
-breath - and every one of its faces says both halves out loud: *The
-Crooked Judge* (any piece boxed in on both flanks scores a full spin,
-the O included - but the corner rule is thrown out, so an honest T-spin
-with room to slide stops counting), *The Ring* (the two walls open onto
-each other, so a held direction crosses and keeps going - and gravity
-tightens six frames to pay for it), *Crossed Wires* (left and right and
-the two rotations trade places - and the hand hits half again as hard),
-*The Loose Ratchet* (every third turn goes one further - and the Flow
-gauge charges far faster). The two that curse the keys do it in the
-GUI's input path, never in the sim: the graded engine is handed honest
-keys and the recording is the piece's real journey. Chaos is the rarest
-family, drawn as seldom as Rule, one copy each, and the duel bot never
-takes one - two of them move the walls and the judge out from under its
-search, the other two curse hands it does not have. Fuel and Flow stack
-two or three deep; the one-of-a-kind rewrites are one each - and when the
-pool runs out the forge simply stops dealing.
+**Chaos** is not a family of cards any more. It was for two versions, and
+in that time nobody picked one - which in hindsight was the only possible
+outcome. A card that breaks something the hands trusted has to give
+enough back to be worth taking, and giving that much made every one of
+them a wash: the gift cancelled the price and the card meant nothing.
+Worse, one of them was not a wash at all. *The Crooked Judge* read "any
+piece boxed in on both flanks scores a full spin", and on a real stack
+that is most placements - a back-to-back chain that never breaks, and by
+a distance the strongest effect in the game. Nobody was ever going to
+turn that down.
+
+So the gift is gone and so is the choice. The five are **curses** now,
+and the Endless Climb lays one every second ring without asking: *The
+Crooked Judge* (the judge has stopped listening - no spin scores at all,
+whatever the rules say about it), *The Ring* (the two walls open onto
+each other, so a held direction crosses and keeps going, and gravity
+tightens six frames), *Crossed Wires* (left and right and the two
+rotations trade places), *The Loose Ratchet* (every third turn goes one
+further), *Sticky Tongs* (every fourth hold sticks). The three that curse
+the keys do it in the GUI's input path, never in the sim: the graded
+engine is handed honest keys and the recording is the piece's real
+journey. A curse lands in the same list the drafted cards do, so
+everything that already reads a build reads it too - and a forge will
+burn one off, at three times what it charges to melt a card, because the
+choice between shedding the ring's work and building on is better than
+either alone. The drafted pool is twenty-nine cards in five families:
+Fuel and Flow stack two or three deep, the one-of-a-kind rewrites are one
+each, and when the pool runs out the forge simply stops dealing.
 
 **Ward** guards, and it is the only cold colour on the table - slate,
 iron that has been let alone to cool. Nothing in it wins a fight faster
@@ -363,11 +389,18 @@ and written into its embedded recording the way a drafted build would
 have been.
 
 The spoils screen is also where the run's coin is spent. Clears earn
-**embers** - `embers_of`: two a line, three per point of attack, and
+**embers** - `embers_of`: one a line, one per point of attack, and
 nothing for haste - and the purse buys a **reroll** of the three cards
-(6) or a **second pick** off the same table (14). The balance is derived
+(8) or a **second pick** off the same table (22). The balance is derived
 from the sim's own totals minus what was spent, so it cannot drift, and
 it dies with the run - the campaign's own economy.
+
+The rates used to be two and three, and they were wrong by a wide margin.
+A forty-line room that sent sixty banked two hundred and sixty against a
+till whose entire stock costs well under a hundred: you bought everything
+on the table every time and still had change, so no purchase was ever a
+decision. Halving the take and raising the prices is the whole fix - a
+good room now pays for about one choice, which is what the coin was for.
 
 **The Forge Map** is what became of the career screen: a chapter played
 as one seeded climb. Setting out builds a branching graph six rows deep -
@@ -498,11 +531,22 @@ window sliding up as the rings stack, and the top of every ring held by
 the gatekeeper rotation - the road's watch a rung at a time (chapter
 one's miniboss, chapter one's boss, and up), then the White Heart's own
 two trading watches forever, with each ring rolling which concept pair
-supplies the face. Each ring tightens the screws
-(gravity, quotas, the flood; duel foes climb half a rank per ring) and
-the climb is always played at white heat - one death ends it - so the
-record is simply the rows climbed, kept as a single best on the
-chapter-select card.
+supplies the face.
+
+Each ring tightens the screws, and the point is that it never stops. The
+ordinary dials - gravity, the quotas, the flood's period - all bottom out
+eventually, and for a while that was the whole story: the foe's rank
+climbed half a rung a ring into a ceiling it hit around ring eight, and
+after that nothing about a climb got harder while the player went on
+collecting a card a node forever. One bag of the right shape ended every
+room past that point. Three things now climb without a ceiling. The
+rank ceiling moved to the top of the actual ladder, and past THAT the
+promotion the climb cannot pay in rungs is paid in steel instead - the
+foe's attack scales by the rungs it was owed and never got. The flood on
+the player's own board gets heavier every ring from the first one. And
+every second ring lays a curse. The climb is always played at white heat
+- one death ends it - so the record is simply the rows climbed, kept as a
+single best on the chapter-select card.
 
 The roguelite is that the build outlives the battle: a won node banks its
 embers into the run and deals **the spoils** on the map - three cards,
@@ -527,8 +571,8 @@ the doors close; and walking past the spoils untaken pays a small
 solace, so skipping is a choice instead of a refusal. A
 stage never drafts mid-game any more; on the Forge Map the board never
 stops. Not every node fights, either: each map scatters **one forge**
-(a free hand, and the melting pot - eight embers unmakes a temper you
-regret) and **one or two events** (a single card of choice, seeded like
+(a free hand, and the melting pot - fourteen embers unmakes a temper you
+regret, forty-five burns off a curse the climb laid) and **one or two events** (a single card of choice, seeded like
 everything else: sell scrap, tithe embers into slag, catch a stray
 spark, quench your last pick) through the middle rows; entering a stop
 spends it, so it can never be farmed. And two stages carry gimmicks the

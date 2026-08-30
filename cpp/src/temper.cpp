@@ -91,25 +91,6 @@ const std::vector<Temper>& pool () {
 			"every clear stirs the hold", Family::Rule, 1},
 		{"linked_chain", "The Linked Chain",
 			"clears cascade, and the pieces stay whole", Family::Rule, 1},
-		// --- Chaos: something the hands trusted, bought and sold. ---------
-		// Each face names the gift and the price in one breath, because a
-		// card that only takes is a card nobody picks - and one that only
-		// gives is not chaos, it is a reward.
-		{"wild_spins", "The Crooked Judge",
-			"wedge it in and it twists - nothing else does",
-			Family::Chaos, 1},
-		{"ring_walls", "The Ring",
-			"the walls open onto each other - the forge spins faster",
-			Family::Chaos, 1},
-		{"crossed_wires", "Crossed Wires",
-			"your hands are not where you left them - but they hit harder",
-			Family::Chaos, 1},
-		{"loose_ratchet", "The Loose Ratchet",
-			"every third turn goes too far - the Flow loves it",
-			Family::Chaos, 1},
-		{"sticky_tongs", "Sticky Tongs",
-			"every fourth hold sticks - the Flow feeds on the fumble",
-			Family::Chaos, 1},
 		// --- Ward: nothing here wins faster; everything here survives. ----
 		// The guard family. Half of it only matters in the rooms that
 		// threaten what it guards, which is the point: a ward is a bet on
@@ -131,8 +112,76 @@ const std::vector<Temper>& pool () {
 	return all;
 }
 
+// The Chaos five, which nobody drafts any more.
+//
+// They were offered as cards for two versions and the answer was the same
+// every time: a hand does not choose to have its keys swapped. A card that
+// takes something away has to be paid for to be picked at all, and paying
+// for it made each one a wash - the gift cancelled the price and the card
+// stopped meaning anything. So the gift is gone and so is the choice. The
+// Endless Climb lays one of these on you every second ring and does not
+// ask, which is what they were always for: a difficulty that keeps
+// climbing after the ladder runs out of rungs.
+//
+// The ids are frozen (a save may carry one from when they were cards), so
+// what changed is the face and the arithmetic, not the key.
+const std::vector<Temper>& curses () {
+	static const std::vector<Temper> laid = {
+		{"wild_spins", "The Crooked Judge",
+			"the judge has stopped listening - no spin scores",
+			Family::Chaos, 1},
+		{"ring_walls", "The Ring",
+			"the walls open onto each other, and the forge spins faster",
+			Family::Chaos, 1},
+		{"crossed_wires", "Crossed Wires",
+			"your hands are not where you left them",
+			Family::Chaos, 1},
+		{"loose_ratchet", "The Loose Ratchet",
+			"every third turn goes one too far",
+			Family::Chaos, 1},
+		{"sticky_tongs", "Sticky Tongs",
+			"every fourth hold sticks",
+			Family::Chaos, 1},
+	};
+	return laid;
+}
+
+// Which curse the climb lays down at the given step, or empty once it has
+// laid them all. The order is the run's own, so two climbs from different
+// seeds meet the same five in a different sequence - and it is a pure
+// function of (seed, step), so a resumed run lays exactly what it laid.
+std::string curse_at (unsigned seed, int step) {
+	const int count = static_cast<int>(curses().size());
+	if (step < 0 || step >= count) {
+		return {};
+	}
+	std::vector<int> order(static_cast<size_t>(count));
+	for (int i = 0; i < count; ++i) {
+		order[static_cast<size_t>(i)] = i;
+	}
+	std::mt19937 rng(seed ^ 0x1b873593u);
+	for (int i = count - 1; i > 0; --i) {
+		const int j = static_cast<int>(rng() % static_cast<unsigned>(i + 1));
+		std::swap(order[static_cast<size_t>(i)], order[static_cast<size_t>(j)]);
+	}
+	return curses()[static_cast<size_t>(order[static_cast<size_t>(step)])].id;
+}
+
+int curses_by (int ring) {
+	return std::clamp(std::max(0, ring) / 2, 0,
+		static_cast<int>(curses().size()));
+}
+
 const Temper* find (const std::string& id) {
 	for (const Temper& entry : pool()) {
+		if (id == entry.id) {
+			return &entry;
+		}
+	}
+	// A curse is not drafted, but it is held: it sits in the same list as
+	// the cards, and every screen that names what a build carries has to
+	// find it here or the build would show a hole where the ring's work is.
+	for (const Temper& entry : curses()) {
 		if (id == entry.id) {
 			return &entry;
 		}
@@ -189,29 +238,25 @@ void apply (SimConfig& rules, const std::string& id) {
 	} else if (id == "turning_rack") {
 		rules.hold_churn = true;
 	} else if (id == "wild_spins") {
-		// The gift and the price are the same switch: every boxed-in lock
-		// scores, and every honest corner-rule spin stops.
+		// It used to say every boxed-in lock scores as a spin, which on a
+		// real stack is most of them - a free back-to-back chain that never
+		// broke, and the single strongest thing in the game. Now the switch
+		// points the other way, which is what the name always described:
+		// the judge has stopped listening, and no spin scores at all.
 		rules.wild_spins = true;
 	} else if (id == "ring_walls") {
-		// The walls open, and the price is paid in gravity - the ring turns
-		// faster the moment it opens. A floor under it so a stack of other
-		// speed-ups can never leave a piece unplayable.
+		// The walls open onto each other and the ring turns faster for it.
+		// A floor under the gravity so a stack of other speed-ups can never
+		// leave a piece unplayable.
 		rules.wrap_walls = true;
 		rules.fall_delay = std::max(6, rules.fall_delay - 6);
 	} else if (id == "crossed_wires") {
-		// The curse itself lives in the GUI's hands (the keys are not the
-		// sim's business); what the sim owns is what it buys.
-		rules.attack_scale += 0.5;
+		// The three below live entirely in the GUI's hands - the keys, the
+		// ratchet and the tongs are not the sim's business - and they buy
+		// nothing here any more. They are curses; a curse that pays for
+		// itself is not one.
 	} else if (id == "loose_ratchet") {
-		// Same shape: the extra turn is the screen's doing, the reward is
-		// here.
-		rules.flow_gain_line += 3.0;
-		rules.flow_gain_attack += 3.0;
 	} else if (id == "sticky_tongs") {
-		// And again: the tongs stick in the screen's hands, the gauge pays
-		// for the fumble here.
-		rules.flow_gain_line += 2.0;
-		rules.flow_gain_attack += 2.0;
 	} else if (id == "deep_bank") {
 		// A gauge that holds more than ignition needs: the overfill rides
 		// out of one burn and into the next, where a build keeps it.
@@ -299,7 +344,7 @@ int heats_done (int lines, int downstack, bool by_digging) {
 }
 
 std::vector<std::string> offer (unsigned seed, int heat,
-		const std::vector<std::string>& taken, unsigned salt, bool chaos) {
+		const std::vector<std::string>& taken, unsigned salt) {
 	// The roll is the run, the heat and the reroll count, and nothing else:
 	// the same run offers the same three cards at the same heat however it
 	// got there, so a replay can say what the choice actually was. Salt
@@ -314,15 +359,10 @@ std::vector<std::string> offer (unsigned seed, int heat,
 		if (held >= entry.stacks) {
 			continue;
 		}
-		// The challenge tier, shut unless the run asked for it.
-		if (entry.family == Family::Chaos && !chaos) {
-			continue;
-		}
 		left.push_back(&entry);
 		weights.push_back(weight_of(entry.family));
 	}
 	std::vector<std::string> cards;
-	bool chaos_dealt = false;
 	while (cards.size() < 3 && !left.empty()) {
 		int total = 0;
 		for (const int weight : weights) {
@@ -336,23 +376,8 @@ std::vector<std::string> offer (unsigned seed, int heat,
 			++at;
 		}
 		cards.emplace_back(left[at]->id);
-		if (left[at]->family == Family::Chaos) {
-			chaos_dealt = true;
-		}
 		left.erase(left.begin() + static_cast<long>(at));
 		weights.erase(weights.begin() + static_cast<long>(at));
-		// One is a decision; two is a hand nobody would keep. Once the
-		// tier has spoken, the rest of the table is ordinary metal - and
-		// the draw goes on from the same roll, so the hand stays the pure
-		// function of (seed, heat, salt) that a replay depends on.
-		if (chaos_dealt) {
-			for (size_t i = left.size(); i-- > 0;) {
-				if (left[i]->family == Family::Chaos) {
-					left.erase(left.begin() + static_cast<long>(i));
-					weights.erase(weights.begin() + static_cast<long>(i));
-				}
-			}
-		}
 	}
 	return cards;
 }
@@ -458,7 +483,14 @@ std::vector<std::string> blade_for (int rank_index) {
 int embers_of (int lines, int attack) {
 	// The same shape as the Flow gains: lines pay, the attack they carried
 	// pays more, and nothing else does - haste alone earns no coin.
-	return std::max(0, lines) * 2 + std::max(0, attack) * 3;
+	//
+	// The rates used to be two and three, and a forty-line room that sent
+	// sixty paid two hundred and sixty against a shop whose whole stock
+	// costs sixty-five. Nothing in the run was ever a decision: you bought
+	// everything and still had change. One and one puts a good room at
+	// roughly one reroll and one pick, which is what the coin was for -
+	// choosing between the extra card and the life, not affording both.
+	return std::max(0, lines) + std::max(0, attack);
 }
 
 } // namespace temper

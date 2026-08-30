@@ -315,6 +315,18 @@ SimConfig endless_scaled (SimConfig config, int ring);
 // ladder's top rung.
 int endless_rank (int rank, int ring);
 
+// The rank the climb owes the foe before the ladder's ceiling is applied.
+int endless_rank_owed (int rank, int ring);
+
+// The foe's extra steel: once endless_rank has nothing left to promote,
+// every further half-rung owed is paid as attack instead. Inert until the
+// ladder is exhausted.
+SimConfig endless_edge (SimConfig foe, int rank, int ring);
+
+// The player's own squeeze: the flood lands heavier every ring. Unbounded,
+// and the one dial that never hits a floor.
+SimConfig endless_press (SimConfig mine, int ring);
+
 // A stage's rules, built in the honest order: the player's base config,
 // then the stage's own overrides, then its pre-applied tempers, then the
 // Anvil - with the fuse forced on, because a stage is a fuse game whatever

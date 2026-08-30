@@ -642,23 +642,53 @@ SimConfig endless_scaled (SimConfig config, int ring) {
 	ring = std::max(0, ring);
 	config.fall_delay = std::max(8, config.fall_delay - 2 * ring);
 	if (config.line_quota > 0) {
-		config.line_quota += 2 * ring;
+		config.line_quota += 3 * ring;
 	}
 	if (config.score_quota > 0) {
-		config.score_quota += config.score_quota * ring / 5;
+		config.score_quota += config.score_quota * ring / 4;
 	}
 	if (config.survive_ms > 0) {
-		config.survive_ms += ring * 10000;
+		config.survive_ms += ring * 12000;
 	}
-	config.cheese_period = std::max(120, config.cheese_period - 20 * ring);
+	config.cheese_period = std::max(60, config.cheese_period - 20 * ring);
 	return config;
 }
 
+// What a rank costs the climb once it runs out of rungs to spend.
+//
+// Half a rung a ring is fine until the promotion hits the top of the
+// ladder, and after that every further ring used to buy nothing at all -
+// the foe stopped growing around ring eight while the player's build went
+// on collecting a card a node forever. So the promotion that cannot be
+// paid in rungs is paid in steel instead: what the foe sends is scaled by
+// the rungs it was owed and never got. Unbounded on purpose. This and the
+// curses are the two dials that still climb when everything else has hit
+// its floor.
+int endless_rank_owed (int rank, int ring) {
+	return std::max(0, rank) + std::max(0, ring) / 2;
+}
+
 int endless_rank (int rank, int ring) {
-	// Half a rank per ring, capped at the ladder's top rung (X sits at
-	// index 7 - bot::ranks() is not included here on purpose, the cap is
-	// part of the climb's contract and pinned in campaigncheck).
-	return std::min(7, std::max(0, rank) + std::max(0, ring) / 2);
+	const int last = static_cast<int>(bot::ranks().size()) - 1;
+	return std::min(last, endless_rank_owed(rank, ring));
+}
+
+SimConfig endless_edge (SimConfig foe, int rank, int ring) {
+	const int last = static_cast<int>(bot::ranks().size()) - 1;
+	const int over = endless_rank_owed(rank, ring) - last;
+	if (over > 0) {
+		foe.attack_scale += 0.12 * over;
+	}
+	return foe;
+}
+
+SimConfig endless_press (SimConfig mine, int ring) {
+	// And the flood on the player's own board gets heavier every ring, from
+	// the first one. A rung of rank is a foe that plays better; this is the
+	// room itself leaning harder, and it is what a build that has outgrown
+	// the ladder still has to hold back.
+	mine.garbage_scale += 0.05 * std::max(0, ring);
+	return mine;
 }
 
 int solo_stars (bool won, double seconds, int par_seconds, int forced,

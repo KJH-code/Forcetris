@@ -629,26 +629,16 @@ void Sim::lock (bool forced, int posdif) {
 		board_, piece_, static_cast<spins::Rule>(config_.spin_rule),
 		rotated_last_, twist_flag_);
 	if (config_.wild_spins) {
-		// The crooked judge throws the rulebook out and looks at one thing:
-		// is the piece boxed in where it stopped? Walls on both flanks and
-		// it is a full spin, whatever the piece is and however it got there
-		// - an O dropped straight into a notch counts. Not the all-spin
-		// rule's own test, which also wants the way up shut: that can only
-		// be reached by turning under an overhang, and a judge this
-		// crooked is not asking anyone to turn anything.
+		// The crooked judge, as a curse: the rulebook is thrown out and
+		// nothing replaces it. No spin scores, however honestly it was
+		// turned - the back-to-back chain a spin build lives on simply
+		// stops arriving, and the board has to be cleared the plain way.
 		//
-		// The judgement REPLACES the honest one rather than joining it, and
-		// that is the price on the card: a T-spin off the corner rule with
-		// room to slide out stops scoring.
-		Piece aside = piece_;
-		aside.x = piece_.x - 1;
-		const bool left_shut = board_.collides(aside);
-		aside.x = piece_.x + 1;
-		const bool right_shut = board_.collides(aside);
-		verdict = left_shut && right_shut
-			? std::optional<spins::Verdict>(
-				spins::Verdict{piece_.form, true})
-			: std::nullopt;
+		// It used to mean the opposite (any boxed-in lock counted as a full
+		// spin), which on a real stack is most locks: an unbreakable chain
+		// and by a distance the strongest effect in the game. The flag's
+		// name always described this reading; only the arithmetic caught up.
+		verdict = std::nullopt;
 	}
 	if (verdict.has_value()) {
 		spin = verdict->full ? attack::SPIN_FULL : attack::SPIN_MINI;

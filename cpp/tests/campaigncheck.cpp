@@ -1134,7 +1134,7 @@ int main () {
 					&& now.score_quota >= before.score_quota
 					&& now.survive_ms >= before.survive_ms
 					&& now.cheese_period <= before.cheese_period
-					&& now.cheese_period >= 120;
+					&& now.cheese_period >= 60;
 				before = now;
 			}
 			SimConfig off;
@@ -1146,17 +1146,65 @@ int main () {
 				monotone
 					&& campaign::endless_scaled(base, 0).fall_delay == 30
 					&& campaign::endless_scaled(base, 1).fall_delay == 28
-					&& campaign::endless_scaled(base, 1).line_quota == 12);
+					&& campaign::endless_scaled(base, 1).line_quota == 13);
 			check("a finish line a stage left off stays off",
 				still.line_quota == 0 && still.score_quota == 0
 					&& still.survive_ms == 0);
 		}
-		check("a duel foe climbs half a rank per ring, capped at the top",
-			campaign::endless_rank(3, 0) == 3
-				&& campaign::endless_rank(3, 2) == 4
-				&& campaign::endless_rank(3, 4) == 5
-				&& campaign::endless_rank(7, 1) == 7
-				&& campaign::endless_rank(3, 40) == 7);
+		// The climb's two unbounded dials, and the seam between them.
+		//
+		// Half a rung a ring, up the WHOLE ladder - it used to stop at
+		// index seven, which with a ten-rung ladder meant the last two
+		// rungs were unreachable and the foe stopped growing around ring
+		// eight while the player went on collecting a card a node. Past
+		// the top the promotion is paid in steel instead, and the flood on
+		// the player's own board gets heavier from the first ring. Between
+		// them nothing about a climb ever stops climbing.
+		{
+			const int last = static_cast<int>(bot::ranks().size()) - 1;
+			check("a duel foe climbs half a rank per ring, up the whole ladder",
+				campaign::endless_rank(3, 0) == 3
+					&& campaign::endless_rank(3, 2) == 4
+					&& campaign::endless_rank(3, 4) == 5
+					&& campaign::endless_rank(7, 1) == 7
+					&& campaign::endless_rank(3, 40) == last
+					&& campaign::endless_rank(3, 14) == last,
+				std::to_string(campaign::endless_rank(3, 40)) + " of "
+					+ std::to_string(last));
+			SimConfig foe;
+			bool inert = true;
+			bool arms = true;
+			double before = campaign::endless_edge(foe, 3, 0).attack_scale;
+			for (int ring = 0; ring <= 40; ++ring) {
+				const double now
+					= campaign::endless_edge(foe, 3, ring).attack_scale;
+				// Inert while there are still rungs to give.
+				if (campaign::endless_rank_owed(3, ring) <= last) {
+					inert = inert && now == foe.attack_scale;
+				}
+				arms = arms && now >= before;
+				before = now;
+			}
+			check("the foe's steel is inert until the ladder runs out",
+				inert);
+			check("and then it only ever grows",
+				arms
+					&& campaign::endless_edge(foe, 3, 40).attack_scale
+						> campaign::endless_edge(foe, 3, 14).attack_scale);
+			SimConfig mine;
+			bool presses = true;
+			double weight = campaign::endless_press(mine, 0).garbage_scale;
+			for (int ring = 1; ring <= 40; ++ring) {
+				const double now
+					= campaign::endless_press(mine, ring).garbage_scale;
+				presses = presses && now > weight;
+				weight = now;
+			}
+			check("and the flood on the player's board never stops rising",
+				presses
+					&& campaign::endless_press(mine, 0).garbage_scale
+						== mine.garbage_scale);
+		}
 
 		// What the smith charges, as the climb goes on. A price at the door
 		// is the door price; every rung after it costs more, and the

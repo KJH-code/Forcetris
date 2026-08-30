@@ -8,6 +8,8 @@
 // after a retune, the handling frame counts either side of one, and a run
 // with a finish line stopping exactly on it.
 #include <cmath>
+#include <map>
+#include <set>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -18,7 +20,6 @@
 #include "forcetris/hiscore.hpp"
 #include "forcetris/replay.hpp"
 #include "forcetris/sim.hpp"
-#include <set>
 
 #include "forcetris/temper.hpp"
 
@@ -492,8 +493,10 @@ int main () {
 	}
 
 	// --- The pool's shape. --------------------------------------------------
-	// Six families, thirty-four cards, and the counts written down here so
-	// that growing one family is a decision rather than an accident.
+	// Five families, twenty-nine cards, and the counts written down here so
+	// that growing one family is a decision rather than an accident. Chaos
+	// is not among them any more: nobody drafts a curse, so the climb lays
+	// them instead and they live in curses(), pinned further down.
 	{
 		std::map<int, int> counted;
 		std::set<std::string> seen;
@@ -512,13 +515,13 @@ int main () {
 				}
 			}
 		}
-		check("the pool is thirty-four cards in six families",
-			temper::pool().size() == 34 && counted.size() == 6,
+		check("the pool is twenty-nine cards in five families",
+			temper::pool().size() == 29 && counted.size() == 5,
 			std::to_string(temper::pool().size()) + " cards, "
 				+ std::to_string(counted.size()) + " families");
-		check("and the families are five, seven, seven, four, five, six",
+		check("and the families are five, seven, seven, four, six",
 			counted[0] == 5 && counted[1] == 7 && counted[2] == 7
-				&& counted[3] == 4 && counted[4] == 5 && counted[5] == 6,
+				&& counted[3] == 4 && counted[4] == 0 && counted[5] == 6,
 			std::to_string(counted[0]) + "/" + std::to_string(counted[1])
 				+ "/" + std::to_string(counted[2]) + "/"
 				+ std::to_string(counted[3]) + "/"
@@ -942,29 +945,28 @@ int main () {
 			+ std::to_string(ward);
 		check("Flow is still the family the forge offers most",
 			flow > fuel && flow > risk && flow > ward, tally);
-		check("and the rule and chaos cards are still the rarest",
-			rule < ward && chaos < ward && rule < risk && chaos < risk,
-			tally);
+		check("and the rule cards are still the rarest",
+			rule < ward && rule < risk && rule < flow, tally);
+		check("and chaos never comes up here at all", chaos == 0, tally);
 		// The ward stands with risk, not with fuel: half its cards are
 		// only worth taking in the rooms that threaten what they guard.
 		check("the wards come up about as often as the risks",
 			ward > risk / 2 && ward < risk * 2, tally);
-		check("and every family comes up at all",
-			seen.size() == 6, std::to_string(seen.size()));
+		check("and every drafted family comes up at all",
+			fuel > 0 && flow > 0 && risk > 0 && rule > 0 && ward > 0,
+			tally);
 	}
 
-	// --- The challenge tier. ------------------------------------------------
-	// The chaos family bends what the hands had learned to trust, so it is
-	// dealt only where the run already asked for the worst of it. The gate
-	// is shut by default, so a screen that forgets to ask never leaks one.
+	// --- The curses. --------------------------------------------------------
+	// The chaos five are not cards. They bend what the hands had learned to
+	// trust, nobody ever picked one, and paying enough to make one worth
+	// picking made it a wash. They are laid by the Endless Climb instead -
+	// so the one thing a draft must never do is deal one.
 	{
 		bool leaked = false;
-		bool seen = false;
-		bool doubled = false;
 		std::string detail;
 		for (unsigned seed = 1; seed <= 900; ++seed) {
 			for (int heat = 0; heat < 12; ++heat) {
-				int open_count = 0;
 				for (const std::string& id
 					: temper::offer(seed * 977u, heat, {})) {
 					const temper::Temper* card = temper::find(id);
@@ -974,62 +976,83 @@ int main () {
 						detail += id + "; ";
 					}
 				}
-				for (const std::string& id
-					: temper::offer(seed * 977u, heat, {}, 0, true)) {
-					const temper::Temper* card = temper::find(id);
-					if (card != nullptr
-						&& card->family == temper::Family::Chaos) {
-						++open_count;
-						seen = true;
-					}
-				}
-				doubled = doubled || open_count > 1;
 			}
 		}
-		check("a closed tier never deals a chaos card", !leaked, detail);
-		check("an open one does", seen);
-		check("and never two of them in one hand", !doubled);
-		// The other five families keep their own shape either way: the
-		// gate removes chaos, it does not re-weight the road.
-		{
-			const auto tally = [] (bool chaos) {
-				std::map<int, int> seen_by;
-				for (unsigned seed = 1; seed <= 300; ++seed) {
-					for (int heat = 0; heat < 8; ++heat) {
-						for (const std::string& id : temper::offer(
-							seed * 977u, heat, {}, 0, chaos)) {
-							const temper::Temper* card = temper::find(id);
-							if (card != nullptr && card->family
-								!= temper::Family::Chaos) {
-								++seen_by[static_cast<int>(card->family)];
-							}
-						}
-					}
+		check("no draft, at any seed or heat, ever deals a curse",
+			!leaked, detail);
+		check("and the pool itself carries none", [] {
+			for (const temper::Temper& entry : temper::pool()) {
+				if (entry.family == temper::Family::Chaos) {
+					return false;
 				}
-				return seen_by;
-			};
-			const std::map<int, int> shut = tally(false);
-			const std::map<int, int> open = tally(true);
-			const auto share = [] (const std::map<int, int>& counts, int at) {
-				int total = 0;
-				for (const auto& [family, seen_of] : counts) {
-					(void)family;
-					total += seen_of;
-				}
-				const auto found = counts.find(at);
-				return total == 0 || found == counts.end() ? 0.
-					: static_cast<double>(found->second) / total;
-			};
-			bool steady = shut.size() == open.size();
-			for (int family = 0; family <= 5; ++family) {
-				if (family == static_cast<int>(temper::Family::Chaos)) {
-					continue;
-				}
-				steady = steady && std::abs(share(shut, family)
-					- share(open, family)) < 0.04;
 			}
-			check("and the other families keep their shape either way",
-				steady);
+			return true;
+		}());
+		// They are still findable, because a run holds them: every screen
+		// that names a build has to be able to name what the ring took.
+		{
+			bool named = true;
+			for (const temper::Temper& entry : temper::curses()) {
+				const temper::Temper* found = temper::find(entry.id);
+				named = named && found != nullptr
+					&& found->family == temper::Family::Chaos;
+			}
+			check("a held curse is still a card the screens can name",
+				named && temper::curses().size() == 5);
+		}
+		// The climb lays them one at a time, in the run's own order, and
+		// never lays the same one twice.
+		{
+			bool ordered = true;
+			bool distinct = true;
+			bool stable = true;
+			for (unsigned seed = 1; seed <= 200; ++seed) {
+				std::set<std::string> laid;
+				for (int step = 0; step < 5; ++step) {
+					const std::string one = temper::curse_at(seed, step);
+					ordered = ordered && !one.empty();
+					distinct = distinct && laid.insert(one).second;
+					stable = stable && temper::curse_at(seed, step) == one;
+				}
+				ordered = ordered && temper::curse_at(seed, 5).empty()
+					&& temper::curse_at(seed, -1).empty();
+			}
+			check("a climb lays all five and then stops", ordered);
+			check("and never the same curse twice", distinct);
+			check("and lays the same ones when the run is resumed", stable);
+		}
+		// Every second ring, and never more than the table holds.
+		{
+			bool climbs = temper::curses_by(0) == 0
+				&& temper::curses_by(1) == 0
+				&& temper::curses_by(2) == 1
+				&& temper::curses_by(4) == 2
+				&& temper::curses_by(10) == 5
+				&& temper::curses_by(-4) == 0;
+			for (int ring = 0; ring < 60; ++ring) {
+				climbs = climbs && temper::curses_by(ring)
+					<= temper::curses_by(ring + 1)
+					&& temper::curses_by(ring)
+						<= static_cast<int>(temper::curses().size());
+			}
+			check("one curse every second ring, capped at the table",
+				climbs);
+		}
+		// And a curse only ever takes. The three that live in the screen's
+		// hands buy nothing in the sim at all.
+		{
+			SimConfig plain;
+			bool free_of_gifts = true;
+			for (const char* id : {"crossed_wires", "loose_ratchet",
+					"sticky_tongs"}) {
+				const SimConfig cursed
+					= temper::tempered(plain, {std::string(id)});
+				free_of_gifts = free_of_gifts
+					&& cursed.attack_scale == plain.attack_scale
+					&& cursed.flow_gain_line == plain.flow_gain_line
+					&& cursed.flow_gain_attack == plain.flow_gain_attack;
+			}
+			check("a curse pays for nothing", free_of_gifts);
 		}
 	}
 
@@ -1037,10 +1060,19 @@ int main () {
 	{
 		check("embers pay on lines and attack, and on nothing else",
 			temper::embers_of(0, 0) == 0
-				&& temper::embers_of(10, 0) == 20
-				&& temper::embers_of(0, 10) == 30
-				&& temper::embers_of(4, 6) == 26
+				&& temper::embers_of(10, 0) == 10
+				&& temper::embers_of(0, 10) == 10
+				&& temper::embers_of(4, 6) == 10
 				&& temper::embers_of(-3, -3) == 0);
+		// A good room pays for one decision, not for the whole shop. The
+		// forty-line, sixty-attack room that used to bank 260 against a
+		// sixty-five ember stock now banks 100, so the reroll and the
+		// extra pick and the life are three things you choose between.
+		check("a strong room no longer buys everything on the table",
+			temper::embers_of(40, 60)
+				< temper::kRerollCost + temper::kExtraPickCost
+					+ temper::kRemoveCost + temper::kDuplicateCost
+					+ temper::kLifeCost + temper::kExtraPickCost);
 		check("a reroll is cheaper than a second card",
 			temper::kRerollCost > 0
 				&& temper::kExtraPickCost > temper::kRerollCost);
