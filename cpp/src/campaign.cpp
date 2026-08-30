@@ -6,6 +6,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "forcetris/bot.hpp"
 #include "forcetris/temper.hpp"
 
 namespace forcetris {
@@ -366,12 +367,23 @@ int slag_percent (int difficulty) {
 }
 
 int rank_for (int rank, int difficulty) {
-	// One rung either side of the recipe, and never off the ladder. A rung
-	// is a real step - the bot thinks wider and drops faster with each -
-	// so this is felt without any recipe being rewritten, and the recipe
-	// stays the honest middle it was balanced as.
-	const int shift = difficulty == kWhite ? 1 : difficulty == kMild ? -1 : 0;
-	return std::clamp(rank + shift, 0, 7);
+	// Forged is the recipe as written - the honest middle it was balanced
+	// as - and white is one rung above it. A rung is a real step: the bot
+	// thinks wider and drops faster with each, so both are felt without a
+	// recipe being rewritten.
+	//
+	// Mild is not one rung below. It used to be, and one rung below a
+	// ladder that climbs to SS still ended the road on S, which is a fight
+	// nobody learning the game can win. The gentlest fire is for someone
+	// whose own play is around the bottom of the league, so it drops two
+	// rungs AND refuses to go above B however high the recipe climbs. That
+	// puts every mild duel in the F-to-B band and the last boss of the road
+	// at B - a hard fight for a beginner, and a possible one.
+	const int last = static_cast<int>(bot::ranks().size()) - 1;
+	if (difficulty == kMild) {
+		return std::clamp(std::min(rank - 2, kMildCeiling), 0, last);
+	}
+	return std::clamp(rank + (difficulty == kWhite ? 1 : 0), 0, last);
 }
 
 const char* difficulty_name (int difficulty) {

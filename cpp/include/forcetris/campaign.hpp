@@ -172,6 +172,11 @@ std::vector<MapNode> build_map (int chapter, unsigned seed);
 constexpr int kMild = 0;    // Death re-offers the same node.
 constexpr int kForged = 1;  // Death spends a life; none left ends the run.
 constexpr int kWhite = 2;   // Death ends the run outright.
+
+// The highest rung the gentlest fire will ever field, whatever the recipe
+// asks for: B, the top of the band a learning player actually lives in.
+// Without it, two rungs off chapter three's SS bosses still lands on A.
+constexpr int kMildCeiling = 4;
 constexpr int kForgedLives = 3;
 struct Run {
 	bool active = false;

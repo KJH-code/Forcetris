@@ -435,7 +435,12 @@ std::vector<std::string> blade_for (int rank_index) {
 	// same rank should be the same fight, and the escalation is the point -
 	// each rung keeps what the one below carried and adds an edge. Never
 	// collapse; the planner searches naive clears.
+	// The three bottom rungs share one card on purpose: below the league a
+	// foe should differ in hands, not in build. A beginner's opponent
+	// carrying its own escalating deck is the opposite of the point.
 	static const std::vector<std::vector<std::string>> blades = {
+		{"thick_wick"},                                          // F
+		{"thick_wick"},                                          // E
 		{"thick_wick"},                                          // D
 		{"thick_wick", "quench"},                                // C
 		{"thick_wick", "quench", "bellows"},                     // B

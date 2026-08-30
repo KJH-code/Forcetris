@@ -119,6 +119,7 @@ Config load_config (const std::string& path) {
 	// them forever. So a file starts at revision zero and is brought forward
 	// below unless it says otherwise.
 	config.handling_rev = 0;
+	config.ladder_rev = 0;
 	// A file exists, so its stat lines are the whole layout: the preset's is
 	// only the starting point for a config that has never been saved.
 	bool saw_stat = false;
@@ -141,6 +142,7 @@ Config load_config (const std::string& path) {
 		else if (key == "finesse") in >> config.finesse_rule;
 		else if (key == "cleardelay") { int flag = 1; in >> flag; config.clear_delay = flag != 0; }
 		else if (key == "handlingrev") in >> config.handling_rev;
+		else if (key == "ladderrev") in >> config.ladder_rev;
 		else if (key == "shake") { int flag = 1; in >> flag; config.shake = flag != 0; }
 		else if (key == "lowlatency") { int flag = 1; in >> flag; config.lowlatency = flag != 0; }
 		else if (key == "smooth") { int flag = 1; in >> flag; config.smooth = flag != 0; }
@@ -213,6 +215,14 @@ Config load_config (const std::string& path) {
 		}
 		config.handling_rev = kHandlingRev;
 	}
+	// The ladder grew two rungs at the bottom, so every index above them
+	// moved up by two. A file from before that remembers its duel opponent
+	// by a number, and that number now names a foe two rungs gentler than
+	// the one the player picked - so carry the pick, not the index.
+	if (config.ladder_rev < kLadderRev) {
+		config.bot_rank += 2;
+		config.ladder_rev = kLadderRev;
+	}
 	// A hand-edited or damaged file must not smuggle values the sliders
 	// cannot reach - the sim divides gravity by sdf, and the Python side
 	// clamps its own file the same way on load.
@@ -247,6 +257,7 @@ bool save_config (const Config& config, const std::string& path) {
 	out << "finesse " << config.finesse_rule << "\n";
 	out << "cleardelay " << (config.clear_delay ? 1 : 0) << "\n";
 	out << "handlingrev " << config.handling_rev << "\n";
+	out << "ladderrev " << config.ladder_rev << "\n";
 	out << "shake " << (config.shake ? 1 : 0) << "\n";
 	out << "lowlatency " << (config.lowlatency ? 1 : 0) << "\n";
 	out << "smooth " << (config.smooth ? 1 : 0) << "\n";

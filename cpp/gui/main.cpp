@@ -6203,7 +6203,7 @@ void draw_menus (App& app) {
 				app.mode_popup = 1;
 			}
 			if (card_button(app, "em_duel", "Duel",
-				"The bot, rank D through X, own blade.",
+				"The bot, rank F through X, own blade.",
 				card_wide, card_tall)) {
 				app.mode_popup = 2;
 			}

@@ -523,15 +523,18 @@ panel counts what is left to dig, or what has risen. Cheese games are
 recorded and analysed like any other, but stay off the high score file.
 
 And there is someone to play against: a versus mode, first to one, two or
-three rounds, against a bot picked by TETR.IO rank - D through X, each
-paced to that rank's real league speed, blundering as often as its rank
-would, and gated to its rank's technique: the low ranks hard-drop, tucks
+three rounds, against a bot picked by rank - F through X, each paced to
+that rank's real league speed, blundering as often as its rank would, and
+gated to its rank's technique: the low ranks hard-drop, tucks
 arrive around B, quad-well building around A, spins and T-slot keeping
 around S with one piece of lookahead - and from SS up the planning
 changes kind: a deterministic beam search, full reachability at every
 ply of the real preview queue with the hold weighed at every step, so a
 spin set up now and hit two pieces later is seen and chosen, which no
-hard-drop lookahead can do. The bot is our own, written referencing the
+hard-drop lookahead can do. F and E sit below the league on purpose: D is
+a real TL average, and a real TL average already out-paces someone who met
+the game this week, which left the gentlest fire with no foe a beginner
+could beat. The bot is our own, written referencing the
 published techniques of the well-known bots (MisaMino, ColdClear, and
 the beam-search shape of the modern engines): a full-reachability search
 - taps, sonic drops, and rotations through the game's own kick tables,

@@ -96,7 +96,7 @@ const std::vector<Stage>& stages () {
 		// the bot thinks, so the ladder is the whole difficulty curve -
 		// and the fire picked at the door moves the lot one more rung
 		// either way (campaign::rank_for).
-		s.mode = 5; s.rank = 1; s.first_to = 1;
+		s.mode = 5; s.rank = 3; s.first_to = 1;
 		s.slag_first = 24; s.slag_repeat = 5;
 		list.push_back(s);
 
@@ -167,7 +167,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c1m1"; s.name = "The Underwarden";
 		s.blurb = "The keeper's apprentice bars the short way up. A duel.";
-		s.mode = 5; s.rank = 2; s.first_to = 1;
+		s.mode = 5; s.rank = 4; s.first_to = 1;
 		s.role = kMiniboss; s.pair = 0;
 		s.slag_first = 30; s.slag_repeat = 6;
 		list.push_back(s);
@@ -175,7 +175,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c1s8"; s.name = "The Gatekeeper";
 		s.blurb = "The yard's keeper, and its blade. Beat it out.";
-		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.mode = 5; s.rank = 5; s.first_to = 1;
 		s.role = kBoss; s.pair = 0;
 		s.slag_first = 40; s.slag_repeat = 8;
 		list.push_back(s);
@@ -187,7 +187,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c1m2"; s.name = "The Slag Fist";
 		s.blurb = "No tricks in this one. It hits, and it keeps hitting.";
-		s.mode = 5; s.rank = 2; s.first_to = 1;
+		s.mode = 5; s.rank = 4; s.first_to = 1;
 		s.role = kMiniboss; s.pair = 1;
 		s.blade = "thick_wick,quench,bellows,spark";
 		s.slag_first = 30; s.slag_repeat = 6;
@@ -197,7 +197,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c1b2"; s.name = "The Anvil-Breaker";
 		s.blurb = "It breaks anvils for a living. It will not out-think you -"
 			" it has never needed to.";
-		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.mode = 5; s.rank = 5; s.first_to = 1;
 		s.role = kBoss; s.pair = 1;
 		s.blade = "thick_wick,quench,bellows,spark,white_heat";
 		s.slag_first = 40; s.slag_repeat = 8;
@@ -208,7 +208,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c1m3"; s.name = "The Lamplighter";
 		s.blurb = "It fights by what it takes away. Watch the warnings.";
-		s.mode = 5; s.rank = 2; s.first_to = 1;
+		s.mode = 5; s.rank = 4; s.first_to = 1;
 		s.role = kMiniboss; s.pair = 2;
 		s.blade = "thick_wick,quench";
 		s.slag_first = 30; s.slag_repeat = 6;
@@ -217,7 +217,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c1b3"; s.name = "The Rust Weaver";
 		s.blurb = "Lighter than the keeper, and it never once stops meddling.";
-		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.mode = 5; s.rank = 5; s.first_to = 1;
 		s.role = kBoss; s.pair = 2;
 		s.blade = "thick_wick,quench,bellows";
 		s.slag_first = 40; s.slag_repeat = 8;
@@ -245,7 +245,7 @@ const std::vector<Stage>& stages () {
 		// Chapter two opens a rung under the Gatekeeper it just beat.
 		s.id = "c2k1"; s.name = "Ash Hound";
 		s.blurb = "Something fast hunts the lower halls. A skirmish.";
-		s.mode = 5; s.rank = 2; s.first_to = 1;
+		s.mode = 5; s.rank = 4; s.first_to = 1;
 		s.slag_first = 28; s.slag_repeat = 6;
 		list.push_back(s);
 
@@ -313,7 +313,7 @@ const std::vector<Stage>& stages () {
 		// A gauntlet is priced by the whole run of it, not by one foe: three
 		// fights with no second chance, so every hound stands a rung under
 		// the chapter's own ladder.
-		s.mode = 5; s.rank = 1; s.first_to = 3;
+		s.mode = 5; s.rank = 3; s.first_to = 3;
 		s.raid = "1,2,2";
 		s.slag_first = 36; s.slag_repeat = 8;
 		list.push_back(s);
@@ -343,7 +343,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c2m1"; s.name = "The Quenchguard";
 		s.blurb = "The master's second, cold and quick. A duel.";
-		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.mode = 5; s.rank = 5; s.first_to = 1;
 		s.role = kMiniboss; s.pair = 0;
 		s.slag_first = 45; s.slag_repeat = 9;
 		list.push_back(s);
@@ -351,7 +351,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c2s8"; s.name = "The Forgemaster";
 		s.blurb = "Two falls against the master and the master's blade.";
-		s.mode = 5; s.rank = 4; s.first_to = 2;
+		s.mode = 5; s.rank = 6; s.first_to = 2;
 		s.role = kBoss; s.pair = 0;
 		s.blade = "bellows,white_heat,overheat,gamble";
 		s.slag_first = 60; s.slag_repeat = 12;
@@ -361,7 +361,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c2m2"; s.name = "The Drop Hammer";
 		s.blurb = "Nothing clever down here. Everything heavy.";
-		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.mode = 5; s.rank = 5; s.first_to = 1;
 		s.role = kMiniboss; s.pair = 1;
 		s.blade = "thick_wick,quench,bellows,spark,white_heat";
 		s.slag_first = 45; s.slag_repeat = 9;
@@ -370,7 +370,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c2b2"; s.name = "The Deep Kiln";
 		s.blurb = "It seals nothing and freezes nothing. It simply out-burns you.";
-		s.mode = 5; s.rank = 4; s.first_to = 2;
+		s.mode = 5; s.rank = 6; s.first_to = 2;
 		s.role = kBoss; s.pair = 1;
 		s.blade = "bellows,white_heat,overheat,gamble,heavy_hand";
 		s.slag_first = 60; s.slag_repeat = 12;
@@ -380,7 +380,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c2m3"; s.name = "The Frost Cantor";
 		s.blurb = "It sings the cold down on you, and hits like nothing at all.";
-		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.mode = 5; s.rank = 5; s.first_to = 1;
 		s.role = kMiniboss; s.pair = 2;
 		s.blade = "thick_wick,quench,bellows";
 		s.slag_first = 45; s.slag_repeat = 9;
@@ -389,7 +389,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c2b3"; s.name = "The Quench Choir";
 		s.blurb = "Three voices, none of them heavy. All of them cold.";
-		s.mode = 5; s.rank = 4; s.first_to = 2;
+		s.mode = 5; s.rank = 6; s.first_to = 2;
 		s.role = kBoss; s.pair = 2;
 		s.blade = "bellows,white_heat,overheat";
 		s.slag_first = 60; s.slag_repeat = 12;
@@ -421,7 +421,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c3k1"; s.name = "Cinder Wolf";
 		s.blurb = "Something old hunts the antechamber. A skirmish.";
-		s.mode = 5; s.rank = 3; s.first_to = 1;
+		s.mode = 5; s.rank = 5; s.first_to = 1;
 		s.slag_first = 44; s.slag_repeat = 9;
 		list.push_back(s);
 
@@ -468,7 +468,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c3r1"; s.name = "The Pack";
 		s.blurb = "Three of the forge's own, loose and hungry. Down them"
 			" all.";
-		s.mode = 5; s.rank = 2; s.first_to = 3;
+		s.mode = 5; s.rank = 4; s.first_to = 3;
 		s.raid = "2,3,3";
 		s.slag_first = 58; s.slag_repeat = 12;
 		list.push_back(s);
@@ -495,7 +495,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c3m1"; s.name = "The Vault Warden";
 		s.blurb = "The heart's last door, and the warden who seals it."
 			" A duel.";
-		s.mode = 5; s.rank = 4; s.first_to = 1;
+		s.mode = 5; s.rank = 6; s.first_to = 1;
 		s.role = kMiniboss; s.pair = 0;
 		s.slag_first = 60; s.slag_repeat = 12;
 		list.push_back(s);
@@ -504,7 +504,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c3s9"; s.name = "The Forge Heart";
 		s.blurb = "Two falls against the fire itself. Everything it ever"
 			" taught you, turned to kill you.";
-		s.mode = 5; s.rank = 5; s.first_to = 2;
+		s.mode = 5; s.rank = 7; s.first_to = 2;
 		s.role = kBoss; s.pair = 0;
 		s.blade = "white_heat,white_heat,overheat,gamble,heavy_hand,"
 			"loaded_dice";
@@ -515,7 +515,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c3m2"; s.name = "The White Weight";
 		s.blurb = "It has no tricks left. It gave them up for mass.";
-		s.mode = 5; s.rank = 4; s.first_to = 1;
+		s.mode = 5; s.rank = 6; s.first_to = 1;
 		s.role = kMiniboss; s.pair = 1;
 		s.blade = "quench,bellows,spark,white_heat,every_twist";
 		s.slag_first = 60; s.slag_repeat = 12;
@@ -525,7 +525,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c3b2"; s.name = "The Bellows Titan";
 		s.blurb = "No warnings. No windows. The heaviest blade the forge has"
 			" ever hung on anything.";
-		s.mode = 5; s.rank = 5; s.first_to = 2;
+		s.mode = 5; s.rank = 7; s.first_to = 2;
 		s.role = kBoss; s.pair = 1;
 		s.blade = "bellows,white_heat,white_heat,overheat,gamble,heavy_hand,loaded_dice";
 		s.slag_first = 70; s.slag_repeat = 14;
@@ -535,7 +535,7 @@ const std::vector<Stage>& stages () {
 		s = Stage{};
 		s.id = "c3m3"; s.name = "The Ember Sophist";
 		s.blurb = "It would rather argue than swing. It is very good at arguing.";
-		s.mode = 5; s.rank = 4; s.first_to = 1;
+		s.mode = 5; s.rank = 6; s.first_to = 1;
 		s.role = kMiniboss; s.pair = 2;
 		s.blade = "quench,bellows,spark";
 		s.slag_first = 60; s.slag_repeat = 12;
@@ -545,7 +545,7 @@ const std::vector<Stage>& stages () {
 		s.id = "c3b3"; s.name = "The Chorus of Coals";
 		s.blurb = "Lighter steel than the Heart, and every trick it ever learned,"
 			" all at once.";
-		s.mode = 5; s.rank = 5; s.first_to = 2;
+		s.mode = 5; s.rank = 7; s.first_to = 2;
 		s.role = kBoss; s.pair = 2;
 		s.blade = "white_heat,overheat,gamble,heavy_hand,loaded_dice";
 		s.slag_first = 70; s.slag_repeat = 14;

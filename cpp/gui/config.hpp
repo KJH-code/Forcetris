@@ -44,6 +44,10 @@ std::map<std::string, std::vector<int>> default_keys ();
 // and stamped - see load_config. Rev 2 is the TETR.IO-defaults retune.
 constexpr int kHandlingRev = 2;
 
+// The bot ladder's revision. Rev 1 added two rungs below D, so every index
+// moved up by two and a remembered pick has to move with them.
+constexpr int kLadderRev = 1;
+
 // The three handling sets the settings screen offers. Named rather than typed
 // in twice, so no set's numbers are ever lost and each is one click away.
 enum class Handling {
@@ -75,6 +79,10 @@ struct Config {
 	// Which shipped handling this file has seen, so a retune reaches a config
 	// that already exists instead of only a fresh one.
 	int handling_rev = kHandlingRev;
+	// The ladder's own revision. Rev 1 is the day two rungs were added
+	// below D, which shifted every index by two: a file written before it
+	// remembers a rank by a number that now names a gentler foe.
+	int ladder_rev = kLadderRev;
 	// The board's shudder on quads, spins and Overdrive. Purely cosmetic.
 	bool shake = true;
 	// Uncapped rendering: vsync off, the loop paced by a millisecond nap.
@@ -92,7 +100,7 @@ struct Config {
 	int cheese_period = 250;     // Survival's frames per rising row.
 	int cheese_holes = 1;        // Holes per cheese row.
 	int cheese_messiness = 100;  // Percent chance a row re-rolls its holes.
-	int bot_rank = 4;            // Index into bot::ranks(); 4 is S.
+	int bot_rank = 6;            // Index into bot::ranks(); 6 is S.
 	int first_to = 1;            // Rounds a versus match is played to.
 
 	// Volumes, as fractions, matching the Python game's defaults.

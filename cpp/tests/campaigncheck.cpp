@@ -1299,21 +1299,67 @@ int main () {
 			campaign::slag_percent(campaign::kMild) == 100
 				&& campaign::slag_percent(campaign::kForged) == 150
 				&& campaign::slag_percent(campaign::kWhite) == 200);
-		// And so does the foe: the fire moves every duel rank a rung, the
-		// recipe's own number being what forged fights.
-		check("the fire moves the foe a rung either way",
-			campaign::rank_for(4, campaign::kMild) == 3
-				&& campaign::rank_for(4, campaign::kForged) == 4
-				&& campaign::rank_for(4, campaign::kWhite) == 5);
+		// And so does the foe. Forged fights the recipe's own number and
+		// white is one rung up; mild is two rungs down and capped, which
+		// is a different rule and needs its own pin.
+		const int last = static_cast<int>(bot::ranks().size()) - 1;
+		check("forged is the recipe and white is a rung above it",
+			campaign::rank_for(6, campaign::kForged) == 6
+				&& campaign::rank_for(6, campaign::kWhite) == 7);
+		check("the gentlest fire drops two rungs",
+			campaign::rank_for(6, campaign::kMild) == 4
+				&& campaign::rank_for(5, campaign::kMild) == 3
+				&& campaign::rank_for(3, campaign::kMild) == 1);
+		// The ceiling is the whole point of the arc: two rungs off chapter
+		// three's SS bosses is still A, and A is not a fight a player who
+		// picked the gentlest fire can win. Nothing on mild goes above B.
+		{
+			bool capped = true;
+			for (int rank = 0; rank <= last; ++rank) {
+				capped = capped && campaign::rank_for(rank, campaign::kMild)
+					<= campaign::kMildCeiling;
+			}
+			check("and never fields worse than B, whatever the recipe asks",
+				capped && campaign::rank_for(last, campaign::kMild)
+					== campaign::kMildCeiling);
+		}
+		// The shipped road, walked: what a beginner who picks the gentlest
+		// fire is actually handed, stage by stage. This is the pin that
+		// would have caught the road ending on S at the easiest setting.
+		{
+			int worst = -1;
+			int first = -1;
+			for (const campaign::Stage& stage : campaign::stages()) {
+				if (stage.mode != 5) {
+					continue;
+				}
+				const int fielded = campaign::rank_for(stage.rank,
+					campaign::kMild);
+				worst = std::max(worst, fielded);
+				if (first < 0) {
+					first = fielded;
+				}
+			}
+			check("no duel on the gentlest fire climbs past B",
+				worst >= 0 && worst <= campaign::kMildCeiling,
+				worst >= 0 ? bot::ranks()[static_cast<size_t>(worst)].name
+					: "no duels");
+			// And the road opens below the league, not at it - a real TL
+			// average out-paces someone meeting the game this week.
+			check("and the road opens below the league",
+				first >= 0 && first < 2,
+				first >= 0 ? bot::ranks()[static_cast<size_t>(first)].name
+					: "no duels");
+		}
 		check("and never off the ladder",
 			campaign::rank_for(0, campaign::kMild) == 0
-				&& campaign::rank_for(7, campaign::kWhite) == 7
+				&& campaign::rank_for(last, campaign::kWhite) == last
 				&& campaign::rank_for(-3, campaign::kMild) == 0
-				&& campaign::rank_for(99, campaign::kWhite) == 7);
+				&& campaign::rank_for(99, campaign::kWhite) == last);
 		// Monotone in the fire: a hotter run never fields an easier foe.
 		{
 			bool climbs = true;
-			for (int rank = 0; rank <= 7; ++rank) {
+			for (int rank = 0; rank <= last; ++rank) {
 				climbs = climbs
 					&& campaign::rank_for(rank, campaign::kMild)
 						<= campaign::rank_for(rank, campaign::kForged)

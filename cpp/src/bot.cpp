@@ -823,9 +823,19 @@ std::vector<Plan> plan (const Board& board, const Piece& piece,
 }
 
 const std::vector<Rank>& ranks () {
-	// Real Tetra League averages per rank; the upper half plays the way the
-	// upper half actually plays.
+	// Real Tetra League averages per rank from D up; the upper half plays
+	// the way the upper half actually plays.
+	//
+	// F and E are below the league. D is a real TL average and a real TL
+	// average is already someone who plays tetris - it out-paces a person
+	// meeting the game this week, which left the gentlest fire with no foe
+	// a beginner could actually beat. These two are that foe: slow hands
+	// above all, because blunder only demotes the bot to its second-best
+	// placement and a second-best placement still stacks fine. Pace is the
+	// lever that decides whether a new player gets to finish a thought.
 	static const std::vector<Rank> table = {
+		{"F", 0.45, 0.44, 1, false, false, false},
+		{"E", 0.58, 0.34, 1, false, false, false},
 		{"D", 0.71, 0.25, 1, false, false, false},
 		{"C", 0.88, 0.18, 1, false, false, false},
 		{"B", 1.06, 0.12, 1, true, false, false},
