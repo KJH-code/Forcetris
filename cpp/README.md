@@ -141,6 +141,39 @@ leaning as they climb the margins either side of the board, smoke
 drifting through them, and embers rising past - all of it brightening
 as the Flow gauge fills and blazing in Overdrive.
 
+Every event on the board has its own shape, which took a rewrite to be
+true. For a long time eleven different cues all called the same spark
+burst and varied only its colour and count, so a t-spin, a quad and a
+cascade were the same puff of dust in three tints - the game looked
+uniform because it was. There are four primitives now. A **spark** is the
+soft round glow, still the workhorse. A **shard** is angular: a quad
+drawn as two triangles so it keeps a hard edge at any angle, spinning
+under twice a spark's gravity, which reads as something solid coming
+apart. A **ring** expands and thins as it goes, so it is a wave and not
+a circle sitting still. A **beam** is a column of the well going bright,
+narrowing to a seam as it cools.
+
+They are handed out by what happened. A single line clear stays quiet -
+it is the game's heartbeat and a field that erupts on every one of them
+is exhausting - while two lines start throwing debris and a quad throws
+gold off every cell of all four rows and punches a beam down the well.
+A t-spin opens a ring at the piece and throws its fragments along the
+circle rather than out of it, so the turn is visible in the debris. A
+perfect clear whites out the whole well and sends a wave from its
+middle. Garbage rising kicks dust up off the floor, scaled to how many
+rows came.
+
+And ice breaks like ice. Cold Iron freezes a row solid and the row has
+to be cleared twice, but the sim only announces the freeze - the shatter
+arrives as an ordinary clear, which is exactly what it used to look
+like. The screen keeps last frame's copy of the frozen-row mask and
+watches for a row that stopped being iron: pale shards off all ten
+cells, a white crack the full width of the row that thins to nothing
+(not the burn's spreading glow - ice is already broken along its whole
+length), and a short jolt that snaps rather than rumbles. Nothing in the
+graded engine changed to get any of this; the mask, the pending-garbage
+count and the locked piece are all public, and the screen reads them.
+
 There are two hand-built sprites and no image files. The first is a soft
 falloff, which every glow in the game is a stamp of, so the light is
 smooth instead of banding into rectangles. The second is fire, and it is

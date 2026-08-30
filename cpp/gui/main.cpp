@@ -527,6 +527,45 @@ struct App {
 	};
 	std::array<Spark, 256> sparks{};
 	size_t spark_at = 0;
+	// Shards: the other half of the vocabulary. A spark is a soft round
+	// glow and everything in the game was made of them - a tetris, a spin
+	// and a shattering row all read as the same puff of coloured dust in
+	// three different colours. A shard is angular, it spins, and it falls
+	// hard, which is what breaking looks like and what burning does not.
+	struct Shard {
+		float x = 0.f, y = 0.f, vx = 0.f, vy = 0.f;
+		float turn = 0.f, spin = 0.f, size = 4.f;
+		int life = 0;
+		SDL_Color color{255, 255, 255, 255};
+	};
+	std::array<Shard, 192> shards{};
+	size_t shard_at = 0;
+	// Rings: an expanding circle from a point. A spin is a rotation and a
+	// perfect clear is a wave, and neither of them is dust.
+	struct Ring {
+		float x = 0.f, y = 0.f, span = 0.f;
+		int life = 0, born = 1;
+		SDL_Color color{255, 255, 255, 255};
+	};
+	std::array<Ring, 12> rings{};
+	size_t ring_at = 0;
+	// A column of the well going bright: the shape a quad takes, so four
+	// rows read as the well itself being punched through rather than as
+	// more of the dust every single clear already throws.
+	struct Beam {
+		int left = 0, wide = 0, top = 0, tall = 0;
+		int life = 0, born = 1;
+		SDL_Color color{255, 255, 255, 255};
+	};
+	std::array<Beam, 4> beams{};
+	size_t beam_at = 0;
+	// Last frame's queued garbage, so the frame it rises can be caught.
+	int was_pending = 0;
+	// Which rows were frozen last frame, so the frame a row stops being
+	// iron can be caught and shattered. Read from the board rather than
+	// asked of the sim: the graded engine says nothing about this and does
+	// not need to.
+	std::array<bool, kHeight> was_iron{};
 	long shake_until = -1;
 	// The lock pulse: the piece that just landed flashes for a beat, so
 	// every placement has weight even when nothing clears.
@@ -565,6 +604,9 @@ struct App {
 	struct BurnRow {
 		int row = 0;
 		int life = 0;
+		// A row that shattered rather than burned: drawn cold and white
+		// instead of white-hot, because ice is not fire.
+		bool cold = false;
 	};
 	std::array<BurnRow, 8> burn_rows{};
 	size_t burn_at = 0;
@@ -699,8 +741,21 @@ void reset_effects (App& app) {
 	app.burn_seen_lock = -1;
 	app.was_overdrive = false;
 	app.was_pressured = false;
+	// The watchers start from a clean slate, or the first frame of a new
+	// board reads last game's leftovers as a shatter and a flood.
+	app.was_iron.fill(false);
+	app.was_pending = 0;
 	for (App::Spark& spark : app.sparks) {
 		spark.life = 0;
+	}
+	for (App::Shard& shard : app.shards) {
+		shard.life = 0;
+	}
+	for (App::Ring& ring : app.rings) {
+		ring.life = 0;
+	}
+	for (App::Beam& beam : app.beams) {
+		beam.life = 0;
 	}
 	for (App::Streak& streak : app.streaks) {
 		streak.at = -1.f;
@@ -2153,6 +2208,16 @@ void handle_event (App& app, const SDL_Event& event) {
 
 void spawn_sparks_at (App& app, float x, float y, SDL_Color color, int count,
 	float kick);
+// The rest of the effect vocabulary, declared here because the cues below
+// reach for it before the drawing half of the file defines it.
+void spawn_shards (App& app, float x, float y, SDL_Color color, int count,
+	float kick, float size);
+void spawn_swirl (App& app, float x, float y, SDL_Color color, int count,
+	float reach, float kick, float size);
+void spawn_ring (App& app, float x, float y, SDL_Color color, float span,
+	int life);
+void spawn_beam (App& app, int left, int wide, int top, int tall,
+	SDL_Color color, int life);
 
 // The soft sprite: white, fading to nothing at the rim, built by hand so
 // the repository carries no image files.
@@ -3255,6 +3320,29 @@ void spawn_sparks (App& app, SDL_Color color, int per_cell, float kick) {
 	}
 }
 
+// Where the last locked piece sat, in pixels. Left alone if nothing has
+// locked yet, so the caller's fallback stands.
+void lock_centre (App& app, float& x, float& y) {
+	if (!app.session.has_value() || app.session->sim().locked().empty()) {
+		return;
+	}
+	const Locked& lock = app.session->sim().locked().back();
+	const Piece piece{lock.form, lock.state, lock.x, lock.y};
+	float sx = 0.f;
+	float sy = 0.f;
+	int n = 0;
+	for (const Offset cell : cells_of(piece)) {
+		sx += cell.x + 0.5f;
+		sy += cell.y + 0.5f;
+		++n;
+	}
+	if (n == 0) {
+		return;
+	}
+	x = kBoardX + sx / n * kCell;
+	y = kBoardY + sy / n * kCell;
+}
+
 // Remember the just-locked piece for the pulse the board draws over it.
 void note_lock (App& app) {
 	if (!app.session.has_value() || app.session->sim().locked().empty()) {
@@ -3287,12 +3375,33 @@ void juice_cue (App& app, const std::string& cue) {
 		app.shake_until = std::max(app.shake_until,
 			app.session->sim().frame() + 2);
 	} else if (cue == "tetris") {
-		spawn_sparks(app, {255, 214, 94, 255}, 6, 3.2f);
+		// The rows themselves are broken by light_burn_rows, which knows
+		// which four they were. What belongs here is the well: a quad
+		// punches a hole clean through it, so the column goes bright.
+		const int shaft = static_cast<int>(kBoardW * 0.55f);
+		spawn_beam(app, kBoardX + (kBoardW - shaft) / 2, shaft, kBoardY,
+			kBoardH, {255, 214, 94, 255}, 14);
 		app.shake_until = app.session->sim().frame() + 8;
 	} else if (cue == "tspin") {
-		spawn_sparks(app, {200, 130, 255, 255}, 5, 2.8f);
+		// A turn, drawn as one: a ring opening off the piece and its
+		// fragments leaving along the circle rather than away from it.
+		float cx = kBoardX + kBoardW * 0.5f;
+		float cy = kBoardY + kBoardH * 0.5f;
+		lock_centre(app, cx, cy);
+		spawn_ring(app, cx, cy, {200, 130, 255, 255},
+			static_cast<float>(kCell) * 4.5f, 20);
+		spawn_swirl(app, cx, cy, {222, 174, 255, 255}, 12,
+			static_cast<float>(kCell) * 0.9f, 3.2f,
+			static_cast<float>(kCell) * 0.26f);
 		app.shake_until = app.session->sim().frame() + 6;
 	} else if (cue == "perfect") {
+		// Nothing left standing: the whole well goes white and a wave
+		// runs out of its middle. The rarest event on the board gets the
+		// only effect that touches every pixel of it.
+		spawn_beam(app, kBoardX, kBoardW, kBoardY, kBoardH,
+			{255, 255, 255, 255}, 18);
+		spawn_ring(app, kBoardX + kBoardW * 0.5f, kBoardY + kBoardH * 0.5f,
+			{255, 255, 255, 255}, static_cast<float>(kBoardH) * 0.6f, 30);
 		spawn_sparks(app, {255, 255, 255, 255}, 10, 4.0f);
 		app.shake_until = app.session->sim().frame() + 10;
 	} else if (cue == "overdrive") {
@@ -3316,6 +3425,194 @@ void juice_cue (App& app, const std::string& cue) {
 		spawn_sparks(app, {255, 244, 190, 255}, 7, 3.4f);
 		app.shake_until = std::max(app.shake_until,
 			app.session->sim().frame() + 5);
+	}
+}
+
+// Throw shards out of a point: angular fragments that spin and fall. The
+// spread is a fan rather than a circle when `down` is false, so a row
+// breaking throws its pieces sideways and a slab dropping throws them up.
+void spawn_shards (App& app, float x, float y, SDL_Color color, int count,
+		float kick, float size) {
+	for (int i = 0; i < count; ++i) {
+		App::Shard& shard = app.shards[app.shard_at];
+		app.shard_at = (app.shard_at + 1) % app.shards.size();
+		const float angle = static_cast<float>(app.seeds() % 628) / 100.f;
+		const float speed = kick * (0.4f
+			+ static_cast<float>(app.seeds() % 100) / 100.f);
+		shard.x = x;
+		shard.y = y;
+		shard.vx = std::cos(angle) * speed;
+		// Biased upward: gravity brings them down and the arc is what
+		// reads as debris rather than a spray.
+		shard.vy = std::sin(angle) * speed - kick * 0.35f;
+		shard.turn = static_cast<float>(app.seeds() % 628) / 100.f;
+		shard.spin = (static_cast<float>(app.seeds() % 40) - 20.f) / 90.f;
+		shard.size = size * (0.6f
+			+ static_cast<float>(app.seeds() % 90) / 100.f);
+		shard.life = 26 + static_cast<int>(app.seeds() % 16);
+		shard.color = color;
+	}
+}
+
+// Shards laid on a circle and thrown along it rather than out of it: a
+// spin throws its debris the way it turned, which is what tells the eye a
+// T-spin apart from a clear that merely happened to be violent.
+void spawn_swirl (App& app, float x, float y, SDL_Color color, int count,
+		float reach, float kick, float size) {
+	const float lead = static_cast<float>(app.seeds() % 628) / 100.f;
+	for (int i = 0; i < count; ++i) {
+		App::Shard& shard = app.shards[app.shard_at];
+		app.shard_at = (app.shard_at + 1) % app.shards.size();
+		const float angle = lead + i * 6.2832f / count;
+		shard.x = x + std::cos(angle) * reach;
+		shard.y = y + std::sin(angle) * reach;
+		// Tangent, not radius: -sin, cos is the direction the circle
+		// travels at that point, so every fragment leaves along the turn.
+		shard.vx = -std::sin(angle) * kick;
+		shard.vy = std::cos(angle) * kick - kick * 0.4f;
+		shard.turn = angle;
+		shard.spin = 0.24f;     // All one way, because the piece turned.
+		shard.size = size;
+		shard.life = 24 + static_cast<int>(app.seeds() % 12);
+		shard.color = color;
+	}
+}
+
+// Every event effect is thrown by something that happened in the well, so
+// it is clipped to the well: a fragment tumbling out over the NEXT column
+// reads as a bug, not as debris.
+struct WellClip {
+	explicit WellClip (App& app) : renderer(app.renderer) {
+		SDL_RenderGetClipRect(renderer, &was);
+		had = SDL_RenderIsClipEnabled(renderer) == SDL_TRUE;
+		const SDL_Rect well{kBoardX, kBoardY, kBoardW, kBoardH};
+		SDL_RenderSetClipRect(renderer, &well);
+	}
+	~WellClip () {
+		SDL_RenderSetClipRect(renderer, had ? &was : nullptr);
+	}
+	SDL_Renderer* renderer;
+	SDL_Rect was{0, 0, 0, 0};
+	bool had = false;
+};
+
+void spawn_beam (App& app, int left, int wide, int top, int tall,
+		SDL_Color color, int life) {
+	App::Beam& beam = app.beams[app.beam_at];
+	app.beam_at = (app.beam_at + 1) % app.beams.size();
+	beam.left = left;
+	beam.wide = wide;
+	beam.top = top;
+	beam.tall = tall;
+	beam.life = life;
+	beam.born = life;
+	beam.color = color;
+}
+
+// Beams, drawn behind the debris: a bright core that narrows to a seam as
+// it fades, so the column collapses inward instead of merely dimming.
+void draw_beams (App& app) {
+	const WellClip clip(app);
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_ADD);
+	for (App::Beam& beam : app.beams) {
+		if (beam.life <= 0) {
+			continue;
+		}
+		--beam.life;
+		const float part = beam.life / static_cast<float>(beam.born);
+		const int wide = std::max(2, static_cast<int>(beam.wide * part));
+		SDL_Color ink = beam.color;
+		// Cubic, not linear: a beam that fades evenly sits on the board
+		// like a coat of paint. This one is gone almost as fast as it
+		// arrived, which is what makes it a flash and not a wash.
+		ink.a = static_cast<Uint8>(150 * part * part * part);
+		fill(app.renderer, beam.left + (beam.wide - wide) / 2, beam.top,
+			wide, beam.tall, ink);
+		// A hotter seam down the middle, half as wide and twice as bright.
+		ink.a = static_cast<Uint8>(150 * part * part);
+		fill(app.renderer, beam.left + (beam.wide - wide / 2) / 2, beam.top,
+			std::max(2, wide / 2), beam.tall, ink);
+	}
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+}
+
+void spawn_ring (App& app, float x, float y, SDL_Color color, float span,
+		int life) {
+	App::Ring& ring = app.rings[app.ring_at];
+	app.ring_at = (app.ring_at + 1) % app.rings.size();
+	ring.x = x;
+	ring.y = y;
+	ring.span = span;
+	ring.life = life;
+	ring.born = life;
+	ring.color = color;
+}
+
+// Rings, drawn as they go: wide and thin by the end, so the eye reads an
+// expanding wave rather than a circle sitting still and fading.
+void draw_rings (App& app) {
+	const WellClip clip(app);
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+	for (App::Ring& ring : app.rings) {
+		if (ring.life <= 0) {
+			continue;
+		}
+		--ring.life;
+		const float grow = 1.f - ring.life / static_cast<float>(ring.born);
+		const float reach = ring.span * grow;
+		SDL_Color ink = ring.color;
+		ink.a = static_cast<Uint8>(220 * (1.f - grow) * (1.f - grow));
+		// Enough steps that the stamps overlap into a line at the widest
+		// the ring ever gets, or it reads as a ring of dots.
+		const int steps = 72;
+		const float thick = std::max(2.f, px(6) * (1.f - grow));
+		for (int i = 0; i < steps; ++i) {
+			const float a = i * 6.2832f / steps;
+			fill(app.renderer,
+				static_cast<int>(ring.x + std::cos(a) * reach - thick / 2),
+				static_cast<int>(ring.y + std::sin(a) * reach - thick / 2),
+				static_cast<int>(thick), static_cast<int>(thick), ink);
+		}
+	}
+}
+
+// Step and draw the shards: quads under a heavier gravity than the sparks
+// carry, spinning as they go, drawn as flat facets rather than glows.
+void draw_shards (App& app) {
+	const WellClip clip(app);
+	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+	for (App::Shard& shard : app.shards) {
+		if (shard.life <= 0) {
+			continue;
+		}
+		--shard.life;
+		shard.x += shard.vx;
+		shard.y += shard.vy;
+		shard.vy += 0.42f;      // Heavier than an ember: this is a solid.
+		shard.vx *= 0.99f;
+		shard.turn += shard.spin;
+		const float half = shard.size * (0.4f + shard.life / 60.f);
+		const float cos = std::cos(shard.turn);
+		const float sin = std::sin(shard.turn);
+		SDL_Color ink = shard.color;
+		ink.a = static_cast<Uint8>(std::min(255, shard.life * 9));
+		// A spinning quad, drawn as its own two triangles so it keeps a
+		// hard edge at every angle - a rotated rectangle fill would not.
+		SDL_Vertex quad[4];
+		const float ox[4] = {-half, half, half, -half};
+		const float oy[4] = {-half, -half * 0.6f, half, half * 0.6f};
+		for (int i = 0; i < 4; ++i) {
+			quad[i].position.x = shard.x + ox[i] * cos - oy[i] * sin;
+			quad[i].position.y = shard.y + ox[i] * sin + oy[i] * cos;
+			quad[i].color = ink;
+			quad[i].tex_coord = SDL_FPoint{0.f, 0.f};
+		}
+		const int order[6] = {0, 1, 2, 0, 2, 3};
+		SDL_Vertex tris[6];
+		for (int i = 0; i < 6; ++i) {
+			tris[i] = quad[order[i]];
+		}
+		SDL_RenderGeometry(app.renderer, nullptr, tris, 6, nullptr, 0);
 	}
 }
 
@@ -5177,6 +5474,76 @@ void draw_profile (App& app) {
 	ImGui::End();
 }
 
+// Cold Iron breaking, watched rather than announced.
+//
+// The sim says "freeze" when a row locks solid and says nothing at all
+// when it breaks - the shatter arrives as an ordinary clear, which is
+// exactly why it looked like one. The mask is public, so the screen keeps
+// last frame's copy and shatters whatever stopped being iron: no sim
+// change, nothing graded, and the moment the room is named after finally
+// looks like breaking instead of burning.
+void watch_the_ice (App& app) {
+	const Sim& sim = app.session->sim();
+	if (!sim.config().cold_iron) {
+		app.was_iron.fill(false);
+		return;
+	}
+	for (int y = 0; y < kHeight; ++y) {
+		const bool iron = sim.board().iron_row(y);
+		if (app.was_iron[static_cast<size_t>(y)] && !iron) {
+			// It went. Pale shards off every cell of the row, a crack of
+			// white along it, and a short cold jolt - ice does not rumble
+			// the way a cascade does, it snaps.
+			const float mid = kBoardY + (y + 0.5f) * kCell;
+			for (int x = 0; x < kWidth; ++x) {
+				spawn_shards(app, kBoardX + (x + 0.5f) * kCell, mid,
+					{206, 236, 255, 255}, 3, 3.4f,
+					static_cast<float>(kCell) * 0.22f);
+			}
+			spawn_sparks_at(app, kBoardX + kBoardW * 0.5f, mid,
+				{236, 250, 255, 255}, 6, 2.6f);
+			App::BurnRow& row = app.burn_rows[app.burn_at];
+			app.burn_at = (app.burn_at + 1) % app.burn_rows.size();
+			row.row = y;
+			row.life = 10;
+			row.cold = true;
+			app.shake_until = std::max(app.shake_until, sim.frame() + 4);
+		}
+		app.was_iron[static_cast<size_t>(y)] = iron;
+	}
+}
+
+// Garbage arriving, watched rather than announced.
+//
+// The sim raises the queued rows on a lock that clears nothing and says
+// nothing about it, so the flood used to slide in silently under the
+// stack. The queue is public: when it shrinks, that many rows just came
+// up from the floor, and the floor gets the impact it deserves.
+void watch_the_floor (App& app) {
+	const Sim& sim = app.session->sim();
+	const int now = sim.pending_garbage();
+	const int rose = app.was_pending - now;
+	app.was_pending = now;
+	if (rose <= 0) {
+		return;
+	}
+	// Dust off the floor line, thrown up the way rubble goes when
+	// something heavy lands beneath it, and a jolt that grows with the
+	// size of the blow but never outshouts a quad.
+	const float floor = static_cast<float>(kBoardY + kBoardH);
+	for (int x = 0; x < kWidth; ++x) {
+		spawn_shards(app, kBoardX + (x + 0.5f) * kCell, floor,
+			{186, 142, 108, 255}, std::min(3, 1 + rose), 2.4f + rose * 0.3f,
+			static_cast<float>(kCell) * 0.22f);
+	}
+	spawn_sparks_at(app, kBoardX + kBoardW * 0.5f, floor,
+		{214, 138, 82, 255}, 4 + rose, 2.4f);
+	spawn_ring(app, kBoardX + kBoardW * 0.5f, floor, {214, 138, 82, 255},
+		static_cast<float>(kBoardW) * 0.5f, 14);
+	app.shake_until = std::max(app.shake_until,
+		sim.frame() + std::min(7, 2 + rose));
+}
+
 // The clear, made an event: every row that is full while the clearer is
 // running goes white-hot, throws embers off both ends, and keeps burning
 // for a few frames after the row itself is gone.
@@ -5191,6 +5558,11 @@ void light_burn_rows (App& app) {
 		return;
 	}
 	app.burn_seen_lock = lock_frame;
+	// Which rows are going, counted before any of them is drawn: what a
+	// clear is worth is how many rows it took, and the size of the effect
+	// should say so before a number on the HUD does.
+	std::array<int, kHeight> going{};
+	int count = 0;
 	for (int y = 0; y < kHeight; ++y) {
 		bool full = true;
 		for (int x = 0; x < kWidth; ++x) {
@@ -5199,17 +5571,36 @@ void light_burn_rows (App& app) {
 				break;
 			}
 		}
-		if (!full) {
-			continue;
+		if (full) {
+			going[static_cast<size_t>(count++)] = y;
 		}
+	}
+	// A single row is the game's heartbeat and stays quiet; two start
+	// throwing debris, and a quad throws gold off every cell it took.
+	const bool quad = count >= 4;
+	const SDL_Color grit = quad ? SDL_Color{255, 222, 120, 255}
+		: SDL_Color{226, 168, 104, 255};
+	const int per_cell = count >= 4 ? 2 : (count >= 2 ? 1 : 0);
+	for (int i = 0; i < count; ++i) {
+		const int y = going[static_cast<size_t>(i)];
 		App::BurnRow& row = app.burn_rows[app.burn_at];
 		app.burn_at = (app.burn_at + 1) % app.burn_rows.size();
 		row.row = y;
 		row.life = 14;
+		row.cold = false;
 		spawn_sparks_at(app, static_cast<float>(kBoardX),
 			kBoardY + (y + 0.5f) * kCell, {255, 236, 190, 255}, 3, 2.4f);
 		spawn_sparks_at(app, static_cast<float>(kBoardX + kBoardW),
 			kBoardY + (y + 0.5f) * kCell, {255, 236, 190, 255}, 3, 2.4f);
+		if (per_cell == 0) {
+			continue;
+		}
+		const float mid = kBoardY + (y + 0.5f) * kCell;
+		for (int x = 0; x < kWidth; ++x) {
+			spawn_shards(app, kBoardX + (x + 0.5f) * kCell, mid, grit,
+				per_cell, quad ? 3.6f : 2.6f,
+				static_cast<float>(kCell) * (quad ? 0.24f : 0.18f));
+		}
 	}
 }
 
@@ -5220,6 +5611,21 @@ void draw_burn_rows (App& app) {
 			continue;
 		}
 		--row.life;
+		if (row.cold) {
+			// Ice: a crack of white that runs the row's full width the
+			// instant it goes, then thins to nothing. It does not spread
+			// out of the middle the way a burn does - it is already
+			// broken along its whole length.
+			const double part = row.life / 10.;
+			const int thin = std::max(1,
+				static_cast<int>(kCell * (0.15 + 0.5 * part)));
+			fill(app.renderer, kBoardX,
+				kBoardY + row.row * kCell + (kCell - thin) / 2,
+				kBoardW, thin,
+				{static_cast<Uint8>(214 + 40 * part), 240, 255,
+				 static_cast<Uint8>(240 * part)});
+			continue;
+		}
 		// White-hot at the start, cooling to ember, and spreading out from
 		// the middle of the row as it goes.
 		const double part = row.life / 14.;
@@ -7427,8 +7833,15 @@ int run (bool smoke, long smoke_frames) {
 				SDL_RenderSetViewport(app.renderer, &quake);
 			}
 			light_burn_rows(app);
+			watch_the_ice(app);
+			watch_the_floor(app);
 			draw_board(app);
 			draw_burn_rows(app);
+			// Beams sit under the debris: the light is what the well did,
+			// the shards are what came off it.
+			draw_beams(app);
+			draw_rings(app);
+			draw_shards(app);
 			draw_sparks(app);
 			draw_streaks(app);
 			draw_overdrive_frame(app);
