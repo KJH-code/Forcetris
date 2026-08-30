@@ -365,6 +365,35 @@ def anvil(d, s, scale=1.0, dy=0.0, img=None):
         d.polygon(base, fill=INK)
 
 
+def ic_stithy(d, s, img=None):
+    """The anvil the maul lands on, drawn large and on its own.
+
+    The forge stop's anvil is a badge inside a 64px node and reads at that
+    size because it is simple. This one is the set piece at the foot of a
+    run, so it gets the shape a real anvil has - a horn that tapers to a
+    point on the left, a heel on the right, a waisted stem, and a splayed
+    foot - and a pale worked face along the top, which is the line the
+    hammer actually strikes.
+    """
+    def p(x, y):
+        return (s * x, s * y)
+
+    body = [p(0.02, 0.40), p(0.24, 0.31), p(0.94, 0.31), p(0.98, 0.36),
+            p(0.86, 0.47), p(0.62, 0.50), p(0.66, 0.66), p(0.34, 0.66),
+            p(0.38, 0.50), p(0.14, 0.47)]
+    face = [p(0.24, 0.31), p(0.94, 0.31), p(0.94, 0.375), p(0.24, 0.375)]
+    stem = [p(0.38, 0.62), p(0.62, 0.62), p(0.66, 0.78), p(0.34, 0.78)]
+    base = [p(0.22, 0.78), p(0.78, 0.78), p(0.88, 0.95), p(0.12, 0.95)]
+    if img is not None:
+        shaded_poly(img, base, (150, 134, 116), (70, 58, 46), KEY)
+        shaded_poly(img, stem, (128, 112, 96), (66, 55, 44), KEY)
+        shaded_poly(img, body, IRON_HI, IRON_LO, KEY)
+        shaded_poly(img, face, (226, 212, 194), (162, 148, 132), KEY)
+    else:
+        d.polygon(body, fill=INK)
+        d.polygon(base, fill=INK)
+
+
 def flame(d, s, cx, cy, scale, ink=EMBER, img=None):
     """A hand-cut teardrop, not a wobbled circle.
 
@@ -730,6 +759,7 @@ def main():
     frame("plate", 48, 14, rivets=False)
     icon("node_battle", 64, ic_battle)
     icon("maul", 160, ic_maul, glow=False)
+    icon("stithy", 192, ic_stithy, glow=False)
     icon("node_boss", 64, ic_boss)
     icon("node_forge", 64, ic_forge)
     icon("node_event", 64, ic_event)

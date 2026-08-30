@@ -459,6 +459,14 @@ struct App {
 	// The maul, on a run's first frame. Long, because it is the one
 	// flourish in the game that is allowed to be.
 	int forge_strike = 0;
+	// A jolt of the WHOLE screen, in frames left. The board's own quake
+	// only runs on the game screens and only moves the board pane, so a
+	// blow landed anywhere else - the map, most of all - shook nothing at
+	// all. This one shifts the viewport for the entire pass, ImGui
+	// included, which is the only way a menu screen can be hit.
+	int jolt = 0;
+	int jolt_born = 1;
+	float jolt_power = 0.f;
 	// Where the tree stands, filled by the map each frame it draws: the
 	// foot it is struck at, the head the shock travels to, and the span
 	// the light sweeps across.
@@ -466,6 +474,9 @@ struct App {
 	ImVec2 map_head{0.f, 0.f};
 	ImVec2 map_span{0.f, 0.f};
 	bool map_seen = false;
+	// The bed's own clock, so the molten runs move whether or not a game
+	// is stepping behind them.
+	float map_clock = 0.f;
 	// How much of the room each foe's board is holding, eased toward the
 	// aim so a switch is a movement and not a jump.
 	static constexpr int kSeats = 6;
@@ -4464,18 +4475,52 @@ void draw_forge_strike (App& app) {
 	const int gone = kStrike - app.forge_strike;
 	const int kLands = 38;
 	ImDrawList* draw = ImGui::GetForegroundDrawList();
-	const ImVec2 hit(app.map_foot.x, app.map_foot.y);
+	// The anvil the blow lands on. A hammer swinging at nothing was the
+	// first version and it read as a hammer swinging at nothing: the maul
+	// needs something to hit, and the thing a forge hits is a stithy.
+	// Sized and seated so it stands UNDER the tree rather than on top of
+	// it: a first pass put a two-hundred-pixel anvil across the bottom two
+	// rows, which buried the very nodes the run is about to choose between.
+	const float stand = ui(150);
+	const ImVec2 seat(app.map_foot.x - stand * 0.5f,
+		app.map_foot.y + ui(8) - stand * 0.345f);
+	// The worked face, a third of the way down the sprite - the line the
+	// hammer actually strikes, and so where everything else happens.
+	const ImVec2 hit(app.map_foot.x, app.map_foot.y + ui(8));
+	if (SDL_Texture* iron = gfx::get("stithy")) {
+		// It settles in ahead of the swing rather than being there from
+		// nothing, and it takes a small recoil of its own on the blow.
+		const float in = std::min(1.f, gone / 10.f);
+		const float rung = gone >= kLands
+			? std::max(0.f, 1.f - (gone - kLands) / 8.f) : 0.f;
+		const float drop = stand * 0.10f * (1.f - in) + ui(7) * rung;
+		draw->AddImage(reinterpret_cast<ImTextureID>(iron),
+			ImVec2(seat.x, seat.y + drop),
+			ImVec2(seat.x + stand, seat.y + stand + drop),
+			ImVec2(0.f, 0.f), ImVec2(1.f, 1.f),
+			IM_COL32(255, 255, 255, static_cast<int>(255 * in)));
+	}
 	SDL_Texture* tex = gfx::get("maul");
-	if (gone <= kLands && tex != nullptr) {
+	// The maul is drawn through the swing AND for a while after it lands:
+	// it rests on the face, then lifts away. A hammer that vanished on the
+	// frame it struck read as a glitch, not a blow.
+	const int kRests = kLands + 16;
+	if (gone <= kRests && tex != nullptr) {
 		// The swing: in from the upper right, turning as it comes, and
 		// accelerating - a maul is heavy and the last third of a swing is
 		// where all of it happens.
-		const float t = gone / static_cast<float>(kLands);
+		const float t = std::min(1.f, gone / static_cast<float>(kLands));
 		const float fall = t * t * t;
 		const float reach = ui(520);
-		const ImVec2 head(hit.x + reach * (1.f - fall) * 0.85f,
-			hit.y - reach * (1.f - fall) - ui(30));
-		const float turn = -1.15f * (1.f - fall);
+		// After the blow it rides the anvil's own recoil for a few frames
+		// and then lifts back out the way it came.
+		const float away = gone <= kLands ? 0.f
+			: std::pow((gone - kLands) / static_cast<float>(kRests - kLands),
+				2.2f);
+		const ImVec2 head(hit.x + reach * ((1.f - fall) + away) * 0.85f,
+			hit.y - reach * ((1.f - fall) + away) - ui(30)
+				+ ui(7) * (gone > kLands && gone < kLands + 8 ? 1.f : 0.f));
+		const float turn = -1.15f * ((1.f - fall) + away);
 		const float size = ui(190);
 		// The head of the sprite sits at its top; the blow lands there, so
 		// the quad is hung from that point and turned about it.
@@ -4501,10 +4546,12 @@ void draw_forge_strike (App& app) {
 		}
 	}
 	if (gone == kLands) {
-		// Landed. Everything the game already has for a heavy event, at
-		// once: the shake, the sparks, the shards, the ring.
-		app.shake_until = app.session.has_value()
-			? app.session->sim().frame() + 10 : 0;
+		// Landed. The whole screen takes it - the board's own quake is no
+		// use here, there is no board - and it is deliberately the hardest
+		// jolt in the game, because it is the only one that opens a run.
+		app.jolt = 22;
+		app.jolt_born = 22;
+		app.jolt_power = ui(26);
 		app.audio.play("crit");
 	}
 	if (gone >= kLands) {
@@ -6192,6 +6239,74 @@ void nine_patch (ImDrawList* dl, SDL_Texture* tex, ImVec2 a, ImVec2 b,
 	}
 }
 
+// The molten bed under the map.
+//
+// A run's tree used to stand on a flat panel, which is why the whole
+// screen read as a diagram - a list of rooms with lines between them
+// rather than a road out of a forge. The lava is drawn behind the nodes:
+// a pool at the foot, veins climbing between the lanes, and a heat that
+// runs high while the maul's shock is travelling and settles to an ember
+// glow once it has passed.
+//
+// Everything here is a pure function of the frame count and the map's own
+// extent, so it costs nothing to keep running and nothing to leave out.
+void draw_lava_bed (App& app, ImDrawList* bed) {
+	const float lo = app.map_span.x;
+	const float hi = app.map_span.y;
+	const float foot = app.map_foot.y + ui(10);
+	const float head = app.map_head.y - ui(16);
+	if (hi <= lo || foot <= head) {
+		return;
+	}
+	// Hot while the blow's shock is climbing, ember the rest of the time.
+	const float heat = app.forge_strike > 0
+		? 0.45f + 0.55f * (app.forge_strike / static_cast<float>(kStrike))
+		: 0.45f;
+	const float clock = app.map_clock;
+	const float tall = foot - head;
+	// The pool: a deep glow banked along the foot, brightest at the very
+	// bottom and gone about a third of the way up.
+	bed->AddRectFilledMultiColor(ImVec2(lo, foot - tall * 0.42f),
+		ImVec2(hi, foot),
+		IM_COL32(120, 34, 8, 0), IM_COL32(120, 34, 8, 0),
+		IM_COL32(214, 74, 16, static_cast<int>(150 * heat)),
+		IM_COL32(214, 74, 16, static_cast<int>(150 * heat)));
+	bed->AddRectFilledMultiColor(ImVec2(lo, foot - tall * 0.16f),
+		ImVec2(hi, foot),
+		IM_COL32(255, 132, 30, 0), IM_COL32(255, 132, 30, 0),
+		IM_COL32(255, 168, 52, static_cast<int>(190 * heat)),
+		IM_COL32(255, 168, 52, static_cast<int>(190 * heat)));
+	// The veins: slow molten runs climbing between the lanes, each one
+	// wobbling on its own phase so the bed moves without anything in it
+	// being animation. They thin and dim as they rise, the way a run of
+	// metal does when it is losing its heat.
+	const int veins = 5;
+	for (int at = 0; at < veins; ++at) {
+		const float seat = (at + 0.5f) / veins;
+		const float base = lo + (hi - lo) * seat;
+		const float sway = ui(44) + ui(26) * std::sin(at * 2.1f);
+		const float lead = at * 1.7f + clock * 0.6f;
+		ImVec2 was(base, foot);
+		const int steps = 12;
+        for (int step = 1; step <= steps; ++step) {
+			const float up = step / static_cast<float>(steps);
+			const float y = foot - tall * up * 0.86f;
+			const float x = base + std::sin(lead + up * 3.1f) * sway * up;
+			const int ink = static_cast<int>(
+				(1.f - up) * (1.f - up) * 190 * heat);
+			if (ink > 3) {
+				bed->AddLine(was, ImVec2(x, y),
+					IM_COL32(255, 146, 40, ink),
+					ui(7) * (1.f - up * 0.75f));
+				bed->AddLine(was, ImVec2(x, y),
+					IM_COL32(255, 226, 170, ink / 2),
+					ui(2.5f) * (1.f - up * 0.8f));
+			}
+			was = ImVec2(x, y);
+		}
+	}
+}
+
 // A number with its coin: the icon when the art exists, then the figure.
 void coin_stat (const char* icon, const ImVec4& ink, const char* text) {
 	if (SDL_Texture* tex = gfx::get(icon)) {
@@ -6205,8 +6320,11 @@ void coin_stat (const char* icon, const ImVec4& ink, const char* text) {
 void draw_career (App& app) {
 	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2, ui(24)),
 		ImGuiCond_Always, ImVec2(0.5f, 0.f));
+	// Wide enough for the map's widest row. The tree grew to three or four
+	// lanes when it stopped funnelling into one boss, and at the old width
+	// the right-hand lane ran off the panel.
 	const float wide
-		= std::min(ui(490), ImGui::GetIO().DisplaySize.x - ui(16));
+		= std::min(ui(680), ImGui::GetIO().DisplaySize.x - ui(16));
 	ImGui::SetNextWindowSizeConstraints(ImVec2(wide, 0),
 		ImVec2(wide, ImGui::GetIO().DisplaySize.y - ui(48)));
 	ImGui::Begin("Career", nullptr, ImGuiWindowFlags_AlwaysAutoResize
@@ -6421,9 +6539,20 @@ void draw_career (App& app) {
 		// The rows, boss first so the climb reads bottom-to-top, with
 		// every node's rectangle remembered so the edges can be drawn in
 		// the gaps between rows afterwards.
+		// The molten bed the tree stands in, drawn UNDER the nodes: the
+		// rows are ImGui buttons and go down after this, so the window's
+		// draw list is split and the lava laid on the lower channel. It
+		// runs hot while the maul's shock is climbing and settles to an
+		// ember glow afterwards, so the map is never a diagram on a flat
+		// panel - it is a thing standing over a forge.
+		ImDrawList* bed = ImGui::GetWindowDrawList();
+		bed->ChannelsSplit(2);
+		bed->ChannelsSetCurrent(1);
 		std::vector<ImVec2> tops(app.run_map.size());
 		std::vector<ImVec2> bottoms(app.run_map.size());
-		const float node_w = ui(148);
+		// Narrower plates than the two-lane map wore: four of them and
+		// their gaps have to sit inside the panel on a phone too.
+		const float node_w = ui(150);
 		const float node_h = ui(34);
 		const float row_gap = ui(26);
 		const float lane_gap = ui(10);
@@ -6590,7 +6719,9 @@ void draw_career (App& app) {
 		// Only for the first frames, so the view is the player's again the
 		// moment the blow is over.
 		if (app.forge_strike > kStrike - 4) {
-			ImGui::SetScrollHereY(1.f);
+			// Not flush to the bottom: the anvil stands below the foot of the
+			// tree and needs the room.
+			ImGui::SetScrollHereY(0.78f);
 		}
 		// Where the tree stands, remembered for the maul: the foot of it
 		// is the bottom row's middle, which is where a run is started and
@@ -6619,6 +6750,13 @@ void draw_career (App& app) {
 				app.map_seen = true;
 			}
 		}
+		// And now the bed, on the lower channel, with the extent the rows
+		// just told us.
+		bed->ChannelsSetCurrent(0);
+		if (app.map_seen) {
+			draw_lava_bed(app, bed);
+		}
+		bed->ChannelsMerge();
 		// The edges, drawn in the gaps: the path walked in bright gold,
 		// the doors open right now in ember orange, the rest as ash.
 		ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -8588,6 +8726,7 @@ int run (bool smoke, long smoke_frames) {
 			app.screen_was = app.screen;
 			app.curtain = kCurtain;
 		}
+		app.map_clock += 0.02f;
 		draw_preheat(app);
 		draw_cooldown(app);
 		draw_forge_strike(app);
@@ -8597,7 +8736,34 @@ int run (bool smoke, long smoke_frames) {
 		}
 
 		ImGui::Render();
+		// The whole-screen jolt: the viewport is shifted for the entire
+		// ImGui pass, so a blow landed on a menu screen moves the menu.
+		// The board's own quake cannot do this - it only runs on the game
+		// screens, and it only moves the board pane.
+		SDL_Rect shook{0, 0, 0, 0};
+		const bool jolting = app.config.shake && app.jolt > 0;
+		if (jolting) {
+			--app.jolt;
+			int w = 0;
+			int h = 0;
+			SDL_GetRendererOutputSize(app.renderer, &w, &h);
+			// Decays as it goes, and alternates sign every frame, which is
+			// what makes it a jolt rather than a wobble.
+			const float left
+				= app.jolt / static_cast<float>(std::max(1, app.jolt_born));
+			const float swing = app.jolt_power * left * left;
+			const float flip = (app.jolt % 2) == 0 ? 1.f : -1.f;
+			shook = {static_cast<int>(swing * flip),
+				static_cast<int>(swing * flip * 0.7f
+					+ (app.seeds() % 5) - 2), w, h};
+			SDL_RenderSetViewport(app.renderer, &shook);
+		} else if (app.jolt > 0) {
+			--app.jolt;
+		}
 		ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), app.renderer);
+		if (jolting) {
+			SDL_RenderSetViewport(app.renderer, nullptr);
+		}
 
 		if (smoke && frames >= smoke_frames) {
 			// A picture of the last frame, before the present wipes it, so a

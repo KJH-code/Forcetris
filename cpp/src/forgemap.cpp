@@ -56,31 +56,55 @@ std::vector<MapNode> build_map (int chapter, unsigned seed) {
 		return nodes;
 	}
 
-	// Which watch stands at the top. The chapter fields several concept
-	// pairs - a miniboss and a boss who belong together - and a run
-	// climbs to exactly one of them. Rolled from its own stream so the
-	// choice of face never shifts the skeleton the main stream draws.
+	// Which watches stand at the top - plural, now.
+	//
+	// A chapter fields several concept pairs (a miniboss and a boss who
+	// belong together) and a run used to climb to exactly one of them: the
+	// top row was a single node and every path in the map funnelled into
+	// it. That is what made a map feel closed. It ends at two or three
+	// different watches instead, each from a different pair, so which
+	// finale a run gets is decided by the road it walked rather than by
+	// the seed alone - and a chapter has that many endings.
+	//
+	// Rolled from its own stream so the choice of faces never shifts the
+	// skeleton the main stream draws, which keeps old seeds' shapes.
 	const std::vector<int> pairs = chapter_pairs(chapter);
-	int boss = -1;
+	std::vector<int> crowns;
 	int mini = -1;
 	if (!pairs.empty()) {
 		Roll pick(seed ^ 0x5bf03635u, chapter);
-		const int pair = pairs[static_cast<size_t>(
-			pick.below(static_cast<int>(pairs.size())))];
-		boss = pair_boss(chapter, pair);
-		mini = pair_miniboss(chapter, pair);
+		std::vector<int> spare = pairs;
+		const int want = std::min(static_cast<int>(spare.size()),
+			2 + pick.below(2));
+		for (int at = 0; at < want && !spare.empty(); ++at) {
+			const int which = pick.below(static_cast<int>(spare.size()));
+			const int pair = spare[static_cast<size_t>(which)];
+			spare.erase(spare.begin() + which);
+			const int boss = pair_boss(chapter, pair);
+			if (boss >= 0) {
+				crowns.push_back(boss);
+				if (mini < 0) {
+					// The miniboss beneath belongs to the first crown
+					// drawn: the risky branch is a branch toward one of
+					// the finales, not a fourth thing on its own.
+					mini = pair_miniboss(chapter, pair);
+				}
+			}
+		}
 	}
-	if (boss < 0) {
-		boss = rooms.back();
+	if (crowns.empty()) {
+		crowns.push_back(rooms.back());
 	}
 
-	// The rows: two doors at the entrance, two or three lanes through the
-	// middle, the boss alone at the top.
+	// The rows: two or three doors at the entrance, three or four lanes
+	// through the middle, and the watches across the top. Wider than it
+	// was on every row - a two-lane middle offers one choice per row,
+	// which is a corridor with a bulge in it rather than a map.
 	int widths[kMapDepth];
-	widths[0] = 2;
-	widths[kMapDepth - 1] = 1;
+	widths[0] = 2 + roll.below(2);
+	widths[kMapDepth - 1] = static_cast<int>(crowns.size());
 	for (int r = 1; r < kMapDepth - 1; ++r) {
-		widths[r] = 2 + roll.below(2);
+		widths[r] = 3 + roll.below(2);
 	}
 
 	// The nodes, row by row. A battle row picks its recipes from a window
@@ -97,7 +121,7 @@ std::vector<MapNode> build_map (int chapter, unsigned seed) {
 			node.lane = lane;
 			if (r == kMapDepth - 1) {
 				node.kind = 1;
-				node.stage = boss;
+				node.stage = crowns[static_cast<size_t>(lane)];
 			} else {
 				node.kind = 0;
 				const int centre = battles > 1

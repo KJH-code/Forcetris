@@ -194,10 +194,42 @@ made ready. The **cooldown** puts it out again over half a second under
 the verdict - the board stays drawn underneath the whole time, because a
 loss screen over a well that vanished reads as a crash.
 
+**A chapter has several endings.** The top row of a map used to be a
+single node, and every path in the graph funnelled into it - that, more
+than anything else, is what made a run feel like a corridor with a bulge
+in it. Two or three watches stand up there now, each from a different
+concept pair, so which finale a run reaches is decided by the road it
+walked rather than by the seed alone. The middle widened with it: two or
+three doors at the entrance, three or four lanes through the body, where
+before it was two or three, and a row that offers one choice is not a
+choice. campaigncheck holds the new shape, that the middle is never
+narrower than the doors, that every ending is a genuinely different
+watch, and that the miniboss belongs to one of them - the risky branch
+leads toward a finale rather than being a fourth thing on its own.
+
+The tree also stands in something now. A **molten bed** is drawn behind
+the nodes - the window's draw list is split so the lava goes under the
+buttons - with a pool banked along the foot and veins climbing between
+the lanes. It runs hot while the maul's shock is travelling and settles
+to an ember glow afterwards. Without it the map was a diagram on a flat
+panel; with it the map is a thing standing over a forge.
+
 And a run opens with **the maul**. The blow comes down out of the top
-right onto the foot of the tree - the bottom row, which is where a run is
-actually started - and the shock runs up the map lighting the road as it
-goes. The map scrolls to that foot while the blow is in the air and no
+right onto an **anvil** at the foot of the tree - the bottom row, which is
+where a run is actually started - and the shock runs up the map lighting
+the road as it goes. A hammer swinging at nothing was the first version
+and it read as exactly that; and the maul no longer vanishes on the frame
+it strikes, but rests on the face for a few frames and lifts back out the
+way it came.
+
+The blow shakes the whole screen, which took a second mechanism to do at
+all. The board's own quake runs only on the game screens and moves only
+the board pane, so a blow landed on the map shook nothing whatsoever. The
+jolt shifts the viewport for the entire ImGui pass instead, and it is
+deliberately the hardest one in the game, because it is the only one that
+opens a run.
+
+The map scrolls to that foot while the blow is in the air and no
 node is pickable until it lands: a flourish you can click through before
 it arrives is neither a flourish nor a click, and it is under two seconds,
 which is less than it takes to read the bottom row anyway. The maul is a

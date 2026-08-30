@@ -765,10 +765,23 @@ int main () {
 					}
 					++widths[node.depth];
 				}
-				shaped = shaped && widths[0] == 2
-					&& widths[campaign::kMapDepth - 1] == 1;
+				// Two or three doors, three or four lanes through the
+				// middle, and two or three watches across the top. The
+				// top row used to be a single node and every path in the
+				// map funnelled into it, which is exactly what made a run
+				// feel like a corridor; a chapter has several endings now
+				// and the road walked is what picks one.
+				shaped = shaped && widths[0] >= 2 && widths[0] <= 3
+					&& widths[campaign::kMapDepth - 1] >= 2
+					&& widths[campaign::kMapDepth - 1] <= 3;
 				for (int r = 1; r < campaign::kMapDepth - 1; ++r) {
-					shaped = shaped && widths[r] >= 2 && widths[r] <= 3;
+					shaped = shaped && widths[r] >= 3 && widths[r] <= 4;
+				}
+				// And the middle is never narrower than the doors: a map
+				// that pinches shut in the middle is the old corridor
+				// wearing a wider hat.
+				for (int r = 1; r < campaign::kMapDepth - 1; ++r) {
+					shaped = shaped && widths[r] >= widths[0];
 				}
 				// Every node's kind and stage sit in its chapter's range:
 				// battles draw from the chapter's battle window - never a
@@ -781,6 +794,8 @@ int main () {
 				int minis = 0;
 				int boss_pair = -1;
 				int mini_pair = -1;
+				std::set<int> crown_pairs;
+				std::set<int> crowns;
 				for (const MapNode& node : map) {
 					const bool boss_row
 						= node.depth == campaign::kMapDepth - 1;
@@ -794,6 +809,8 @@ int main () {
 						ranged = ranged && boss_row && stage != nullptr
 							&& stage->role == campaign::kBoss;
 						if (stage != nullptr) {
+							crown_pairs.insert(stage->pair);
+							crowns.insert(node.stage);
 							boss_pair = stage->pair;
 						}
 					} else if (node.kind == 0) {
@@ -822,10 +839,18 @@ int main () {
 				ranged = ranged && forges == 1
 					&& events >= 1 && events <= 2
 					&& minis <= 1 && !pairs.empty();
-				// The watch is one concept: the miniboss the map seats
-				// belongs to the same pair as the boss it climbs to.
+				// Every ending is a different watch, from a different
+				// concept pair - two crowns that turned out to be the
+				// same face would be one ending drawn twice.
+				(void)boss_pair;
+				paired = paired && crowns.size() == crown_pairs.size()
+					&& crowns.size() >= 2;
+				// And the miniboss the map seats belongs to one of them:
+				// the risky branch leads toward a finale rather than
+				// being a fourth thing on its own.
 				paired = paired
-					&& (mini_pair < 0 || mini_pair == boss_pair);
+					&& (mini_pair < 0
+						|| crown_pairs.count(mini_pair) == 1);
 				// Edges point one row up and never cross; every node is
 				// reachable from the entrance and reaches the boss.
 				std::vector<int> reach(map.size(), 0);
@@ -881,13 +906,15 @@ int main () {
 				}
 			}
 		}
-		check("every map is shaped 2 / 2..3 / 1 with honest kinds", shaped,
+		check("every map is shaped 2..3 / 3..4 / 2..3 with honest kinds",
+			shaped,
 			detail);
 		check("every battle draws from its chapter's rooms, every watch "
 			"node holds the right role", ranged, detail);
-		check("the miniboss the map seats shares the boss's pair", paired,
+		check("a chapter ends at several different watches, and the "
+			"miniboss belongs to one of them", paired,
 			detail);
-		check("every node is reachable and every node reaches the boss",
+		check("every node is reachable and every node reaches a watch",
 			connected, detail);
 		check("no two edges cross", !crossed, detail);
 		check("the same seed builds the same map",
