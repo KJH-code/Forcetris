@@ -262,6 +262,27 @@ and it read as exactly that; and the maul no longer vanishes on the frame
 it strikes, but rests on the face for a few frames and lifts back out the
 way it came.
 
+**A blow's multipliers add; they do not compose.** This was a real bug and
+it took a screenshot from a ring-three climb to find it. Three separate
+bonuses each multiplied the *result of the last* - Overdrive scaled the
+attack, a heavy hand scaled that, and a crit doubled that again - so a
+plain double, worth one on the table, could leave the board as twelve, and
+picking a third bonus was worth more than the first two put together. They
+are gathered into one factor now and applied once, so a bonus is worth
+what its face says whatever else is already on. With exactly one of them
+live the arithmetic is unchanged (1 + (m - 1) is m), which is why every
+existing pin held; it only bites when they stack. The same build's worst
+case went from fifty-six to thirty-two.
+
+**And the climb's foe has a hide.** Every dial the endless ramp turned
+made the foe hit harder - a rung of rank, a scale on what it sends, a
+curse laid on your board - and not one of them made it harder to kill, so
+a build that had been collecting a card a node put the ring-twelve foe
+down in the same two blows as the ring-one foe. `endless_guard` is the
+Cold Shoulder's dial on the other side of the room, turned by the ring
+instead of bought: the foe takes six per cent less per ring, down to a
+floor of 0.45. Its offence stays unbounded - only the hide is floored.
+
 The blow shakes the whole screen, which took a second mechanism to do at
 all. The board's own quake runs only on the game screens and moves only
 the board pane, so a blow landed on the map shook nothing whatsoever. The

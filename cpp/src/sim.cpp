@@ -967,6 +967,20 @@ void Sim::resolve_score () {
 	// wherever the rail is up. Refuel and Flow read the unboosted attack,
 	// or Overdrive would feed itself.
 	int boosted = sent;
+	// The blow's multipliers ADD rather than compose.
+	//
+	// They used to be three separate multiplications, each landing on the
+	// result of the last: Overdrive scaled the blow, a heavy hand scaled
+	// that, and a crit doubled that again. Three bonuses each multiplying
+	// the other two, which is why a plain double - worth one - could leave
+	// as twelve, and why picking a third bonus was worth more than the
+	// first two put together. Every one of them is gathered here instead
+	// and applied once, so a bonus is worth what its face says whatever
+	// else is already on.
+	//
+	// With exactly one of them live the arithmetic is unchanged, which is
+	// the point: 1 + (m - 1) is m. It only bites when they stack.
+	double lift = 1.0;
 	if (config_.fuse && total > 0) {
 		fuse_bank_ = std::min(config_.fuse_bank_cap,
 			fuse_bank_ + config_.fuse_refuel_line * total
@@ -978,7 +992,7 @@ void Sim::resolve_score () {
 				+ config_.flow_gain_attack * sent);
 		}
 		if (overdrive_frames_ > 0) {
-			boosted = py_round(sent * config_.overdrive_mult);
+			lift += config_.overdrive_mult - 1.0;
 			// The backdraft: a clear resolved inside Overdrive burns the
 			// bottom garbage row off this board too - worth no score and
 			// no attack, but the dig is real.
@@ -1017,15 +1031,16 @@ void Sim::resolve_score () {
 	// loaded dice land every Nth attacking clear double. The crit counter
 	// only ticks on clears that actually carry attack, so the promise on
 	// the card face - every third strike - is literally what happens.
-	if (total > 0 && boosted > 0) {
-		if (config_.attack_scale != 1.0) {
-			boosted = py_round(boosted * config_.attack_scale);
-		}
+	if (total > 0 && sent > 0) {
+		lift += config_.attack_scale - 1.0;
 		if (config_.crit_every > 0
 			&& ++crit_count_ >= config_.crit_every) {
 			crit_count_ = 0;
-			boosted *= 2;
+			lift += 1.0;
 			cue("crit");
+		}
+		if (lift != 1.0) {
+			boosted = std::max(1, py_round(sent * lift));
 		}
 	}
 	// The turning rack: every clear stirs the hold. A real state change,

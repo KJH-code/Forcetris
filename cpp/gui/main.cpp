@@ -1303,6 +1303,12 @@ void start_stage (App& app, int index, int run_node = -1) {
 			// paid in what it sends instead.
 			app.versus_bot_base = campaign::endless_edge(
 				app.versus_bot_base, rank, app.campaign.run.ring);
+			// And its hide, which is the half that was missing: every
+			// other dial made the foe hit harder and none of them made it
+			// harder to kill, so the tier on the door changed nothing
+			// about how long the fight lasted.
+			app.versus_bot_base = campaign::endless_guard(
+				app.versus_bot_base, app.campaign.run.ring);
 			rank = campaign::endless_rank(rank, app.campaign.run.ring);
 		}
 		app.versus_blade = campaign::blade_of(stage);

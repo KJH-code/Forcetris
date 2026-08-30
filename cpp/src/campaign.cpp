@@ -673,6 +673,27 @@ int endless_rank (int rank, int ring) {
 	return std::min(last, endless_rank_owed(rank, ring));
 }
 
+// The foe's own hide, which it never had.
+//
+// Every dial the climb turned made the foe hit harder - a rung of rank, a
+// scale on what it sends, a curse laid on the player's board - and not one
+// of them made it any harder to kill. So a build that had been collecting
+// a card a node put the ring-twelve foe down in the same two blows as the
+// ring-one foe, and the tier written on the door meant nothing to the
+// fight it opened.
+//
+// The player has had a defensive card since the Ward family shipped - the
+// Cold Shoulder takes a quarter off what lands. This is that same dial on
+// the other side of the room, turned by the ring instead of bought: the
+// climb's foe takes less of what you send it, down to a floor, so a tier
+// is worth surviving and not only worth fearing. Its offence goes on
+// climbing with no ceiling in endless_edge; only the hide is floored.
+SimConfig endless_guard (SimConfig foe, int ring) {
+	foe.garbage_scale = std::max(0.45,
+		foe.garbage_scale - 0.06 * std::max(0, ring));
+	return foe;
+}
+
 SimConfig endless_edge (SimConfig foe, int rank, int ring) {
 	const int last = static_cast<int>(bot::ranks().size()) - 1;
 	const int over = endless_rank_owed(rank, ring) - last;

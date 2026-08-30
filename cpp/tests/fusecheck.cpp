@@ -293,6 +293,32 @@ int main () {
 		check("overdrive multiplies the attack",
 			sim.locked().back().scored && sim.locked().back().attack == 21,
 			std::to_string(sim.locked().back().attack));
+		// And when a second and a third multiplier are on, they ADD to
+		// that one instead of multiplying it. The same quad-plus-perfect
+		// worth fourteen, with Overdrive up, a hand at 1.5 and a crit
+		// landing: one and a half plus a half plus one is three, so forty
+		// two. Composed the old way it was fourteen times 1.5 times 1.5
+		// times two - sixty four - and that runaway is why a plain double
+		// worth one could leave a board as twelve.
+		{
+			SimConfig stacked = config;
+			stacked.attack_scale = 1.5;
+			stacked.crit_every = 1;
+			Sim piled(stacked, std::vector<int>(40, I));
+			std::set<std::string> also;
+			wait_spawn(piled, &also);
+			piled.seed(welled(1));
+			tap(piled, Key::Cw, &also);
+			tap(piled, Key::Hard, &also);
+			wait_spawn(piled, &also);
+			piled.seed(welled(4));
+			tap(piled, Key::Cw, &also);
+			tap(piled, Key::Hard, &also);
+			check("and a second multiplier adds to it rather than "
+					"multiplying it",
+				piled.overdrive() && piled.locked().back().attack == 42,
+				std::to_string(piled.locked().back().attack));
+		}
 		for (int i = 0; i < 40 && sim.overdrive(); ++i) {
 			sim.step(std::nullopt);
 			heard.insert(sim.cues().begin(), sim.cues().end());

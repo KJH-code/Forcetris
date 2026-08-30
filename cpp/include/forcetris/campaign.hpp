@@ -323,6 +323,11 @@ int endless_rank_owed (int rank, int ring);
 // ladder is exhausted.
 SimConfig endless_edge (SimConfig foe, int rank, int ring);
 
+// The climb's foe takes less of what you send it, ring by ring, down to a
+// floor - a tier has to be worth surviving, not only worth fearing. Its
+// offence is unbounded; only this is floored.
+SimConfig endless_guard (SimConfig foe, int ring);
+
 // How hard a boss's skills land, as a multiplier on the rows they throw,
 // the gauge they drain and the seconds they hold a gimmick down.
 //

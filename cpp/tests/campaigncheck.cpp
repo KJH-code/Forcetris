@@ -1231,6 +1231,28 @@ int main () {
 				presses
 					&& campaign::endless_press(mine, 0).garbage_scale
 						== mine.garbage_scale);
+			// The other half of the same idea, and the one that was
+			// missing: the foe has to get harder to kill, or the tier on
+			// the door is decoration. Ring zero must leave it exactly as
+			// the recipe wrote it, so a plain duel is untouched.
+			SimConfig hide;
+			bool guards = true;
+			double takes = campaign::endless_guard(hide, 0).garbage_scale;
+			for (int ring = 1; ring <= 6; ++ring) {
+				const double now
+					= campaign::endless_guard(hide, ring).garbage_scale;
+				guards = guards && now < takes;
+				takes = now;
+			}
+			check("the climb's foe gets harder to kill, ring by ring",
+				guards
+					&& campaign::endless_guard(hide, 0).garbage_scale
+						== hide.garbage_scale);
+			check("but its hide has a floor, unlike its reach",
+				campaign::endless_guard(hide, 40).garbage_scale
+						== campaign::endless_guard(hide, 400).garbage_scale
+					&& campaign::endless_guard(hide, 40).garbage_scale
+						>= 0.4);
 		}
 
 		// What a blow is worth, by the fire chosen at the door.
