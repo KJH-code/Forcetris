@@ -387,10 +387,25 @@ the stars are the lines you cleared while holding on). A duel is fought
 face to face now - both boards full size, side by side - and a campaign
 boss fights with its own kit: telegraphed skills, two seconds of warning
 before rust falls on it, a column seals shut, the iron cold-snaps, or a
-heat wave leans on your gauge. The warning is a struck plate over your
-own well carrying who is casting and what is coming, with a wind-up bar
-that reaches its end exactly as the blow lands - and the blow flashes
-the screen in the skill's own colour and shakes it. And the fuse is a stage gimmick now, not the campaign's default:
+heat wave leans on your gauge.
+
+A cast is drawn as one thing happening in three places. The foe's well
+gathers it: the rim heats through the skill's own colour, motes draw in
+from the edges to a core that whitens, and the board itself starts to
+shudder in the last second. A plate names the caster and the blow, hung
+over that well in landscape and tethered to it on a phone, where a plate
+wide enough to read would otherwise cover your own stack. Then, for the
+last twenty frames of the wind-up, the blow crosses: three bolts leave
+the foe's board and arrive on the exact frame the rules land the effect,
+so what hits you is the thing you watched coming. The foe recoils, your
+well takes a ring, the screen goes the skill's colour hard and is clear
+again three frames later, and metal comes off the impact.
+
+That last part was a second attempt. The first shipped only the plate,
+and a plate is static: it announced a skill without anything moving, and
+without the caster doing anything at all. A boss that stacks placidly
+through its own spell is not a boss casting - it is a timer on your side
+of the screen. And the fuse is a stage gimmick now, not the campaign's default:
 most rooms play the board pure - the forced drop was the beginners' wall
 - and only the Backdraft rooms and the Overheated Wing still burn, the
 way the Dark Gallery is the room that goes dark. Duels were the last

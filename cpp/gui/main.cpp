@@ -3297,45 +3297,214 @@ void draw_banner (App& app) {
 		IM_COL32(255, 214, 94, static_cast<int>(alpha * 255)), banner.text.c_str());
 }
 
-// The boss announcing itself: a struck plate over the player's well,
-// carrying who is casting, what is coming, and a wind-up bar that reaches
-// its end exactly as the blow lands.
+// The colour a skill announces itself in - the charge, the bolt, the plate
+// rim and the impact all wear it, so a player learns "blue means the iron
+// is about to freeze" before they have finished reading the words.
+SDL_Color skill_hue (const std::string& id) {
+	if (id == "coldsnap") {
+		return {150, 202, 246, 255};
+	}
+	if (id == "vaultdark" || id == "smokescreen") {
+		return {162, 136, 206, 255};
+	}
+	if (id == "deadweight" || id == "forgestrike") {
+		return {236, 172, 92, 255};
+	}
+	if (id == "sealgate" || id == "pincer" || id == "tongslock") {
+		return {182, 192, 206, 255};
+	}
+	return {255, 122, 46, 255};   // Rust, heat, and anything added later.
+}
+
+// Where a cast is: 0 at the warning, 1 at the blow, past 1 while the blow
+// is still ringing. Negative when nothing is being cast, which is most of
+// the time - every drawing below leaves early on it.
+float cast_wind (const App& app, const VersusMatch& match) {
+	if (!app.session.has_value() || match.skill_banner.empty()
+		|| match.skill_fires_at < 0) {
+		return -1.f;
+	}
+	const long frame = app.session->sim().frame();
+	if (frame >= match.skill_banner_until) {
+		return -1.f;
+	}
+	const long lead = std::max(1L,
+		match.skill_fires_at - match.skill_warned_at);
+	return static_cast<float>(frame - match.skill_warned_at) / lead;
+}
+
+// The two ends of the flight: the foe's well, and yours.
+ImVec2 foe_middle () {
+	return ImVec2(kMiniX + kWidth * kMiniCell * 0.5f,
+		kMiniY + kHeight * kMiniCell * 0.5f);
+}
+
+ImVec2 mine_middle () {
+	return ImVec2(kBoardX + kBoardW * 0.5f, kBoardY + kBoardH * 0.5f);
+}
+
+// How hard the foe's well is moving: a tremor that builds through the
+// wind-up, then a recoil away from the player as it lets go. Read by
+// draw_versus_panel, which offsets its whole board by it - a caster that
+// stacks placidly through its own spell is the reason none of this landed
+// as a skill.
+ImVec2 cast_kick (const App& app, const VersusMatch& match) {
+	const float wind = cast_wind(app, match);
+	if (wind < 0.f) {
+		return ImVec2(0.f, 0.f);
+	}
+	const long frame = app.session->sim().frame();
+	const float away = foe_middle().x >= mine_middle().x ? 1.f : -1.f;
+	if (wind >= 1.f) {
+		const long since = frame - match.skill_fires_at;
+		if (since > 12) {
+			return ImVec2(0.f, 0.f);
+		}
+		const float ease = 1.f - since / 12.f;
+		return ImVec2(ui(16) * ease * ease * away, 0.f);
+	}
+	// Nothing for the first half; then a shudder that grows fast, so the
+	// last second is visibly worse than the first.
+	const float tremor = std::max(0.f, wind - 0.45f) / 0.55f;
+	const float amp = ui(4) * tremor * tremor;
+	return ImVec2(std::sin(frame * 1.9f) * amp, std::cos(frame * 2.7f) * amp);
+}
+
+// The whole cast, drawn: the foe's well charging, the bolt crossing, the
+// plate that names it, and the ring where it lands.
 //
-// The old telegraph was one line of pulsing red text - quieter than the
-// player's own Overdrive banner, which is backwards. A skill is the one
-// thing in a duel the player did not choose, so it gets the loudest chrome
-// on the screen and two full seconds to be dreaded in.
+// The plate alone was not enough, and the reason is now obvious - it was
+// static, and it hung over the wrong board. A boss that casts without its
+// own well doing anything is not a boss casting, it is a timer on your
+// side of the screen. So the charge gathers over there, the blow travels,
+// and it arrives on the frame the rules say it arrives.
 void draw_caster_plate (App& app, const VersusMatch& match) {
-	if (!app.session.has_value() || match.skill_banner.empty()) {
+	const float wind = cast_wind(app, match);
+	if (wind < 0.f) {
 		return;
 	}
 	const long frame = app.session->sim().frame();
-	if (frame >= match.skill_banner_until || match.skill_fires_at < 0) {
-		return;
-	}
-	// Two clocks: the wind-up before the blow, and the fade after it.
-	const long lead = std::max(1L, match.skill_fires_at - match.skill_warned_at);
-	const float wind = std::clamp(
-		static_cast<float>(frame - match.skill_warned_at) / lead, 0.f, 1.f);
-	const bool struck = frame >= match.skill_fires_at;
+	const bool struck = wind >= 1.f;
 	const float after = struck
 		? std::clamp(static_cast<float>(frame - match.skill_fires_at)
 			/ std::max(1L, match.skill_banner_until - match.skill_fires_at),
 			0.f, 1.f)
 		: 0.f;
 	const float alpha = struck ? 1.f - after * after : 1.f;
-
-	const float pad = ui(10);
-	const float tall = ui(66);
-	const float top = kBoardY + ui(34);
-	const float left = kBoardX + pad;
-	const float right = kBoardX + kBoardW - pad;
+	const SDL_Color hue = skill_hue(match.skill_caster);
 	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	const auto tint = [&hue] (float lift, int a) {
+		return IM_COL32(
+			std::min(255, static_cast<int>(hue.r * lift)),
+			std::min(255, static_cast<int>(hue.g * lift)),
+			std::min(255, static_cast<int>(hue.b * lift)), a);
+	};
 	const auto fade = [alpha] (int r, int g, int b, int a) {
 		return IM_COL32(r, g, b, static_cast<int>(a * alpha));
 	};
-	// The seat, then the plate: dark iron, hotter along its lower edge the
-	// nearer the blow is.
+
+	const ImVec2 kick = cast_kick(app, match);
+	const ImVec2 from(foe_middle().x + kick.x, foe_middle().y + kick.y);
+	const ImVec2 to = mine_middle();
+
+	// --- The charge, over the foe's well. ---------------------------------
+	if (!struck) {
+		const float foe_w = kWidth * kMiniCell;
+		const float foe_h = kHeight * kMiniCell;
+		// The rim heats through the wind-up.
+		const float rim = ui(2) + ui(3) * wind;
+		draw->AddRect(ImVec2(from.x - foe_w / 2 - rim, from.y - foe_h / 2 - rim),
+			ImVec2(from.x + foe_w / 2 + rim, from.y + foe_h / 2 + rim),
+			tint(0.6f + 0.6f * wind, static_cast<int>(90 + 165 * wind)),
+			ui(3), 0, rim);
+		// Motes drawn in from the rim to the middle, arriving together: the
+		// well is gathering something, and you can see how much is left.
+		for (int i = 0; i < 10; ++i) {
+			const float turn = i * 0.6283f + frame * 0.04f;
+			const float pull = 1.f - std::pow(
+				std::clamp((wind - i * 0.03f), 0.f, 1.f), 1.6f);
+			const float reach = (foe_w * 0.62f) * pull;
+			const ImVec2 at(from.x + std::cos(turn) * reach,
+				from.y + std::sin(turn) * reach * 1.35f);
+			draw->AddCircleFilled(at, ui(2) + ui(2) * wind,
+				tint(1.15f, static_cast<int>(70 + 185 * wind)));
+		}
+		// The core, brightening to white as the last beat runs out.
+		draw->AddCircleFilled(from, ui(4) + ui(13) * wind * wind,
+			tint(0.9f + 0.9f * wind, static_cast<int>(60 + 150 * wind)));
+	}
+
+	// --- The flight. ------------------------------------------------------
+	// The bolt is in the air for the last twenty frames of the wind-up and
+	// arrives on the blow, so what hits you is the thing you watched.
+	const long out = match.skill_fires_at - VersusMatch::kFlight;
+	if (frame >= out && frame <= match.skill_fires_at + 2) {
+		for (int bolt = 0; bolt < 3; ++bolt) {
+			const long lag = bolt * 2;
+			const float run = static_cast<float>(frame - out - lag)
+				/ VersusMatch::kFlight;
+			if (run < 0.f || run > 1.f) {
+				continue;
+			}
+			// Eased so it leaves fast and drives in faster still.
+			const float t = run * run * (3.f - 2.f * run);
+			const float sway = (bolt - 1) * ui(22) * std::sin(run * 3.1416f);
+			const ImVec2 head(from.x + (to.x - from.x) * t,
+				from.y + (to.y - from.y) * t + sway);
+			const float back = std::max(0.f, t - 0.16f);
+			const ImVec2 tail(from.x + (to.x - from.x) * back,
+				from.y + (to.y - from.y) * back + sway);
+			draw->AddLine(tail, head, tint(0.7f, 120), ui(7));
+			draw->AddLine(tail, head, tint(1.25f, 220), ui(3));
+			draw->AddCircleFilled(head, ui(6), tint(1.4f, 240));
+			draw->AddCircleFilled(head, ui(3), IM_COL32(255, 250, 240, 250));
+		}
+	}
+
+	// --- The landing. -----------------------------------------------------
+	if (struck) {
+		const long since = frame - match.skill_fires_at;
+		if (since < 16) {
+			const float grow = since / 16.f;
+			draw->AddCircle(to, ui(30) + ui(190) * grow,
+				tint(1.2f, static_cast<int>(220 * (1.f - grow))), 48,
+				ui(6) * (1.f - grow) + ui(1));
+			draw->AddCircle(to, ui(10) + ui(120) * grow,
+				IM_COL32(255, 250, 240,
+					static_cast<int>(170 * (1.f - grow))), 40,
+				ui(3) * (1.f - grow) + ui(1));
+		}
+	}
+
+	// --- The plate. -------------------------------------------------------
+	// Landscape hangs it over the foe's well, where the announcement
+	// belongs. A phone has no room for that - the foe's board is a tenth of
+	// the screen, and a plate wide enough to read would sit squarely over
+	// the player's own stack, hiding it at the exact moment they need to
+	// read it. So portrait puts the plate in the strip above both boards
+	// and draws a tether to the caster instead.
+	const ImVec2 screen = ImGui::GetIO().DisplaySize;
+	const float tall = ui(66);
+	const float wide = kPortrait
+		? screen.x - ui(12)
+		: std::max(kWidth * kMiniCell * 1.f, ui(250));
+	const float left = kPortrait
+		? ui(6)
+		: std::clamp(from.x - wide / 2, ui(6), screen.x - wide - ui(6));
+	const float right = left + wide;
+	const float top = kPortrait
+		? ui(4)
+		: std::max(ui(6), kMiniY - tall - ui(10));
+	// The tether: a line from the plate to the well that is casting, so a
+	// plate that could not sit over its caster still points at it.
+	{
+		const ImVec2 anchor(std::clamp(from.x, left, right), top + tall);
+		if (from.y > anchor.y + ui(8)) {
+			draw->AddLine(anchor, ImVec2(from.x, from.y - ui(6)),
+				tint(1.f, static_cast<int>((struck ? 90 : 60 + 120 * wind)
+					* alpha)), ui(2));
+		}
+	}
 	const int heat = static_cast<int>(30 + 90 * (struck ? 1.f : wind));
 	draw->AddRectFilled(ImVec2(left + ui(3), top + ui(4)),
 		ImVec2(right + ui(3), top + tall + ui(4)), fade(0, 0, 0, 150),
@@ -3343,49 +3512,45 @@ void draw_caster_plate (App& app, const VersusMatch& match) {
 	draw->AddRectFilledMultiColor(ImVec2(left, top), ImVec2(right, top + tall),
 		fade(34, 26, 21, 245), fade(34, 26, 21, 245),
 		fade(heat, heat / 3, 20, 245), fade(heat, heat / 3, 20, 245));
-	// The rim, brightening as the wind-up runs out, white at the blow.
-	const int rim = static_cast<int>(120 + 135 * (struck ? 1.f : wind));
 	draw->AddRect(ImVec2(left, top), ImVec2(right, top + tall),
-		fade(255, struck ? 220 : rim / 2, struck ? 190 : 40, 255), ui(3),
-		0, ui(2));
+		tint(struck ? 1.6f : 0.7f + 0.7f * wind,
+			static_cast<int>(255 * alpha)), ui(3), 0, ui(2));
 
-	// Who, small and cool, over what, large and hot.
 	ImFont* small_font = app.fonts.body;
 	if (!match.caster_name.empty()) {
 		const char* who = match.caster_name.c_str();
 		const ImVec2 size = small_font->CalcTextSizeA(
 			small_font->FontSize, FLT_MAX, 0.f, who);
 		draw->AddText(small_font, small_font->FontSize,
-			ImVec2(left + (right - left - size.x) / 2, top + ui(8)),
+			ImVec2(left + (wide - size.x) / 2, top + ui(8)),
 			fade(214, 190, 164, 220), who);
 	}
 	ImFont* font = app.fonts.head;
 	const char* what = match.skill_banner.c_str();
-	// The name shrinks to fit rather than running off a phone's board.
-	float size = font->FontSize * 1.15f;
+	// The name shrinks to fit rather than running off a phone's board, and
+	// snaps a little larger on the frame it lands.
+	float size = font->FontSize * (struck ? 1.32f : 1.15f);
 	ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.f, what);
-	const float room = right - left - ui(16);
+	const float room = wide - ui(16);
 	if (extent.x > room) {
 		size *= room / extent.x;
 		extent = font->CalcTextSizeA(size, FLT_MAX, 0.f, what);
 	}
 	const float name_y = top + tall - ui(16) - extent.y;
 	draw->AddText(font, size,
-		ImVec2(left + (right - left - extent.x) / 2 + ui(2), name_y + ui(2)),
+		ImVec2(left + (wide - extent.x) / 2 + ui(2), name_y + ui(2)),
 		fade(20, 8, 4, 200), what);
-	draw->AddText(font, size,
-		ImVec2(left + (right - left - extent.x) / 2, name_y),
-		struck ? fade(255, 246, 232, 255) : fade(255, 132, 76, 255), what);
+	draw->AddText(font, size, ImVec2(left + (wide - extent.x) / 2, name_y),
+		struck ? fade(255, 246, 232, 255) : tint(1.15f, 255), what);
 
-	// The wind-up: a bar along the plate's foot that fills as the seconds
-	// go, so the dread has a length a player can plan against.
+	// The wind-up bar along the plate's foot, so the dread has a length.
 	const float bar_y = top + tall - ui(7);
+	const float bar_w = wide - ui(12);
 	draw->AddRectFilled(ImVec2(left + ui(6), bar_y),
 		ImVec2(right - ui(6), bar_y + ui(4)), fade(0, 0, 0, 160), ui(2));
 	draw->AddRectFilled(ImVec2(left + ui(6), bar_y),
-		ImVec2(left + ui(6) + (right - left - ui(12)) * wind,
-			bar_y + ui(4)),
-		struck ? fade(255, 250, 236, 255) : fade(255, 176, 60, 255), ui(2));
+		ImVec2(left + ui(6) + bar_w * std::min(wind, 1.f), bar_y + ui(4)),
+		struck ? fade(255, 250, 236, 255) : tint(1.25f, 255), ui(2));
 }
 
 // The other board, small, and the wire's state around both: the bot's
@@ -3399,8 +3564,13 @@ void draw_versus_panel (App& app) {
 	const Sim& theirs = match.bot->sim();
 	SDL_Renderer* renderer = app.renderer;
 	const int cell = kMiniCell;
-	const int left = kMiniX;
-	const int top = kMiniY;
+	// The whole foe board rides its own cast: a tremor building through the
+	// wind-up, a recoil as it lets go. Everything below is drawn from these
+	// two, so the stack, the piece and the frame move together the way a
+	// struck object does.
+	const ImVec2 kick = cast_kick(app, match);
+	const int left = kMiniX + static_cast<int>(kick.x);
+	const int top = kMiniY + static_cast<int>(kick.y);
 	fill(renderer, left - px(2), top - px(2),
 		kWidth * cell + px(4), kHeight * cell + px(4), {58, 42, 30, 255});
 	// The bot's Overdrive shows the way the player's does, scaled down:
@@ -6992,21 +7162,34 @@ int run (bool smoke, long smoke_frames) {
 			// cues do - warning and landing alike.
 			for (const std::string& cue : app.versus->skill_cues) {
 				app.audio.play(cue);
-				// A blow that lands is felt as well as heard. The warning
-				// is not: a telegraph that shook the screen would be
-				// indistinguishable from the thing it warns about.
-				if (cue == "skillwarn" || !app.session.has_value()) {
+				if (!app.session.has_value()) {
 					continue;
 				}
-				app.skill_flash = 14;
-				app.skill_ink = cue == "freeze"
-					? SDL_Color{150, 200, 240, 255}
-					: cue == "skilldark" ? SDL_Color{120, 100, 170, 255}
-					: cue == "skillheavy" ? SDL_Color{190, 150, 110, 255}
-					: cue == "pressure" ? SDL_Color{255, 176, 60, 255}
-					: SDL_Color{226, 92, 62, 255};
+				const SDL_Color hue = skill_hue(app.versus->skill_caster);
+				// The warning does not shake the screen - a telegraph
+				// indistinguishable from the thing it warns about is no
+				// telegraph. The launch throws sparks off the foe's well,
+				// because the blow leaves from somewhere.
+				if (cue == "skillwarn") {
+					continue;
+				}
+				if (cue == "skillcast") {
+					spawn_sparks_at(app, foe_middle().x, foe_middle().y,
+						hue, 16, 5.2f);
+					app.shake_until = std::max(app.shake_until,
+						app.session->sim().frame() + 5);
+					continue;
+				}
+				// The blow itself: the screen goes the skill's colour, the
+				// room moves, and the well throws metal.
+				app.skill_flash = 18;
+				app.skill_ink = hue;
 				app.shake_until = std::max(app.shake_until,
-					app.session->sim().frame() + 12);
+					app.session->sim().frame() + 18);
+				spawn_sparks_at(app, mine_middle().x, mine_middle().y,
+					hue, 34, 8.5f);
+				spawn_sparks_at(app, mine_middle().x,
+					kBoardY + kBoardH - ui(20), hue, 20, 6.5f);
 			}
 			app.versus->skill_cues.clear();
 		}
@@ -7170,7 +7353,12 @@ int run (bool smoke, long smoke_frames) {
 					SDL_SetRenderDrawBlendMode(app.renderer,
 						SDL_BLENDMODE_BLEND);
 					SDL_Color ink = app.skill_ink;
-					ink.a = static_cast<Uint8>(app.skill_flash * 11);
+					// Violent for three frames, then gone. A flash that
+					// fades linearly over a third of a second is not a hit,
+					// it is a filter over the board - and you cannot read
+					// your own stack through it while the garbage arrives.
+					const float left = app.skill_flash / 18.f;
+					ink.a = static_cast<Uint8>(215.f * left * left * left);
 					fill(app.renderer, 0, 0, w, h, ink);
 				}
 				if (app.od_banner > 0) {

@@ -91,6 +91,11 @@ struct VersusMatch {
 	std::string skill_caster;
 	long skill_warned_at = -1;
 	long skill_fires_at = -1;
+	// The last stretch of the wind-up, in frames: the screen spends it
+	// flying the blow across from the foe's well to the player's, so the
+	// thing that hits you is the thing you watched coming. Presentation
+	// only - the effect still lands on `skill_fires_at` to the frame.
+	static constexpr long kFlight = 20;
 	// Whose kit this is, for the plate's upper line. Set by the screen
 	// from the stage it launched; a plain duel leaves it empty and the
 	// plate prints the skill alone.

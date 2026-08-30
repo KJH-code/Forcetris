@@ -146,6 +146,13 @@ void VersusMatch::tick_skills (Session& player) {
 			skill_fires_at = skill.next_fire;
 			skill_cues.push_back("skillwarn");
 		}
+		// The launch, a beat before the blow: the bolt is away and the
+		// screen has the flight to show it. Only the announced skill gets
+		// one - a deferred spell is not in the air.
+		if (skill.telegraphing && skill_caster == skill.id
+			&& frame == skill.next_fire - kFlight) {
+			skill_cues.push_back("skillcast");
+		}
 		if (skill.telegraphing && frame >= skill.next_fire) {
 			// Two warnings can begin before either has landed, so the
 			// board is asked again at the blow itself. A spell that would

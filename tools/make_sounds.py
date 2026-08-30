@@ -346,6 +346,17 @@ SOUNDS.update({
         silence(0.10),
         metal(261.63, 0.60, 0.44, BELL, release=0.85),
     ), size=2.2, decay=0.9, wet=0.42, tail=1.2)), ms=21., spread=0.9),
+    # The bolt leaving the foe's well, four hundred milliseconds before it
+    # arrives. A rise, not a hit: pitch climbing while noise opens up under
+    # it, so the ear is leaning forward by the time the thing lands. The
+    # warning bell says something is coming; this says it is coming NOW.
+    'skillcast': lambda: widen(trim(room(mix(
+        tone(120, 0.42, 0.30, 'saw', freq_end=560, attack=0.06,
+            release=0.12),
+        highpass(tone(400, 0.42, 0.22, 'noise', attack=0.25, release=0.1),
+            900.),
+        sub(48, 0.40, 0.26, freq_end=96, release=0.14),
+    ), size=1.4, decay=0.7, wet=0.28, tail=0.5)), ms=17., spread=0.8),
     # The gate coming down: iron sliding, then the stop at the bottom.
     'skillseal': lambda: widen(trim(room(mix(
         lowpass(tone(140, 0.26, 0.30, 'noise', attack=0.05, release=0.5),
