@@ -62,7 +62,11 @@ cp "$OUT/sdl2/lib/libSDL2.so" "$STAGE/lib/$ABI/"
 cp "$ANDROID_NDK"/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so \
 	"$STAGE/lib/$ABI/"
 cp -r "$ROOT/sound" "$ROOT/music" "$ROOT/gfx" "$STAGE/assets/"
-(cd "$STAGE/assets" && find sound music gfx -type f | sort > assets.txt)
+# Each line is "<bytes> <path>": the size is what lets an upgrade over an
+# older install notice that a file's contents changed. A manifest without
+# sizes still works - the extractor falls back to "skip what exists".
+(cd "$STAGE/assets" && find sound music gfx -type f -printf '%s %p\n' \
+	| sort -k2 > assets.txt)
 
 # --- 5. Package, align, sign. ---------------------------------------------
 aapt package -f -M "$HERE/AndroidManifest.xml" -I "$JAR" \

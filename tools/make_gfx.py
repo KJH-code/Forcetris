@@ -18,15 +18,18 @@ from PIL import Image, ImageDraw, ImageFilter
 OUT = os.path.join(os.path.dirname(__file__), "..", "gfx")
 SS = 4  # Supersample factor.
 
-# The palette - theme.hpp quotes these.
+# The palette. cpp/gui/palette.hpp holds the same numbers on the C++ side -
+# these are baked into PNGs, those are drawn live, and the two halves are a
+# pair: change one and change the other, then rerun this script.
 BG0 = (12, 10, 8)
 PANEL = (25, 20, 16)
 PANEL_HI = (38, 31, 25)
 EDGE = (86, 76, 64)
 EDGE_HI = (140, 124, 104)
-INK = (235, 223, 206)
-MUTED = (154, 138, 120)
+INK = (244, 237, 228)
+MUTED = (157, 140, 120)
 EMBER = (255, 122, 46)
+EMBER_HOT = (255, 176, 60)
 EMBER_DEEP = (196, 74, 24)
 GOLD = (255, 214, 94)
 STEEL = (143, 163, 184)
@@ -162,8 +165,13 @@ def frame(name, size, border, rivets):
 def icon(name, size, paint, glow=True, ink=INK):
     img = canvas(size, size)
     d = ImageDraw.Draw(img)
-    paint(d, size * SS)
-    img = soften(img, 1.4)
+    # A painter may want the image itself - the shaded helpers composite a
+    # gradient through a mask and cannot work from a draw context alone.
+    try:
+        paint(d, size * SS, img)
+    except TypeError:
+        paint(d, size * SS)
+    img = soften(img, 1.1)
     if glow:
         halo = img.split()[3].filter(ImageFilter.GaussianBlur(SS * 3))
         back = Image.new("RGBA", img.size, EMBER + (0,))
@@ -180,265 +188,517 @@ def stroke(d, points, width, ink=INK):
     d.line(points, fill=ink, width=width, joint="curve")
 
 
+# --- Material: the one thing the flat painters never had. -------------------
+# A shape drawn as a single flat fill has no weight, which is why the old
+# icons all read as the same grey blob once SDL had scaled them down to the
+# twenty-four pixels they are actually rendered at. These give a shape a lit
+# crown, a cooling foot and a keyline - the same light the blocks in the well
+# are lit by, so the map and the board look like one game.
+
+def _ramp(size, top, bottom):
+    """A vertical two-stop gradient the size of the canvas."""
+    w, h = size
+    ramp = Image.new("RGBA", size)
+    px = ramp.load()
+    for y in range(h):
+        t = y / max(1, h - 1)
+        row = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
+        for x in range(w):
+            px[x, y] = row + (255,)
+    return ramp
+
+
+def shaded_poly(img, pts, top, bottom, keyline=None, width=None):
+    """A polygon poured full of a gradient, with an optional dark keyline.
+
+    The keyline is what lets an icon sit on a dark plate without dissolving
+    into it - the old set relied on a 27%-alpha halo and nine of its icons
+    switched even that off.
+    """
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).polygon(pts, fill=255)
+    ramp = _ramp(img.size, top, bottom)
+    ramp.putalpha(mask)
+    img.alpha_composite(ramp)
+    if keyline is not None:
+        ImageDraw.Draw(img).polygon(
+            pts, outline=keyline, width=width or SS * 2)
+
+
+def shaded_ellipse(img, box, top, bottom, keyline=None, width=None):
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).ellipse(box, fill=255)
+    ramp = _ramp(img.size, top, bottom)
+    ramp.putalpha(mask)
+    img.alpha_composite(ramp)
+    if keyline is not None:
+        ImageDraw.Draw(img).ellipse(
+            box, outline=keyline, width=width or SS * 2)
+
+
+# The two ends of every metal shape, and the keyline under all of them.
+IRON_HI = (214, 200, 180)
+IRON_LO = (120, 106, 92)
+GOLD_HI = (255, 232, 150)
+GOLD_LO = (188, 138, 30)
+FIRE_HI = (255, 214, 120)
+FIRE_LO = (198, 66, 18)
+KEY = (10, 7, 5, 220)
+
+
 def hammer(d, s, angle):
-    """One war hammer, drawn rotated about the centre."""
-    cx = cy = s / 2
-    ca, sa = math.cos(angle), math.sin(angle)
+    """One hammer, drawn heavy. Two thin sticks crossed never read at all."""
+    cx, cy = s * 0.5, s * 0.52
+    cos, sin = math.cos(angle), math.sin(angle)
 
     def rot(x, y):
-        x, y = x - cx, y - cy
-        return (cx + x * ca - y * sa, cy + x * sa + y * ca)
+        dx, dy = x - cx, y - cy
+        return (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos)
 
-    w = s * 0.055
-    stroke(d, [rot(cx, s * 0.18), rot(cx, s * 0.84)], int(w))
-    head = [rot(cx - s * 0.16, s * 0.18), rot(cx + s * 0.16, s * 0.18),
-            rot(cx + s * 0.13, s * 0.34), rot(cx - s * 0.13, s * 0.34)]
-    d.polygon(head, fill=INK)
+    return rot
 
 
-def ic_battle(d, s):
-    hammer(d, s, math.radians(38))
-    hammer(d, s, math.radians(-38))
+def ic_battle(d, s, img=None):
+    """Crossed hammers - but with a haft you can see and a head with mass."""
+    for angle in (math.radians(48), math.radians(-48)):
+        rot = hammer(d, s, angle)
+        cx = s * 0.5
+        haft = [rot(cx - s * 0.05, s * 0.34), rot(cx + s * 0.05, s * 0.34),
+                rot(cx + s * 0.05, s * 0.94), rot(cx - s * 0.05, s * 0.94)]
+        head = [rot(cx - s * 0.26, s * 0.08), rot(cx + s * 0.26, s * 0.08),
+                rot(cx + s * 0.21, s * 0.36), rot(cx - s * 0.21, s * 0.36)]
+        if img is not None:
+            shaded_poly(img, haft, (150, 128, 102), (86, 70, 54), KEY)
+            shaded_poly(img, head, IRON_HI, IRON_LO, KEY)
+        else:
+            d.polygon(haft, fill=INK)
+            d.polygon(head, fill=INK)
 
 
-def anvil(d, s, scale=1.0, dy=0.0):
-    u = s * scale
-
+def ic_boss(d, s, img=None):
+    """A crown. Nothing else on the map is a crown, which is the point."""
     def p(x, y):
-        return (s / 2 + (x - 0.5) * u, s * (0.52 + dy) + (y - 0.5) * u)
+        return (s * x, s * y)
 
-    body = [p(0.08, 0.36), p(0.92, 0.36), p(0.86, 0.5), p(0.62, 0.52),
-            p(0.66, 0.72), p(0.34, 0.72), p(0.38, 0.52), p(0.2, 0.5),
-            p(0.02, 0.44)]
-    d.polygon(body, fill=INK)
-    d.polygon([p(0.26, 0.72), p(0.74, 0.72), p(0.8, 0.82), p(0.2, 0.82)],
-        fill=INK)
+    band = [p(0.14, 0.62), p(0.86, 0.62), p(0.86, 0.82), p(0.14, 0.82)]
+    spikes = [p(0.14, 0.62), p(0.20, 0.22), p(0.32, 0.48), p(0.50, 0.12),
+              p(0.68, 0.48), p(0.80, 0.22), p(0.86, 0.62)]
+    if img is not None:
+        shaded_poly(img, spikes, GOLD_HI, GOLD_LO, KEY)
+        shaded_poly(img, band, GOLD_HI, GOLD_LO, KEY)
+        # Three set stones, so the band is not a bare bar.
+        for x in (0.30, 0.50, 0.70):
+            shaded_ellipse(img, (s * (x - 0.05), s * 0.66,
+                s * (x + 0.05), s * 0.78), (255, 250, 230), EMBER_DEEP)
+    else:
+        d.polygon(spikes, fill=GOLD)
+        d.polygon(band, fill=GOLD)
 
 
-def flame(d, s, cx, cy, scale, ink=EMBER):
+def ic_mini(d, s, img=None):
+    """A blade, point down - the warden barring the short way up."""
+    def p(x, y):
+        return (s * x, s * y)
+
+    blade = [p(0.50, 0.94), p(0.33, 0.46), p(0.38, 0.30), p(0.62, 0.30),
+             p(0.67, 0.46)]
+    guard = [p(0.22, 0.24), p(0.78, 0.24), p(0.78, 0.34), p(0.22, 0.34)]
+    grip = [p(0.44, 0.06), p(0.56, 0.06), p(0.56, 0.24), p(0.44, 0.24)]
+    if img is not None:
+        shaded_poly(img, blade, (232, 224, 212), (128, 138, 150), KEY)
+        shaded_poly(img, guard, GOLD_HI, GOLD_LO, KEY)
+        shaded_poly(img, grip, (120, 84, 56), (72, 48, 32), KEY)
+    else:
+        d.polygon(blade, fill=INK)
+        d.polygon(guard, fill=GOLD)
+        d.polygon(grip, fill=MUTED)
+
+
+def anvil(d, s, scale=1.0, dy=0.0, img=None):
+    """The anvil, with a horn - and now only the forge stop wears it."""
+    def p(x, y):
+        return (s * (0.5 + (x - 0.5) * scale), s * (y * scale + dy))
+
+    body = [p(0.06, 0.40), p(0.30, 0.34), p(0.94, 0.34), p(0.88, 0.50),
+            p(0.62, 0.53), p(0.66, 0.72), p(0.34, 0.72), p(0.38, 0.53),
+            p(0.16, 0.50)]
+    base = [p(0.24, 0.72), p(0.76, 0.72), p(0.84, 0.86), p(0.16, 0.86)]
+    if img is not None:
+        shaded_poly(img, body, IRON_HI, IRON_LO, KEY)
+        shaded_poly(img, base, (150, 134, 116), (74, 62, 50), KEY)
+    else:
+        d.polygon(body, fill=INK)
+        d.polygon(base, fill=INK)
+
+
+def flame(d, s, cx, cy, scale, ink=EMBER, img=None):
+    """A hand-cut teardrop, not a wobbled circle.
+
+    Every parametric flame I tried came out a cloud: a radius that varies
+    smoothly around a centre has no tip and no direction. So the outline is
+    written down instead - a point at the top, the body swelling low, and one
+    lick curling off the left so the base is not a bowl. Read at 24px, that
+    asymmetry is the whole tell.
+    """
     u = s * scale
-    pts = []
-    for i in range(24):
-        a = i / 24 * 2 * math.pi
-        r = u * (0.5 + 0.16 * math.sin(a * 3 + 1.2))
-        wob = 1.0 - 0.55 * max(0.0, math.cos(a))  # Lean the tip upward.
-        pts.append((cx + r * math.sin(a) * 0.62,
-                    cy - r * math.cos(a) * wob * 0.9 + u * 0.1))
-    d.polygon(pts, fill=ink)
-    d.ellipse((cx - u * 0.16, cy - u * 0.05, cx + u * 0.16, cy + u * 0.3),
-        fill=GOLD)
+    outline = [(0.00, -1.00), (0.14, -0.60), (0.28, -0.18), (0.40, 0.26),
+        (0.34, 0.66), (0.14, 0.88), (-0.10, 0.88), (-0.30, 0.70),
+        (-0.40, 0.34), (-0.21, 0.08), (-0.30, -0.22), (-0.22, -0.58),
+        (-0.10, -0.82)]
+    pts = [(cx + x * u * 1.1, cy + y * u * 0.95) for x, y in outline]
+    core = (cx - u * 0.15, cy - u * 0.02, cx + u * 0.16, cy + u * 0.52)
+    if img is not None:
+        shaded_poly(img, pts, FIRE_HI, FIRE_LO)
+        shaded_ellipse(img, core, (255, 255, 236), (255, 206, 96))
+    else:
+        d.polygon(pts, fill=ink)
+        d.ellipse(core, fill=GOLD)
 
 
-def ic_boss(d, s):
-    anvil(d, s, 0.9, 0.08)
-    # The crown above the horn.
-    base = s * 0.30
-    d.polygon([(s * 0.3, base), (s * 0.7, base), (s * 0.66, base - s * 0.05),
-               (s * 0.6, base - s * 0.17), (s * 0.5, base - s * 0.05),
-               (s * 0.4, base - s * 0.17), (s * 0.34, base - s * 0.05)],
-        fill=GOLD)
+def ic_forge(d, s, img=None):
+    anvil(d, s, 0.94, 0.20, img)
+    flame(d, s, s * 0.5, s * 0.30, 0.34, img=img)
 
 
-def ic_mini(d, s):
-    # The miniboss: the boss's anvil, uncrowned, with a single blade
-    # struck across it - a duel, but not yet the master's.
-    anvil(d, s, 0.8, 0.1)
-    stroke(d, [(s * 0.24, s * 0.14), (s * 0.76, s * 0.6)], int(s * 0.055))
-    stroke(d, [(s * 0.64, s * 0.5), (s * 0.58, s * 0.7)], int(s * 0.05))
-    stroke(d, [(s * 0.84, s * 0.54), (s * 0.68, s * 0.76)], int(s * 0.05))
+def ic_event(d, s, img=None):
+    """A question, cut as a shape rather than traced as a hairline."""
+    def p(x, y):
+        return (s * x, s * y)
+
+    diamond = [p(0.5, 0.04), p(0.96, 0.5), p(0.5, 0.96), p(0.04, 0.5)]
+    inner = [p(0.5, 0.16), p(0.84, 0.5), p(0.5, 0.84), p(0.16, 0.5)]
+    hook = [p(0.36, 0.34), p(0.44, 0.28), p(0.58, 0.28), p(0.66, 0.36),
+            p(0.66, 0.46), p(0.56, 0.54), p(0.54, 0.62), p(0.46, 0.62),
+            p(0.46, 0.50), p(0.57, 0.43), p(0.57, 0.37), p(0.50, 0.35),
+            p(0.44, 0.40), p(0.36, 0.40)]
+    if img is not None:
+        shaded_poly(img, diamond, (96, 82, 66), (52, 42, 34), KEY)
+        shaded_poly(img, inner, (34, 27, 21), (22, 17, 13))
+        shaded_poly(img, hook, GOLD_HI, GOLD_LO, KEY, SS)
+        shaded_ellipse(img, (s * 0.455, s * 0.68, s * 0.545, s * 0.77),
+            GOLD_HI, GOLD_LO, KEY, SS)
+    else:
+        d.polygon(diamond, outline=INK, width=int(s * 0.05))
+        d.polygon(hook, fill=GOLD)
 
 
-def ic_forge(d, s):
-    anvil(d, s, 0.86, 0.14)
-    flame(d, s, s * 0.5, s * 0.26, 0.3)
+def spin(pts, cx, cy, angle):
+    """Rotate a point list about a centre - cheaper than a second painter."""
+    cos, sin = math.cos(angle), math.sin(angle)
+    return [(cx + (x - cx) * cos - (y - cy) * sin,
+        cy + (x - cx) * sin + (y - cy) * cos) for x, y in pts]
 
 
-def ic_event(d, s):
-    # A rune-stone diamond with a question cut into it.
-    d.polygon([(s * 0.5, s * 0.06), (s * 0.94, s * 0.5), (s * 0.5, s * 0.94),
-               (s * 0.06, s * 0.5)], outline=INK, width=int(s * 0.05))
-    w = int(s * 0.075)
-    stroke(d, [(s * 0.38, s * 0.4), (s * 0.4, s * 0.32), (s * 0.5, s * 0.28),
-               (s * 0.6, s * 0.32), (s * 0.62, s * 0.42), (s * 0.5, s * 0.5),
-               (s * 0.5, s * 0.58)], w)
-    d.ellipse((s * 0.46, s * 0.66, s * 0.54, s * 0.74), fill=INK)
+def ic_ember(d, s, img=None):
+    """A live coal. The old one was three concentric circles; this one has a
+    hot floor and a cooling crown, which is what a coal actually looks like."""
+    if img is not None:
+        shaded_ellipse(img, (s * 0.10, s * 0.10, s * 0.90, s * 0.90),
+            (255, 176, 72), (150, 40, 10))
+        shaded_ellipse(img, (s * 0.24, s * 0.26, s * 0.76, s * 0.80),
+            (255, 236, 168), (255, 118, 34))
+        shaded_ellipse(img, (s * 0.36, s * 0.34, s * 0.62, s * 0.56),
+            (255, 255, 244), (255, 214, 120))
+    else:
+        d.ellipse((s * 0.10, s * 0.10, s * 0.90, s * 0.90), fill=EMBER_DEEP)
+        d.ellipse((s * 0.24, s * 0.26, s * 0.76, s * 0.80), fill=EMBER)
+        d.ellipse((s * 0.36, s * 0.34, s * 0.62, s * 0.56), fill=GOLD)
 
 
-def ic_lock(d, s):
-    d.rounded_rectangle((s * 0.26, s * 0.44, s * 0.74, s * 0.84),
-        radius=s * 0.06, fill=MUTED)
-    stroke(d, [(s * 0.35, s * 0.46), (s * 0.35, s * 0.32), (s * 0.42, s * 0.2),
-               (s * 0.58, s * 0.2), (s * 0.65, s * 0.32), (s * 0.65, s * 0.46)],
-        int(s * 0.07), ink=MUTED)
-    d.ellipse((s * 0.46, s * 0.56, s * 0.54, s * 0.66), fill=PANEL)
+def ic_slag(d, s, img=None):
+    """A cast ingot: a lit top face, a front wall and a shaded end. Slag buys
+    the permanent things, so it should look like a bar you could pick up."""
+    def p(x, y):
+        return (s * x, s * y)
+
+    top = [p(0.16, 0.44), p(0.34, 0.28), p(0.90, 0.28), p(0.72, 0.44)]
+    face = [p(0.16, 0.44), p(0.72, 0.44), p(0.72, 0.76), p(0.16, 0.76)]
+    side = [p(0.72, 0.44), p(0.90, 0.28), p(0.90, 0.60), p(0.72, 0.76)]
+    if img is not None:
+        shaded_poly(img, top, (196, 210, 226), (140, 158, 178))
+        shaded_poly(img, face, (132, 150, 170), (74, 86, 102))
+        shaded_poly(img, side, (96, 110, 128), (52, 60, 72))
+    else:
+        d.polygon(top, fill=STEEL)
+        d.polygon(face, fill=(STEEL[0] - 40, STEEL[1] - 40, STEEL[2] - 36))
+        d.polygon(side, fill=(STEEL[0] - 60, STEEL[1] - 58, STEEL[2] - 50))
 
 
-def ic_ember(d, s):
-    d.ellipse((s * 0.12, s * 0.12, s * 0.88, s * 0.88), fill=EMBER_DEEP)
-    d.ellipse((s * 0.2, s * 0.2, s * 0.8, s * 0.8), fill=EMBER)
-    d.ellipse((s * 0.32, s * 0.28, s * 0.62, s * 0.58), fill=GOLD)
-
-
-def ic_slag(d, s):
-    d.polygon([(s * 0.14, s * 0.62), (s * 0.28, s * 0.36), (s * 0.86, s * 0.36),
-               (s * 0.72, s * 0.62)], fill=STEEL)
-    d.polygon([(s * 0.14, s * 0.62), (s * 0.72, s * 0.62), (s * 0.72, s * 0.74),
-               (s * 0.14, s * 0.74)],
-        fill=(STEEL[0] - 40, STEEL[1] - 40, STEEL[2] - 36))
-    d.polygon([(s * 0.72, s * 0.62), (s * 0.86, s * 0.36), (s * 0.86, s * 0.5),
-               (s * 0.72, s * 0.74)],
-        fill=(STEEL[0] - 60, STEEL[1] - 58, STEEL[2] - 50))
-
-
-def ic_star(d, s):
+def star_points(s, cx, cy, outer, inner):
     pts = []
     for i in range(10):
         a = -math.pi / 2 + i * math.pi / 5
-        r = s * (0.42 if i % 2 == 0 else 0.18)
-        pts.append((s / 2 + r * math.cos(a), s / 2 + r * math.sin(a)))
-    d.polygon(pts, fill=GOLD)
+        r = s * (outer if i % 2 == 0 else inner)
+        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return pts
+
+
+def ic_star(d, s, img=None):
+    pts = star_points(s, s / 2, s / 2, 0.44, 0.19)
+    if img is not None:
+        shaded_poly(img, pts, (255, 246, 198), (206, 148, 24))
+    else:
+        d.polygon(pts, fill=GOLD)
 
 
 # --- Mode and menu emblems. -------------------------------------------------
 
-def em_map(d, s):
+def em_map(d, s, img=None):
+    """The road as a chain of forges, the summit picked out in gold."""
     dots = {"a": (0.5, 0.86), "b": (0.28, 0.6), "c": (0.72, 0.6),
             "d": (0.38, 0.36), "e": (0.66, 0.34), "f": (0.5, 0.12)}
     for a, b in (("a", "b"), ("a", "c"), ("b", "d"), ("c", "d"), ("c", "e"),
                  ("d", "f"), ("e", "f")):
         stroke(d, [(dots[a][0] * s, dots[a][1] * s),
-                   (dots[b][0] * s, dots[b][1] * s)], int(s * 0.035),
-            ink=MUTED)
+                   (dots[b][0] * s, dots[b][1] * s)], int(s * 0.045),
+            ink=(112, 96, 78))
     for key, (x, y) in dots.items():
-        r = s * (0.085 if key != "f" else 0.11)
-        d.ellipse((x * s - r, y * s - r, x * s + r, y * s + r),
-            fill=GOLD if key == "f" else INK)
+        r = s * (0.09 if key != "f" else 0.12)
+        box = (x * s - r, y * s - r, x * s + r, y * s + r)
+        if img is not None:
+            if key == "f":
+                shaded_ellipse(img, box, GOLD_HI, GOLD_LO, KEY)
+            else:
+                shaded_ellipse(img, box, IRON_HI, IRON_LO, KEY)
+        else:
+            d.ellipse(box, fill=GOLD if key == "f" else INK)
 
 
-def em_free(d, s):
-    flame(d, s, s * 0.5, s * 0.5, 0.72)
+def em_free(d, s, img=None):
+    # 0.5 and no more: the outline runs to +-0.95u, so anything
+    # larger clips its own tip against the canvas edge.
+    flame(d, s, s * 0.5, s * 0.5, 0.5, img=img)
 
 
-def em_blaze(d, s):
-    w = int(s * 0.05)
-    stroke(d, [(s * 0.24, s * 0.14), (s * 0.76, s * 0.14)], w)
-    stroke(d, [(s * 0.24, s * 0.9), (s * 0.76, s * 0.9)], w)
-    stroke(d, [(s * 0.28, s * 0.16), (s * 0.62, s * 0.52), (s * 0.28, s * 0.88)],
-        w)
-    stroke(d, [(s * 0.72, s * 0.16), (s * 0.38, s * 0.52), (s * 0.72, s * 0.88)],
-        w)
-    flame(d, s, s * 0.5, s * 0.74, 0.2)
+def em_blaze(d, s, img=None):
+    """An hourglass with the sand alight.
+
+    Blaze is the three-minute fire, and the old emblem was four abstract
+    chevrons that said nothing about a clock. An hourglass says it at any
+    size, and nothing else in the picker is one.
+    """
+    def p(x, y):
+        return (s * x, s * y)
+
+    cap_top = [p(0.16, 0.08), p(0.84, 0.08), p(0.84, 0.18), p(0.16, 0.18)]
+    cap_bot = [p(0.16, 0.82), p(0.84, 0.82), p(0.84, 0.92), p(0.16, 0.92)]
+    glass = [p(0.24, 0.18), p(0.76, 0.18), p(0.54, 0.50), p(0.76, 0.82),
+             p(0.24, 0.82), p(0.46, 0.50)]
+    sand_up = [p(0.30, 0.24), p(0.70, 0.24), p(0.52, 0.50), p(0.48, 0.50)]
+    sand_dn = [p(0.50, 0.60), p(0.68, 0.78), p(0.32, 0.78)]
+    if img is not None:
+        shaded_poly(img, glass, (72, 62, 52), (44, 37, 30), KEY)
+        shaded_poly(img, sand_up, FIRE_HI, FIRE_LO)
+        shaded_poly(img, sand_dn, FIRE_HI, FIRE_LO)
+        d.line([p(0.5, 0.50), p(0.5, 0.62)], fill=GOLD, width=int(s * 0.035))
+        shaded_poly(img, cap_top, IRON_HI, IRON_LO, KEY)
+        shaded_poly(img, cap_bot, IRON_HI, IRON_LO, KEY)
+    else:
+        d.polygon(glass, outline=INK, width=int(s * 0.05))
+        d.polygon(sand_up, fill=EMBER)
+        d.polygon(sand_dn, fill=EMBER)
+        d.polygon(cap_top, fill=INK)
+        d.polygon(cap_bot, fill=INK)
 
 
-def em_inferno(d, s):
-    for i, height in enumerate((0.3, 0.52, 0.4, 0.66)):
-        x = s * (0.16 + i * 0.19)
-        d.rectangle((x, s * (0.9 - height * 0.6), x + s * 0.12, s * 0.9),
-            fill=EMBER_DEEP if i % 2 == 0 else EMBER)
-    flame(d, s, s * 0.66, s * 0.3, 0.3)
+def em_inferno(d, s, img=None):
+    """The floor coming up: three slabs and two chevrons driving them.
+
+    This used to be a bar chart, pixel for pixel the same drawing as the
+    Profile icon - two different screens showing the same picture for two
+    unrelated things.
+    """
+    def p(x, y):
+        return (s * x, s * y)
+
+    slabs = [(0.62, (150, 134, 116), (78, 66, 54)),
+             (0.74, (128, 114, 98), (66, 56, 46)),
+             (0.86, (108, 96, 82), (54, 46, 38))]
+    for top, hi, lo in slabs:
+        bar = [p(0.10, top), p(0.90, top), p(0.90, top + 0.10),
+               p(0.10, top + 0.10)]
+        if img is not None:
+            shaded_poly(img, bar, hi, lo, KEY)
+        else:
+            d.polygon(bar, fill=MUTED)
+    for top in (0.14, 0.36):
+        chevron = [p(0.50, top), p(0.86, top + 0.20), p(0.70, top + 0.20),
+                   p(0.50, top + 0.09), p(0.30, top + 0.20),
+                   p(0.14, top + 0.20)]
+        if img is not None:
+            shaded_poly(img, chevron, FIRE_HI, FIRE_LO, KEY)
+        else:
+            d.polygon(chevron, fill=EMBER)
 
 
-def em_cheese(d, s):
-    d.rectangle((s * 0.14, s * 0.3, s * 0.86, s * 0.86), fill=MUTED)
-    for y in (0.3, 0.49, 0.68):
-        stroke(d, [(s * 0.14, s * y), (s * 0.86, s * y)], int(s * 0.025),
-            ink=PANEL)
-    for x, y in ((0.3, 0.395), (0.62, 0.395), (0.44, 0.585), (0.74, 0.585),
-                 (0.26, 0.77)):
-        d.ellipse((s * x, s * y, s * (x + 0.1), s * (y + 0.09)), fill=BG0)
+def em_cheese(d, s, img=None):
+    """Four rubble rows with a hole punched in each - the thing the mode is
+    actually about, drawn the way it appears in the well."""
+    cols, rows = 6, 4
+    gaps = (4, 1, 5, 2)
+    cw, ch = 0.76 / cols, 0.60 / rows
+    for r in range(rows):
+        for c in range(cols):
+            if c == gaps[r]:
+                continue
+            x, y = 0.12 + c * cw, 0.24 + r * ch
+            cell = [(s * x, s * y), (s * (x + cw * 0.92), s * y),
+                    (s * (x + cw * 0.92), s * (y + ch * 0.9)),
+                    (s * x, s * (y + ch * 0.9))]
+            if img is not None:
+                shaded_poly(img, cell, (150, 136, 120), (78, 68, 58), KEY, SS)
+            else:
+                d.polygon(cell, fill=MUTED)
 
 
-def em_duel(d, s):
-    for sign in (1, -1):
-        cx = s / 2
+def em_duel(d, s, img=None):
+    """Two blades crossed, heraldry-style: hilts low, points high and apart.
 
-        def q(x, y):
-            return (cx + sign * (x - 0.5) * s, y * s)
+    The map's warden carries one blade point-down; a duel is two of them
+    crossed, which is a different silhouette at any size.
+    """
+    for angle in (math.radians(38), math.radians(-38)):
+        cx, cy = s * 0.5, s * 0.5
 
-        stroke(d, [q(0.2, 0.16), q(0.78, 0.74)], int(s * 0.05))
-        stroke(d, [q(0.66, 0.62), q(0.62, 0.82)], int(s * 0.045))
-        stroke(d, [q(0.86, 0.66), q(0.7, 0.9)], int(s * 0.045))
+        def r(pts):
+            return spin([(s * x, s * y) for x, y in pts], cx, cy, angle)
 
-
-def em_temper(d, s):
-    d.rounded_rectangle((s * 0.24, s * 0.1, s * 0.76, s * 0.9),
-        radius=s * 0.06, outline=INK, width=int(s * 0.045))
-    flame(d, s, s * 0.5, s * 0.44, 0.26)
-
-
-def small(fn):
-    def paint(d, s):
-        fn(d, s)
-    return paint
-
-
-def ic_replay(d, s):
-    d.ellipse((s * 0.14, s * 0.14, s * 0.86, s * 0.86), outline=INK,
-        width=int(s * 0.06))
-    d.polygon([(s * 0.42, s * 0.32), (s * 0.42, s * 0.68), (s * 0.72, s * 0.5)],
-        fill=INK)
+        blade = r([(0.50, 0.02), (0.575, 0.20), (0.575, 0.62),
+                   (0.425, 0.62), (0.425, 0.20)])
+        guard = r([(0.26, 0.62), (0.74, 0.62), (0.74, 0.70), (0.26, 0.70)])
+        grip = r([(0.44, 0.70), (0.56, 0.70), (0.56, 0.90), (0.44, 0.90)])
+        pommel = r([(0.40, 0.88), (0.60, 0.88), (0.56, 0.97), (0.44, 0.97)])
+        if img is not None:
+            shaded_poly(img, blade, (240, 234, 224), (118, 130, 146), KEY)
+            shaded_poly(img, guard, GOLD_HI, GOLD_LO, KEY)
+            shaded_poly(img, grip, (120, 84, 56), (70, 46, 30), KEY)
+            shaded_poly(img, pommel, GOLD_HI, GOLD_LO, KEY)
+        else:
+            d.polygon(blade, fill=INK)
+            d.polygon(guard, fill=GOLD)
+            d.polygon(grip, fill=MUTED)
 
 
-def ic_profile(d, s):
-    for i, height in enumerate((0.28, 0.46, 0.38, 0.62)):
-        x = s * (0.16 + i * 0.19)
-        d.rectangle((x, s * (0.84 - height), x + s * 0.12, s * 0.84), fill=INK)
-    stroke(d, [(s * 0.14, s * 0.9), (s * 0.86, s * 0.9)], int(s * 0.04))
+def ic_replay(d, s, img=None):
+    """A play head inside a rewind ring, cut with a gap so the ring reads."""
+    if img is not None:
+        shaded_ellipse(img, (s * 0.10, s * 0.10, s * 0.90, s * 0.90),
+            IRON_HI, IRON_LO, KEY)
+        shaded_ellipse(img, (s * 0.24, s * 0.24, s * 0.76, s * 0.76),
+            (30, 24, 19), (18, 14, 11))
+        head = [(s * 0.42, s * 0.32), (s * 0.42, s * 0.68), (s * 0.72, s * 0.5)]
+        shaded_poly(img, head, GOLD_HI, GOLD_LO, KEY, SS)
+    else:
+        d.ellipse((s * 0.14, s * 0.14, s * 0.86, s * 0.86), outline=INK,
+            width=int(s * 0.06))
+        d.polygon([(s * 0.42, s * 0.32), (s * 0.42, s * 0.68),
+                   (s * 0.72, s * 0.5)], fill=INK)
 
 
-def ic_scores(d, s):
-    d.polygon([(s * 0.3, s * 0.14), (s * 0.7, s * 0.14), (s * 0.66, s * 0.5),
-               (s * 0.5, s * 0.62), (s * 0.34, s * 0.5)], fill=GOLD)
-    stroke(d, [(s * 0.3, s * 0.2), (s * 0.16, s * 0.24), (s * 0.22, s * 0.42),
-               (s * 0.35, s * 0.48)], int(s * 0.035), ink=GOLD)
-    stroke(d, [(s * 0.7, s * 0.2), (s * 0.84, s * 0.24), (s * 0.78, s * 0.42),
-               (s * 0.65, s * 0.48)], int(s * 0.035), ink=GOLD)
-    d.rectangle((s * 0.44, s * 0.6, s * 0.56, s * 0.76), fill=GOLD)
-    d.rectangle((s * 0.34, s * 0.76, s * 0.66, s * 0.86), fill=GOLD)
+def ic_profile(d, s, img=None):
+    """Growth: steel columns under a gold trend line."""
+    def p(x, y):
+        return (s * x, s * y)
+
+    tops = (0.56, 0.42, 0.48, 0.24)
+    for i, top in enumerate(tops):
+        x = 0.16 + i * 0.19
+        bar = [p(x, top), p(x + 0.13, top), p(x + 0.13, 0.84), p(x, 0.84)]
+        if img is not None:
+            shaded_poly(img, bar, (168, 186, 206), (78, 90, 106), KEY)
+        else:
+            d.polygon(bar, fill=INK)
+    if img is not None:
+        d.line([p(0.225, 0.52), p(0.415, 0.38), p(0.605, 0.44),
+                p(0.795, 0.20)], fill=GOLD, width=int(s * 0.05),
+            joint="curve")
+        shaded_poly(img, [p(0.10, 0.86), p(0.90, 0.86), p(0.90, 0.94),
+                          p(0.10, 0.94)], IRON_HI, IRON_LO, KEY)
+    else:
+        stroke(d, [p(0.14, 0.9), p(0.86, 0.9)], int(s * 0.04))
 
 
-def ic_help(d, s):
-    d.polygon([(s * 0.5, s * 0.14), (s * 0.86, s * 0.22), (s * 0.86, s * 0.82),
-               (s * 0.5, s * 0.74), (s * 0.14, s * 0.82), (s * 0.14, s * 0.22)],
-        outline=INK, width=int(s * 0.05))
-    stroke(d, [(s * 0.5, s * 0.16), (s * 0.5, s * 0.72)], int(s * 0.04))
+def ic_scores(d, s, img=None):
+    """A cup with handles, on a plinth."""
+    def p(x, y):
+        return (s * x, s * y)
+
+    cup = [p(0.30, 0.14), p(0.70, 0.14), p(0.66, 0.50), p(0.50, 0.62),
+           p(0.34, 0.50)]
+    stem = [p(0.44, 0.60), p(0.56, 0.60), p(0.56, 0.76), p(0.44, 0.76)]
+    foot = [p(0.32, 0.76), p(0.68, 0.76), p(0.72, 0.88), p(0.28, 0.88)]
+    if img is not None:
+        shaded_poly(img, cup, GOLD_HI, GOLD_LO, KEY)
+        shaded_poly(img, stem, GOLD_HI, GOLD_LO, KEY)
+        shaded_poly(img, foot, GOLD_HI, GOLD_LO, KEY)
+    else:
+        d.polygon(cup, fill=GOLD)
+        d.polygon(stem, fill=GOLD)
+        d.polygon(foot, fill=GOLD)
+    stroke(d, [p(0.31, 0.20), p(0.16, 0.24), p(0.22, 0.42), p(0.35, 0.48)],
+        int(s * 0.05), ink=GOLD_LO)
+    stroke(d, [p(0.69, 0.20), p(0.84, 0.24), p(0.78, 0.42), p(0.65, 0.48)],
+        int(s * 0.05), ink=GOLD_LO)
 
 
-def ic_settings(d, s):
+def ic_help(d, s, img=None):
+    """An open book. The old glyph was a hexagon with a line down it, which
+    at menu size read as a nut off a bolt rather than a manual."""
+    def p(x, y):
+        return (s * x, s * y)
+
+    left = [p(0.08, 0.24), p(0.48, 0.32), p(0.48, 0.88), p(0.08, 0.80)]
+    right = [p(0.92, 0.24), p(0.52, 0.32), p(0.52, 0.88), p(0.92, 0.80)]
+    spine = [p(0.46, 0.30), p(0.54, 0.30), p(0.54, 0.90), p(0.46, 0.90)]
+    if img is not None:
+        shaded_poly(img, left, (238, 230, 214), (150, 138, 120), KEY)
+        shaded_poly(img, right, (238, 230, 214), (150, 138, 120), KEY)
+        shaded_poly(img, spine, (128, 88, 56), (74, 48, 28), KEY)
+        for i in range(3):
+            y = 0.44 + i * 0.13
+            d.line([p(0.16, y - 0.015), p(0.42, y + 0.035)],
+                fill=(122, 108, 92), width=int(s * 0.03))
+            d.line([p(0.58, y + 0.035), p(0.84, y - 0.015)],
+                fill=(122, 108, 92), width=int(s * 0.03))
+    else:
+        d.polygon(left, outline=INK, width=int(s * 0.05))
+        d.polygon(right, outline=INK, width=int(s * 0.05))
+
+
+def ic_settings(d, s, img=None):
+    """A cog with teeth you can count, not eight spokes off a disc."""
     cx = cy = s / 2
+    teeth = []
     for i in range(8):
         a = i * math.pi / 4
-        stroke(d, [(cx + s * 0.26 * math.cos(a), cy + s * 0.26 * math.sin(a)),
-                   (cx + s * 0.4 * math.cos(a), cy + s * 0.4 * math.sin(a))],
-            int(s * 0.09))
-    d.ellipse((cx - s * 0.26, cy - s * 0.26, cx + s * 0.26, cy + s * 0.26),
-        fill=INK)
-    d.ellipse((cx - s * 0.11, cy - s * 0.11, cx + s * 0.11, cy + s * 0.11),
-        fill=PANEL)
-
-
-def grain():
-    size = 128
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    px = img.load()
-    for y in range(size):
-        for x in range(size):
-            v = random.randint(0, 255)
-            px[x, y] = (v, v, v, 14 if v > 128 else 10)
-    img.save(os.path.join(OUT, "grain.png"))
-    print("gfx/grain.png  %dx%d" % (size, size))
+        tooth = [(cx - s * 0.075, cy - s * 0.46), (cx + s * 0.075,
+            cy - s * 0.46), (cx + s * 0.12, cy - s * 0.26),
+            (cx - s * 0.12, cy - s * 0.26)]
+        teeth.append(spin(tooth, cx, cy, a))
+    if img is not None:
+        for tooth in teeth:
+            shaded_poly(img, tooth, IRON_HI, IRON_LO, KEY)
+        shaded_ellipse(img, (cx - s * 0.32, cy - s * 0.32, cx + s * 0.32,
+            cy + s * 0.32), IRON_HI, IRON_LO, KEY)
+        shaded_ellipse(img, (cx - s * 0.13, cy - s * 0.13, cx + s * 0.13,
+            cy + s * 0.13), (26, 21, 17), (14, 11, 9), KEY, SS)
+    else:
+        for tooth in teeth:
+            d.polygon(tooth, fill=INK)
+        d.ellipse((cx - s * 0.32, cy - s * 0.32, cx + s * 0.32, cy + s * 0.32),
+            fill=INK)
+        d.ellipse((cx - s * 0.13, cy - s * 0.13, cx + s * 0.13, cy + s * 0.13),
+            fill=PANEL)
 
 
 def main():
     backdrop()
-    frame("panel", 96, 24, rivets=True)
     frame("plate", 48, 14, rivets=False)
     icon("node_battle", 64, ic_battle)
     icon("node_boss", 64, ic_boss)
     icon("node_forge", 64, ic_forge)
     icon("node_event", 64, ic_event)
     icon("node_mini", 64, ic_mini)
-    icon("lock", 64, ic_lock, glow=False)
     icon("ember", 28, ic_ember)
     icon("slag", 28, ic_slag, glow=False)
     icon("star", 28, ic_star, glow=False)
@@ -448,13 +708,11 @@ def main():
     icon("em_inferno", 96, em_inferno)
     icon("em_cheese", 96, em_cheese, glow=False)
     icon("em_duel", 96, em_duel)
-    icon("em_temper", 96, em_temper)
     icon("ic_replay", 64, ic_replay, glow=False)
     icon("ic_profile", 64, ic_profile, glow=False)
     icon("ic_scores", 64, ic_scores, glow=False)
     icon("ic_help", 64, ic_help, glow=False)
     icon("ic_settings", 64, ic_settings, glow=False)
-    grain()
 
 
 if __name__ == "__main__":

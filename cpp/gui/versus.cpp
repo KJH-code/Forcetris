@@ -7,9 +7,6 @@ namespace gui {
 
 namespace {
 
-// Two seconds of warning before every skill lands.
-constexpr long kTelegraph = 100;
-
 // The right-hand column, where the Gatekeeper's seal falls.
 constexpr int kSealMask = 1 << (kWidth - 1);
 

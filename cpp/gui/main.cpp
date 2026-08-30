@@ -45,6 +45,7 @@
 #include "forcetris/rating.hpp"
 #include "forcetris/replay.hpp"
 #include "forcetris/temper.hpp"
+#include "palette.hpp"
 #include "session.hpp"
 #include "stats.hpp"
 #include "versus.hpp"
@@ -271,15 +272,17 @@ void apply_theme () {
 
 	// The ember palette: soot grounds, ember accents, gold for Overdrive.
 	// The game is about things burning; the chrome smoulders to match.
-	const ImVec4 canvas(0.086f, 0.063f, 0.047f, 0.98f);   // #161008
-	const ImVec4 well(0.165f, 0.122f, 0.086f, 1.f);       // #2A1F16
+	// Every hue here comes from palette.hpp, so the chrome and the
+	// generated art quote one set of numbers rather than two that drifted.
+	const ImVec4 canvas = ink::vec(ink::kSoot, 0.98f);
+	const ImVec4 well = ink::vec(ink::kWell);
 	const ImVec4 wellHover(0.216f, 0.157f, 0.110f, 1.f);
 	const ImVec4 wellActive(0.267f, 0.192f, 0.133f, 1.f);
-	const ImVec4 accent(1.f, 0.541f, 0.227f, 1.f);        // Ember.
-	const ImVec4 accentDim(1.f, 0.541f, 0.227f, 0.28f);
+	const ImVec4 accent = ink::vec(ink::kEmber);
+	const ImVec4 accentDim = ink::vec(ink::kEmber, 0.28f);
 	const ImVec4 edge(0.376f, 0.267f, 0.176f, 0.60f);
-	const ImVec4 text(0.957f, 0.929f, 0.894f, 1.f);
-	const ImVec4 faded(0.616f, 0.549f, 0.471f, 1.f);
+	const ImVec4 text = ink::vec(ink::kInk);
+	const ImVec4 faded = ink::vec(ink::kMuted);
 
 	ImVec4* colors = style.Colors;
 	colors[ImGuiCol_Text] = text;
@@ -302,7 +305,7 @@ void apply_theme () {
 	colors[ImGuiCol_ScrollbarGrabActive] = wellActive;
 	colors[ImGuiCol_CheckMark] = accent;
 	colors[ImGuiCol_SliderGrab] = accent;
-	colors[ImGuiCol_SliderGrabActive] = ImVec4(1.f, 0.671f, 0.373f, 1.f);
+	colors[ImGuiCol_SliderGrabActive] = ink::vec(ink::kEmberHot);
 	colors[ImGuiCol_Button] = well;
 	colors[ImGuiCol_ButtonHovered] = wellHover;
 	colors[ImGuiCol_ButtonActive] = wellActive;
@@ -1187,6 +1190,7 @@ void start_stage (App& app, int index, int run_node = -1) {
 		// A campaign boss fights with its own kit: telegraphed skills the
 		// trainer's plain duels never carry.
 		app.versus->arm_skills(stage.id);
+		app.versus->caster_name = stage.name;
 		if (stage.raid != nullptr) {
 			// A raid walks its rank list one foe per round - every one of
 			// them moved by the run's fire the way a lone boss is.
@@ -2325,7 +2329,7 @@ void forge_panel (App& app) {
 		round + ui(2), 0, ui(3));
 	draw->AddLine(ImVec2(at.x + inset, low.y - 1.f),
 		ImVec2(low.x - inset, low.y - 1.f),
-		IM_COL32(255, 196, 96, static_cast<int>(170 + 60 * beat)), ui(2.5f));
+		IM_COL32(255, 214, 94, static_cast<int>(170 + 60 * beat)), ui(2.5f));
 
 	// Rivets, one at each corner, each a dark hole with a lit lip.
 	const float dot = ui(3.2f);
@@ -2393,7 +2397,7 @@ void draw_overdrive_bloom (App& app) {
 	// it reads as fog, and the contrast that makes the reference work is
 	// exactly the dark around the light.
 	draw_glow(app, cx, cy, screen_w * 1.5f, screen_h * 1.5f,
-		{255, 168, 56, 255}, 15. * lit * beat);
+		{255, 176, 60, 255}, 15. * lit * beat);
 	draw_glow(app, cx, cy, kBoardW * 2.3f, kBoardH * 1.35f,
 		{255, 206, 102, 255}, 92. * lit * beat);
 
@@ -2472,7 +2476,7 @@ void draw_overdrive_frame (App& app) {
 	const int right = kBoardX + kBoardW + px(4);
 	const int top = kBoardY - px(4);
 	const int foot = kBoardY + kBoardH + px(4);
-	const SDL_Color tint{255, 198, 84, 255};
+	const SDL_Color tint{255, 214, 94, 255};
 	const SDL_Color core{255, 250, 224,
 		static_cast<Uint8>(std::clamp(240.f * lit * beat, 0.f, 255.f))};
 
@@ -2494,38 +2498,72 @@ void draw_overdrive_frame (App& app) {
 
 // Garbage wears its own face: burnt slag, dark and cracked, so a row the
 // other side sent never reads as one you built.
+void draw_cell (SDL_Renderer* renderer, int px, int py, SDL_Color c,
+	int size = kCell);
+
+
+// Rubble: the same cast block as everything else, in dead iron, with two
+// cracks still glowing through it. Sharing draw_cell rather than drawing
+// its own flat rectangles is the point - garbage should read as the same
+// material as the player's stack, only cooled and spoiled, and a slab that
+// missed the chamfer everything else has just looked unfinished.
 void draw_char_cell (SDL_Renderer* renderer, int x, int y, int size = kCell) {
+	draw_cell(renderer, x, y, SDL_Color{78, 66, 60, 255}, size);
 	const int t = std::max(1, size / 8);
-	fill(renderer, x + 1, y + 1, size - 2, size - 2, {58, 48, 44, 255});
-	fill(renderer, x + 1, y + 1, size - 2, t, {84, 70, 62, 255});
-	fill(renderer, x + 1, y + size - 1 - t, size - 2, t, {34, 27, 24, 255});
-	// Two cracks, glowing faintly - the slag has not gone cold.
 	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
 	fill(renderer, x + size / 3, y + t + 1, std::max(1, t / 2),
-		size - 2 * t - 2, {180, 74, 34, 120});
+		size - 2 * t - 2, {196, 82, 34, 150});
 	fill(renderer, x + t + 1, y + size / 2, size / 3, std::max(1, t / 2),
-		{180, 74, 34, 90});
+		{196, 82, 34, 110});
 }
 
-void draw_cell (SDL_Renderer* renderer, int px, int py, SDL_Color c, int size = kCell) {
-	// A block, not a swatch: the face, a lit lip on top and left, a shadow
-	// at the foot and right - the cheap bevel that reads as depth at any
-	// cell size. Ghost cells arrive with a low alpha and keep it.
+void draw_cell (SDL_Renderer* renderer, int px, int py, SDL_Color c, int size) {
+	// A block of poured metal, not a swatch. Five things make it read as an
+	// object rather than a coloured square, and all five are cheap fills:
+	// a dark seat so neighbours never bleed into one another, a face that
+	// is lit at the top and cools toward the foot, a mitred bevel that
+	// stops short of the corners the way a real chamfer does, a shadow
+	// under the foot, and one small specular where the light catches.
+	// Ghost cells arrive with a low alpha and every band keeps it.
 	const auto scaled = [&c] (double factor, int lift) {
 		return SDL_Color{
-			static_cast<Uint8>(std::min(255., c.r * factor + lift)),
-			static_cast<Uint8>(std::min(255., c.g * factor + lift)),
-			static_cast<Uint8>(std::min(255., c.b * factor + lift)), c.a};
+			static_cast<Uint8>(std::clamp(c.r * factor + lift, 0., 255.)),
+			static_cast<Uint8>(std::clamp(c.g * factor + lift, 0., 255.)),
+			static_cast<Uint8>(std::clamp(c.b * factor + lift, 0., 255.)),
+			c.a};
 	};
-	const int t = std::max(1, size / 8);
-	fill(renderer, px + 1, py + 1, size - 2, size - 2, scaled(1.0, 0));
-	const SDL_Color lit = scaled(1.25, 28);
-	const SDL_Color shade = scaled(0.55, 0);
-	fill(renderer, px + 1, py + 1, size - 2, t, lit);
-	fill(renderer, px + 1, py + 1 + t, t, size - 2 - t, scaled(1.1, 12));
-	fill(renderer, px + 1, py + size - 1 - t, size - 2, t, shade);
-	fill(renderer, px + size - 1 - t, py + 1 + t, t, size - 2 - 2 * t,
-		scaled(0.75, 0));
+	// The seat: a near-black rim in the cell's own hue, so a wall of one
+	// colour still reads as many blocks.
+	fill(renderer, px, py, size, size, scaled(0.22, 0));
+	const int t = std::max(1, size / 7);
+	const int in = px + 1;
+	const int top = py + 1;
+	const int wide = size - 2;
+	const int tall = size - 2;
+	// The face, poured in bands: hot at the crown, cooling downwards. Four
+	// bands is enough to read as a gradient and cheap enough to do for
+	// every cell of a full board every frame.
+	const int bands = 4;
+	for (int band = 0; band < bands; ++band) {
+		const int y = top + tall * band / bands;
+		const int h = top + tall * (band + 1) / bands - y;
+		const double lit = 1.06 - 0.16 * band / std::max(1, bands - 1);
+		fill(renderer, in, y, wide, h, scaled(lit, 6 - 4 * band));
+	}
+	// The chamfer, mitred: each lip stops a thickness short of the corner,
+	// which is what keeps the block from looking like a picture frame.
+	const SDL_Color lip = scaled(1.34, 40);
+	const SDL_Color side = scaled(1.16, 18);
+	const SDL_Color foot = scaled(0.46, 0);
+	const SDL_Color flank = scaled(0.66, 0);
+	fill(renderer, in + t, top, wide - 2 * t, t, lip);
+	fill(renderer, in, top + t, t, tall - 2 * t, side);
+	fill(renderer, in + t, top + tall - t, wide - 2 * t, t, foot);
+	fill(renderer, in + wide - t, top + t, t, tall - 2 * t, flank);
+	// One specular, top-left, where the forge light would actually land.
+	const int spot = std::max(1, size / 6);
+	fill(renderer, in + t, top + t, spot, std::max(1, spot / 2),
+		scaled(1.5, 70));
 }
 
 // A piece drawn on its own, for the hold box and the queue previews.
@@ -2552,11 +2590,48 @@ void draw_board (App& app) {
 	if (charge > 0.02) {
 		const float beat = 0.85f + 0.15f * std::sin(sim.frame() * 0.12f);
 		draw_glow(app, kBoardX + kBoardW / 2.f, kBoardY + kBoardH / 2.f,
-			kBoardW * 2.4f, kBoardH * 1.5f, {255, 122, 44, 255},
+			kBoardW * 2.4f, kBoardH * 1.5f, {255, 122, 46, 255},
 			charge * beat * 150.);
 	}
-	fill(renderer, kBoardX - px(3), kBoardY - px(3), kBoardW + px(6), kBoardH + px(6), {58, 42, 30, 255});
-	fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {17, 12, 9, 255});
+	// The crucible. A hairline rectangle was never going to read as a
+	// furnace, so the well is built the way the blocks are: an iron frame
+	// with a chamfer, a shadow it casts inward, and a floor that is hotter
+	// than the sky because the fire is underneath.
+	{
+		const int wall = px(9);
+		const int fx = kBoardX - wall;
+		const int fy = kBoardY - wall;
+		const int fw = kBoardW + wall * 2;
+		const int fh = kBoardH + wall * 2;
+		// The frame's own body, lit at the crown and cooling down the
+		// flanks - the same light the blocks are lit by.
+		fill(renderer, fx, fy, fw, fh, {44, 32, 24, 255});
+		const int lip = std::max(1, wall / 3);
+		fill(renderer, fx + lip, fy, fw - 2 * lip, lip, {96, 72, 52, 255});
+		fill(renderer, fx, fy + lip, lip, fh - 2 * lip, {74, 55, 40, 255});
+		fill(renderer, fx + lip, fy + fh - lip, fw - 2 * lip, lip,
+			{26, 19, 14, 255});
+		fill(renderer, fx + fw - lip, fy + lip, lip, fh - 2 * lip,
+			{34, 25, 18, 255});
+		// Rivets down both flanks, spaced by the cell so the frame reads
+		// at the same rhythm as the board it holds.
+		for (int y = kBoardY + kCell; y < kBoardY + kBoardH; y += kCell * 4) {
+			const int r = std::max(1, wall / 4);
+			fill(renderer, fx + lip + r, y, r * 2, r * 2, {118, 88, 62, 255});
+			fill(renderer, fx + fw - lip - r * 3, y, r * 2, r * 2,
+				{118, 88, 62, 255});
+		}
+		// The interior, and the shadow the walls throw onto it.
+		fill(renderer, kBoardX, kBoardY, kBoardW, kBoardH, {14, 10, 8, 255});
+		const int cast = std::max(1, wall / 2);
+		for (int i = 0; i < cast; ++i) {
+			const Uint8 a = static_cast<Uint8>(96 - 96 * i / cast);
+			fill(renderer, kBoardX, kBoardY + i, kBoardW, 1, {0, 0, 0, a});
+			fill(renderer, kBoardX + i, kBoardY, 1, kBoardH, {0, 0, 0, a});
+			fill(renderer, kBoardX + kBoardW - 1 - i, kBoardY, 1, kBoardH,
+				{0, 0, 0, a});
+		}
+	}
 	// The fire is below: the well's floor smoulders, brighter the more
 	// trouble the board is in.
 	{
@@ -2658,6 +2733,17 @@ void draw_board (App& app) {
 		fill(renderer, kBoardX, wy, kBoardW, kCell, {150, 190, 230, 84});
 		fill(renderer, kBoardX, wy, kBoardW, std::max(1, kCell / 8),
 			{222, 240, 255, 150});
+		// Frost, grown down from the seam: needles of four different
+		// lengths in a fixed cycle, so ice reads as ice and not as a blue
+		// highlighter. The pattern is keyed to the row so two frozen rows
+		// never look stamped from the same die.
+		const int needles[4] = {kCell / 2, kCell / 5, kCell / 3, kCell / 8};
+		const int wide = std::max(1, kCell / 10);
+		for (int step = 0; step * wide * 3 < kBoardW; ++step) {
+			const int deep = needles[(step + y) % 4];
+			fill(renderer, kBoardX + step * wide * 3, wy, wide,
+				std::max(1, deep), {236, 248, 255, 110});
+		}
 	}
 
 	if (sim.entry() && sim.piece().form <= 6) {
@@ -2740,7 +2826,7 @@ void draw_board (App& app) {
 					spawn_sparks_at(app,
 						kBoardX + (cell.x + 0.5f) * kCell + ox,
 						kBoardY + (cell.y + 0.5f) * kCell + oy,
-						{255, 150, 70, 255}, 1, 1.6f);
+						{255, 176, 60, 255}, 1, 1.6f);
 				}
 			}
 		}
@@ -2906,7 +2992,7 @@ void draw_board (App& app) {
 			: static_cast<int>(rail_h * (sim.flow() / 100.));
 		if (charge > 0) {
 			const SDL_Color glow = burning
-				? SDL_Color{255, 214, 96, 255} : SDL_Color{255, 138, 58, 255};
+				? SDL_Color{255, 214, 94, 255} : SDL_Color{255, 122, 46, 255};
 			fill(renderer, rail_x, rail_y + rail_h - charge, px(12), charge,
 				glow);
 		}
@@ -3004,7 +3090,7 @@ void draw_backdrop (App& app) {
 			w * 1.6f, std::max(static_cast<float>(px(150)), h / 2.4f),
 			{206, 74, 26, 255}, lit);
 		draw_glow(app, w / 2.f, h + px(6), w * 1.1f, px(120),
-			{255, 150, 66, 255}, 30. + 70. * danger + 46. * glare);
+			{255, 176, 60, 255}, 30. + 70. * danger + 46. * glare);
 	}
 
 	// Heat shafts rising off it: soft columns that lean as they climb and
@@ -3027,7 +3113,7 @@ void draw_backdrop (App& app) {
 			const float tall = h * (0.72f + 0.10f * std::sin(phase));
 			const float lean = std::sin(phase) * px(30);
 			draw_glow(app, base + lean, h - tall * 0.34f, wide, tall,
-				{255, 132, 54, 255}, 20. + 46. * glare + 14. * danger);
+				{255, 122, 46, 255}, 20. + 46. * glare + 14. * danger);
 		}
 	}
 
@@ -3130,7 +3216,7 @@ void juice_cue (App& app, const std::string& cue) {
 		// Sparks, no shudder: an ordinary clear happens every few seconds,
 		// and a field that jolts on every one of them reads as a seizure,
 		// not a reward. The big events below keep the quake.
-		spawn_sparks(app, {255, 150, 70, 255}, 3, 2.2f);
+		spawn_sparks(app, {255, 176, 60, 255}, 3, 2.2f);
 	} else if (cue == "lock") {
 		note_lock(app);
 	} else if (cue == "drop") {
@@ -3142,11 +3228,11 @@ void juice_cue (App& app, const std::string& cue) {
 		// The accident hits harder than the choice - and only burn rooms
 		// have one, so the jolt stays rare.
 		note_lock(app);
-		spawn_sparks(app, {255, 120, 50, 255}, 2, 2.0f);
+		spawn_sparks(app, {255, 122, 46, 255}, 2, 2.0f);
 		app.shake_until = std::max(app.shake_until,
 			app.session->sim().frame() + 2);
 	} else if (cue == "tetris") {
-		spawn_sparks(app, {255, 214, 96, 255}, 6, 3.2f);
+		spawn_sparks(app, {255, 214, 94, 255}, 6, 3.2f);
 		app.shake_until = app.session->sim().frame() + 8;
 	} else if (cue == "tspin") {
 		spawn_sparks(app, {200, 130, 255, 255}, 5, 2.8f);
@@ -3155,15 +3241,15 @@ void juice_cue (App& app, const std::string& cue) {
 		spawn_sparks(app, {255, 255, 255, 255}, 10, 4.0f);
 		app.shake_until = app.session->sim().frame() + 10;
 	} else if (cue == "overdrive") {
-		spawn_sparks(app, {255, 214, 96, 255}, 8, 3.6f);
+		spawn_sparks(app, {255, 214, 94, 255}, 8, 3.6f);
 		app.shake_until = app.session->sim().frame() + 10;
 	} else if (cue == "burn") {
-		spawn_sparks(app, {255, 140, 60, 255}, 4, 2.6f);
+		spawn_sparks(app, {255, 122, 46, 255}, 4, 2.6f);
 	} else if (cue == "cascade") {
 		// The whole chain resolved in one frame - make the collapse felt:
 		// a wide rubble-toned burst and a longer rumble than a plain clear.
 		spawn_sparks(app, {214, 138, 82, 255}, 8, 3.6f);
-		spawn_sparks(app, {255, 150, 70, 255}, 4, 2.4f);
+		spawn_sparks(app, {255, 176, 60, 255}, 4, 2.4f);
 		app.shake_until = app.session->sim().frame() + 8;
 	} else if (cue == "freeze") {
 		// Cold iron taking hold: frost motes, no violence - the shatter a
@@ -3208,7 +3294,98 @@ void draw_banner (App& app) {
 	const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.f, banner.text.c_str());
 	ImGui::GetForegroundDrawList()->AddText(font, size,
 		ImVec2(kBoardX + (kBoardW - extent.x) / 2, kBoardY - ui(38)),
-		IM_COL32(255, 210, 74, static_cast<int>(alpha * 255)), banner.text.c_str());
+		IM_COL32(255, 214, 94, static_cast<int>(alpha * 255)), banner.text.c_str());
+}
+
+// The boss announcing itself: a struck plate over the player's well,
+// carrying who is casting, what is coming, and a wind-up bar that reaches
+// its end exactly as the blow lands.
+//
+// The old telegraph was one line of pulsing red text - quieter than the
+// player's own Overdrive banner, which is backwards. A skill is the one
+// thing in a duel the player did not choose, so it gets the loudest chrome
+// on the screen and two full seconds to be dreaded in.
+void draw_caster_plate (App& app, const VersusMatch& match) {
+	if (!app.session.has_value() || match.skill_banner.empty()) {
+		return;
+	}
+	const long frame = app.session->sim().frame();
+	if (frame >= match.skill_banner_until || match.skill_fires_at < 0) {
+		return;
+	}
+	// Two clocks: the wind-up before the blow, and the fade after it.
+	const long lead = std::max(1L, match.skill_fires_at - match.skill_warned_at);
+	const float wind = std::clamp(
+		static_cast<float>(frame - match.skill_warned_at) / lead, 0.f, 1.f);
+	const bool struck = frame >= match.skill_fires_at;
+	const float after = struck
+		? std::clamp(static_cast<float>(frame - match.skill_fires_at)
+			/ std::max(1L, match.skill_banner_until - match.skill_fires_at),
+			0.f, 1.f)
+		: 0.f;
+	const float alpha = struck ? 1.f - after * after : 1.f;
+
+	const float pad = ui(10);
+	const float tall = ui(66);
+	const float top = kBoardY + ui(34);
+	const float left = kBoardX + pad;
+	const float right = kBoardX + kBoardW - pad;
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	const auto fade = [alpha] (int r, int g, int b, int a) {
+		return IM_COL32(r, g, b, static_cast<int>(a * alpha));
+	};
+	// The seat, then the plate: dark iron, hotter along its lower edge the
+	// nearer the blow is.
+	const int heat = static_cast<int>(30 + 90 * (struck ? 1.f : wind));
+	draw->AddRectFilled(ImVec2(left + ui(3), top + ui(4)),
+		ImVec2(right + ui(3), top + tall + ui(4)), fade(0, 0, 0, 150),
+		ui(4));
+	draw->AddRectFilledMultiColor(ImVec2(left, top), ImVec2(right, top + tall),
+		fade(34, 26, 21, 245), fade(34, 26, 21, 245),
+		fade(heat, heat / 3, 20, 245), fade(heat, heat / 3, 20, 245));
+	// The rim, brightening as the wind-up runs out, white at the blow.
+	const int rim = static_cast<int>(120 + 135 * (struck ? 1.f : wind));
+	draw->AddRect(ImVec2(left, top), ImVec2(right, top + tall),
+		fade(255, struck ? 220 : rim / 2, struck ? 190 : 40, 255), ui(3),
+		0, ui(2));
+
+	// Who, small and cool, over what, large and hot.
+	ImFont* small_font = app.fonts.body;
+	if (!match.caster_name.empty()) {
+		const char* who = match.caster_name.c_str();
+		const ImVec2 size = small_font->CalcTextSizeA(
+			small_font->FontSize, FLT_MAX, 0.f, who);
+		draw->AddText(small_font, small_font->FontSize,
+			ImVec2(left + (right - left - size.x) / 2, top + ui(8)),
+			fade(214, 190, 164, 220), who);
+	}
+	ImFont* font = app.fonts.head;
+	const char* what = match.skill_banner.c_str();
+	// The name shrinks to fit rather than running off a phone's board.
+	float size = font->FontSize * 1.15f;
+	ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.f, what);
+	const float room = right - left - ui(16);
+	if (extent.x > room) {
+		size *= room / extent.x;
+		extent = font->CalcTextSizeA(size, FLT_MAX, 0.f, what);
+	}
+	const float name_y = top + tall - ui(16) - extent.y;
+	draw->AddText(font, size,
+		ImVec2(left + (right - left - extent.x) / 2 + ui(2), name_y + ui(2)),
+		fade(20, 8, 4, 200), what);
+	draw->AddText(font, size,
+		ImVec2(left + (right - left - extent.x) / 2, name_y),
+		struck ? fade(255, 246, 232, 255) : fade(255, 132, 76, 255), what);
+
+	// The wind-up: a bar along the plate's foot that fills as the seconds
+	// go, so the dread has a length a player can plan against.
+	const float bar_y = top + tall - ui(7);
+	draw->AddRectFilled(ImVec2(left + ui(6), bar_y),
+		ImVec2(right - ui(6), bar_y + ui(4)), fade(0, 0, 0, 160), ui(2));
+	draw->AddRectFilled(ImVec2(left + ui(6), bar_y),
+		ImVec2(left + ui(6) + (right - left - ui(12)) * wind,
+			bar_y + ui(4)),
+		struck ? fade(255, 250, 236, 255) : fade(255, 176, 60, 255), ui(2));
 }
 
 // The other board, small, and the wire's state around both: the bot's
@@ -3229,7 +3406,7 @@ void draw_versus_panel (App& app) {
 	// The bot's Overdrive shows the way the player's does, scaled down:
 	// the board rimmed in gold while it burns.
 	if (theirs.overdrive()) {
-		const SDL_Color rim{255, 214, 96, 255};
+		const SDL_Color rim{255, 214, 94, 255};
 		const int wide = kWidth * cell;
 		const int tall = kHeight * cell;
 		fill(renderer, left - px(3), top - px(3), wide + px(6), px(3), rim);
@@ -3256,7 +3433,7 @@ void draw_versus_panel (App& app) {
 		}
 	}
 	draw_label("BOT", static_cast<float>(left), top - ui(22),
-		theirs.overdrive() ? IM_COL32(255, 214, 96, 255)
+		theirs.overdrive() ? IM_COL32(255, 214, 94, 255)
 			: IM_COL32(176, 158, 140, 255));
 	// What the bot has drafted, under its board - the same build line the
 	// player's pause screen shows, because an opponent's tempers are half
@@ -3278,8 +3455,8 @@ void draw_versus_panel (App& app) {
 			: static_cast<int>(rail_h * (theirs.flow() / 100.));
 		if (charge > 0) {
 			fill(renderer, rail_x, top + rail_h - charge, px(4), charge,
-				burning ? SDL_Color{255, 214, 96, 255}
-					: SDL_Color{255, 138, 58, 255});
+				burning ? SDL_Color{255, 214, 94, 255}
+					: SDL_Color{255, 122, 46, 255});
 		}
 	}
 	// Incoming garbage, as red columns: theirs beside their board, the
@@ -3340,23 +3517,9 @@ void draw_versus_panel (App& app) {
 		ImGui::GetForegroundDrawList()->AddText(font, font->FontSize,
 			ImVec2(kBoardX + (kBoardW - extent.x) / 2,
 				kBoardY + kBoardH / 2.f - font->FontSize),
-			IM_COL32(255, 210, 74, 255), verdict);
+			IM_COL32(255, 214, 94, 255), verdict);
 	}
-	// The skill telegraph: the boss's warning burning over the player's
-	// board from two seconds out until a beat after the blow lands.
-	if (app.session.has_value() && !match.skill_banner.empty()
-		&& app.session->sim().frame() < match.skill_banner_until) {
-		ImFont* font = app.fonts.head;
-		const float size = font->FontSize * 1.1f;
-		const ImVec2 warn = font->CalcTextSizeA(size, FLT_MAX, 0.f,
-			match.skill_banner.c_str());
-		const float beat = 0.6f
-			+ 0.4f * std::sin(app.backdrop_tick * 0.35f);
-		ImGui::GetForegroundDrawList()->AddText(font, size,
-			ImVec2(kBoardX + (kBoardW - warn.x) / 2, kBoardY + ui(40)),
-			IM_COL32(255, 96, 60, static_cast<int>(150 + 105 * beat)),
-			match.skill_banner.c_str());
-	}
+	draw_caster_plate(app, match);
 }
 
 // The pre-game count, front and centre over the frozen board: 3, 2, 1.
@@ -3375,14 +3538,14 @@ void draw_countdown (App& app) {
 		at.y + font->FontSize * 0.5f);
 	const float second = (app.countdown % 50) / 50.f;
 	draw->AddCircle(middle, font->FontSize * 1.1f,
-		IM_COL32(255, 138, 58, 70), 48, ui(3));
+		IM_COL32(255, 122, 46, 70), 48, ui(3));
 	draw->PathArcTo(middle, font->FontSize * 1.1f, -1.5708f,
 		-1.5708f + 6.2832f * second, 48);
-	draw->PathStroke(IM_COL32(255, 214, 96, 220), 0, ui(4));
+	draw->PathStroke(IM_COL32(255, 214, 94, 220), 0, ui(4));
 	draw->AddText(font, font->FontSize,
 		ImVec2(at.x + ui(3), at.y + ui(3)), IM_COL32(40, 16, 6, 200), text);
 	draw->AddText(font, font->FontSize, at,
-		IM_COL32(255, 210, 74, 255), text);
+		IM_COL32(255, 214, 94, 255), text);
 }
 
 // The F3 overlay: what the render loop has actually been doing, as numbers,
@@ -3484,7 +3647,7 @@ void draw_touch (App& app) {
 		const ImVec2 a(static_cast<float>(button.rect.x),
 			static_cast<float>(button.rect.y));
 		const ImVec2 b(a.x + button.rect.w, a.y + button.rect.h);
-		draw->AddRectFilled(a, b, held ? IM_COL32(255, 138, 58, 70)
+		draw->AddRectFilled(a, b, held ? IM_COL32(255, 122, 46, 70)
 			: IM_COL32(255, 255, 255, 22), ui(12));
 		draw->AddRect(a, b, IM_COL32(176, 158, 140, 90), ui(12));
 		ImFont* font = app.fonts.head;
@@ -4505,7 +4668,7 @@ void draw_chart (const char* label, const std::vector<double>& values,
 	};
 	for (size_t i = 1; i < values.size(); ++i) {
 		draw->AddLine(at(i - 1, values[i - 1]), at(i, values[i]),
-			IM_COL32(255, 138, 58, 90), std::max(1.f, ui(1)));
+			IM_COL32(255, 122, 46, 90), std::max(1.f, ui(1)));
 	}
 	// The moving average, the line the eye should follow.
 	double rolling = 0.;
@@ -4521,7 +4684,7 @@ void draw_chart (const char* label, const std::vector<double>& values,
 		}
 		const ImVec2 point = at(i, rolling / window.size());
 		if (started) {
-			draw->AddLine(last, point, IM_COL32(255, 138, 58, 255),
+			draw->AddLine(last, point, IM_COL32(255, 122, 46, 255),
 				std::max(1.f, ui(2)));
 		}
 		last = point;
@@ -4537,7 +4700,7 @@ void draw_chart (const char* label, const std::vector<double>& values,
 	std::snprintf(text, sizeof text, "%.1f",
 		rolling / std::max<size_t>(1, window.size()));
 	draw->AddText(ImVec2(origin.x + width - ui(56), origin.y + ui(2)),
-		IM_COL32(255, 138, 58, 255), text);
+		IM_COL32(255, 122, 46, 255), text);
 	ImGui::Dummy(ImVec2(width, height + ui(10)));
 }
 
@@ -4826,7 +4989,7 @@ void draw_streaks (App& app) {
 		streak.at += 0.05f;
 		if (streak.at >= 1.f) {
 			spawn_sparks_at(app, streak.tx, streak.ty,
-				{255, 150, 70, 255}, 3 + std::min(streak.rows, 6), 2.6f);
+				{255, 176, 60, 255}, 3 + std::min(streak.rows, 6), 2.6f);
 			streak.at = -1.f;
 			continue;
 		}
@@ -5231,8 +5394,8 @@ void draw_career (App& app) {
 					const float beat = 0.5f
 						+ 0.5f * std::sin(app.backdrop_tick * 0.06f);
 					pdl->AddRect(pen, plow, hot
-						? IM_COL32(255, 138, 58, 240)
-						: IM_COL32(255, 138, 58,
+						? IM_COL32(255, 122, 46, 240)
+						: IM_COL32(255, 122, 46,
 							static_cast<int>(90 + 110 * beat)),
 						ui(5), 0, ui(2));
 				}
@@ -5254,7 +5417,7 @@ void draw_career (App& app) {
 				}
 				const ImU32 name_ink = !pickable && !taken
 					? IM_COL32(120, 112, 104, 255)
-					: node.kind == 1 ? IM_COL32(255, 214, 96, 255)
+					: node.kind == 1 ? IM_COL32(255, 214, 94, 255)
 					: IM_COL32(235, 223, 206, 255);
 				pdl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.84f,
 					ImVec2(name_x, pen.y
@@ -5293,8 +5456,8 @@ void draw_career (App& app) {
 				ImU32 halo = 0;
 				float thick = ui(1);
 				if (from_taken && to_taken) {
-					ink = IM_COL32(255, 214, 96, 230);
-					halo = IM_COL32(255, 180, 70, 70);
+					ink = IM_COL32(255, 214, 94, 230);
+					halo = IM_COL32(255, 176, 60, 70);
 					thick = ui(2.5f);
 				} else if ((from_here
 						|| (run.path.empty()
@@ -5584,8 +5747,8 @@ bool card_button (App& app, const char* icon, const char* name,
 		const float beat = hot ? 1.f
 			: 0.6f + 0.4f * std::sin(app.backdrop_tick * 0.05f);
 		dl->AddRect(at, low,
-			hot ? IM_COL32(255, 138, 58, 230)
-			    : IM_COL32(255, 214, 96, static_cast<int>(120 * beat)),
+			hot ? IM_COL32(255, 122, 46, 230)
+			    : IM_COL32(255, 214, 94, static_cast<int>(120 * beat)),
 			ui(6), 0, ui(2));
 	}
 	const float pad = ui(10);
@@ -5597,7 +5760,7 @@ bool card_button (App& app, const char* icon, const char* name,
 			ImVec2(at.x + pad, top), ImVec2(at.x + pad + s, top + s));
 		text_x = at.x + pad * 1.8f + s;
 	}
-	const ImU32 name_ink = primary ? IM_COL32(255, 214, 96, 255)
+	const ImU32 name_ink = primary ? IM_COL32(255, 214, 94, 255)
 		: IM_COL32(235, 223, 206, 255);
 	if (note != nullptr && note[0] != '\0') {
 		dl->AddText(app.fonts.head, app.fonts.head->FontSize * 0.82f,
@@ -6429,15 +6592,35 @@ std::string android_root () {
 		if (end == std::string::npos) {
 			end = names.size();
 		}
-		const std::string name = names.substr(at, end - at);
+		std::string name = names.substr(at, end - at);
 		at = end + 1;
 		if (name.empty()) {
 			continue;
 		}
+		// "<bytes> <path>", from a manifest that carries sizes. An older
+		// manifest is bare paths, and then `wanted` stays -1 and the rule
+		// below is the old one: unpack only what is missing.
+		long long wanted = -1;
+		const size_t space = name.find(' ');
+		if (space != std::string::npos && space > 0
+			&& name.find_first_not_of("0123456789") == space) {
+			wanted = std::stoll(name.substr(0, space));
+			name = name.substr(space + 1);
+		}
 		const std::filesystem::path dest
 			= std::filesystem::path(root) / name;
 		if (std::filesystem::exists(dest, ignored)) {
-			continue;
+			// An upgrade installed over an older version finds every asset
+			// already unpacked from the last one, so "skip what exists"
+			// quietly keeps the old art forever. A size that disagrees
+			// with the manifest means the file was rebuilt: take the new
+			// one. Nothing outside the manifest is ever touched, so the
+			// player's saves in the same root are safe.
+			const auto have = static_cast<long long>(
+				std::filesystem::file_size(dest, ignored));
+			if (wanted < 0 || have == wanted) {
+				continue;
+			}
 		}
 		SDL_RWops* in = SDL_RWFromFile(name.c_str(), "rb");
 		if (in == nullptr) {
@@ -6820,7 +7003,7 @@ int run (bool smoke, long smoke_frames) {
 					? SDL_Color{150, 200, 240, 255}
 					: cue == "skilldark" ? SDL_Color{120, 100, 170, 255}
 					: cue == "skillheavy" ? SDL_Color{190, 150, 110, 255}
-					: cue == "pressure" ? SDL_Color{255, 150, 60, 255}
+					: cue == "pressure" ? SDL_Color{255, 176, 60, 255}
 					: SDL_Color{226, 92, 62, 255};
 				app.shake_until = std::max(app.shake_until,
 					app.session->sim().frame() + 12);
@@ -6973,7 +7156,7 @@ int run (bool smoke, long smoke_frames) {
 					SDL_GetRendererOutputSize(app.renderer, &w, &h);
 					SDL_SetRenderDrawBlendMode(app.renderer,
 						SDL_BLENDMODE_BLEND);
-					fill(app.renderer, 0, 0, w, h, {255, 214, 96,
+					fill(app.renderer, 0, 0, w, h, {255, 214, 94,
 						static_cast<Uint8>(app.od_flash * 10)});
 				}
 				if (app.skill_flash > 0) {
@@ -7002,7 +7185,7 @@ int run (bool smoke, long smoke_frames) {
 						font->FontSize,
 						ImVec2(kBoardX + (kBoardW - extent.x) / 2,
 							kBoardY + kBoardH * 0.30f),
-						IM_COL32(255, 214, 96,
+						IM_COL32(255, 214, 94,
 							static_cast<int>(alpha * 255)), cry);
 				}
 				// Overdrive sheds sparks off the Flow rail while it burns.
@@ -7012,7 +7195,7 @@ int run (bool smoke, long smoke_frames) {
 						kBoardY + px(120)
 							+ static_cast<float>(app.seeds()
 								% std::max(1, kBoardH - px(130))),
-						{255, 214, 96, 255}, 1, 1.4f);
+						{255, 214, 94, 255}, 1, 1.4f);
 				}
 			}
 			draw_label("HOLD", kBoardX - ui(122), kBoardY - ui(24));
@@ -7022,7 +7205,7 @@ int run (bool smoke, long smoke_frames) {
 				if (app.session->sim().overdrive()) {
 					draw_label("OVERDRIVE", kBoardX - px(114),
 						kBoardY + kBoardH - px(4),
-						IM_COL32(255, 214, 96, 255));
+						IM_COL32(255, 214, 94, 255));
 				}
 			}
 			if (app.session->sim().config().fuse) {

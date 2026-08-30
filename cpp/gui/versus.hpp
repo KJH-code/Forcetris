@@ -91,6 +91,10 @@ struct VersusMatch {
 	std::string skill_caster;
 	long skill_warned_at = -1;
 	long skill_fires_at = -1;
+	// Whose kit this is, for the plate's upper line. Set by the screen
+	// from the stage it launched; a plain duel leaves it empty and the
+	// plate prints the skill alone.
+	std::string caster_name;
 	// Sound cues the skills fired this tick, drained by the frame the way
 	// a session's cues are.
 	std::vector<std::string> skill_cues;

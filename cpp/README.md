@@ -386,8 +386,11 @@ loss closes the kennel), and **watches** (outlast the rising floor;
 the stars are the lines you cleared while holding on). A duel is fought
 face to face now - both boards full size, side by side - and a campaign
 boss fights with its own kit: telegraphed skills, two seconds of warning
-burning over your board before rust falls on it, a column seals shut,
-the iron cold-snaps, or a heat wave leans on your fuse. And the fuse is a stage gimmick now, not the campaign's default:
+before rust falls on it, a column seals shut, the iron cold-snaps, or a
+heat wave leans on your gauge. The warning is a struck plate over your
+own well carrying who is casting and what is coming, with a wind-up bar
+that reaches its end exactly as the blow lands - and the blow flashes
+the screen in the skill's own colour and shakes it. And the fuse is a stage gimmick now, not the campaign's default:
 most rooms play the board pure - the forced drop was the beginners' wall
 - and only the Backdraft rooms and the Overheated Wing still burn, the
 way the Dark Gallery is the room that goes dark. Duels were the last
@@ -674,6 +677,22 @@ and verdicts) carry the identity, the body text staying a system sans.
 Every drawing site falls back to the old procedural look when an asset
 is missing, so a checkout with no gfx directory still runs - and the
 smoke proves it.
+
+The palette lives in exactly two places: `gui/palette.hpp` for everything
+drawn live, and the constants at the head of `tools/make_gfx.py` for
+everything baked into a PNG. They hold the same numbers and are meant to
+be edited together. Colours used to be spelled inline at the draw site
+instead, and by the time anyone counted there were eight different
+oranges all meaning "ember", two of them sitting next to each other on
+every screen.
+
+The blocks themselves are drawn rather than blitted: a dark seat in the
+cell's own hue so a wall of one colour still reads as many blocks, a
+four-band face lit at the crown and cooling to the foot, a mitred
+chamfer whose lips stop a thickness short of each corner the way a real
+one does, and a single specular where the forge light would land. Rubble
+is the same block in dead iron with two cracks still glowing through it,
+so garbage reads as the same material, only spoiled.
 
 Headless machines can still prove the whole thing runs:
 `FORCETRIS_SMOKE=1500 SDL_VIDEODRIVER=dummy ./forcetris` plays that many
