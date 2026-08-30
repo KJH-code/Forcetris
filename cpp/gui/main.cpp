@@ -4473,11 +4473,33 @@ void draw_forge_strike (App& app) {
 	if (app.forge_strike <= 0) {
 		return;
 	}
-	--app.forge_strike;
-	if (!app.map_seen || app.screen != Screen::Career) {
+	if (app.screen != Screen::Career) {
+		// Nowhere to land: the blow belongs to the map and nothing else.
 		app.forge_strike = 0;
 		return;
 	}
+	if (!app.map_seen) {
+		// WAIT for the map, which is what the comment on the arming line
+		// always claimed happened. It did not: this used to spend a frame
+		// and then zero the whole strike whenever the map had not been
+		// drawn yet, which is every real run.
+		//
+		// "Set out" is a button INSIDE draw_career, so begin_run lands in
+		// the middle of a frame - after the chapter picker has drawn, and
+		// after the last chance this frame had to draw a map. It arms the
+		// strike and clears map_seen; this function runs at the end of the
+		// same frame, saw map_seen false, and threw the blow away before
+		// anyone could see it. The headless smoke never caught it because
+		// its driver calls begin_run after the present, so its next frame
+		// draws the map first and the strike survives - the one ordering
+		// that works, and the only one that was ever tested.
+		//
+		// Holding costs nothing: the maul is not spent, not drawn, and the
+		// nodes stay unclickable, for the single frame it takes the map to
+		// appear.
+		return;
+	}
+	--app.forge_strike;
 	const int gone = kStrike - app.forge_strike;
 	const int kLands = 38;
 	ImDrawList* draw = ImGui::GetForegroundDrawList();

@@ -330,6 +330,26 @@ Cold Shoulder's dial on the other side of the room, turned by the ring
 instead of bought: the foe takes six per cent less per ring, down to a
 floor of 0.45. Its offence stays unbounded - only the hide is floored.
 
+**And for two arcs the blow did not happen at all**, which is worth
+writing down because of how it hid. `begin_run` arms the strike and clears
+`map_seen`, and `draw_forge_strike` was supposed to wait for the map to
+have been drawn once. It did not wait - it spent a frame and then threw
+the whole strike away whenever `map_seen` was false.
+
+That is every real run. "Set out" is a button *inside* `draw_career`, so
+`begin_run` lands in the middle of a frame, after the chapter picker has
+drawn and after the last chance that frame had to draw a map. The strike
+was armed and killed in the same frame, before a pixel of it existed.
+
+The headless smoke never caught it because its run driver calls
+`begin_run` after the present, so the next frame draws the map first and
+the strike survives - the one ordering that works, and the only one that
+was ever exercised. Every screenshot of the maul in this file was taken
+down that path. The fix is to hold rather than cancel: not on the map yet
+means wait, and only leaving the Career screen cancels. Holding costs
+nothing - the maul is not spent, not drawn, and the nodes stay unclickable
+for the single frame it takes the map to appear.
+
 The blow shakes the whole screen, which took a second mechanism to do at
 all. The board's own quake runs only on the game screens and moves only
 the board pane, so a blow landed on the map shook nothing whatsoever. The
