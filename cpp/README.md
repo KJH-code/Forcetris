@@ -240,6 +240,38 @@ player three real choices. It does what a curse does, so it is one: laid
 by the ring rather than drafted, priced like a curse to burn off. Rule
 drops to three, the climb lays six curses instead of five.
 
+**The mechanics were fine and nothing landed.** Every event on the board
+already threw particles - sparks, beams, rings, swirls, shards - and the
+whole thing still read flat, because three pixels of random shudder for a
+fixed count of frames is what a double got and what a perfect clear got.
+No direction, no size, no decay, and nothing anywhere in the game ever
+stopped. Impact is not particle count; it is weight, and weight is three
+things:
+
+- **The kick.** An impulse with a direction and a size, ringing down under
+  a falling envelope rather than rattling flat. A blow you send shoves the
+  well down and scales with the rows it was worth - a ten-row blow does
+  not shove exactly as hard as a two-row one - and a blow you take shoves
+  it *up*, the one direction nothing you do yourself ever pushes. The
+  strongest kick wins rather than the newest, so a quad landing mid-slam
+  is not shrunk to whatever arrived second.
+- **Hit-stop.** The whole match holds still for a few frames on a big one:
+  four on a quad or a spin, five on a cascade, six on an ignition, nine on
+  a perfect clear, three on a garbage slam of four rows or more. The
+  oldest trick there is and the one that does the most - the pause is what
+  makes a hit feel like it hit. Cosmetic and GUI-only: the sim is simply
+  not stepped, exactly as it is not stepped while paused, and both boards
+  hold together so a duel never gains a tempo from it.
+- **The number.** What the blow was worth, thrown off the well in the size
+  it deserves, gold going out and red coming in, on the foreground list in
+  the title face with a hard shadow. Every one of these numbers was
+  already in a meter down the side of the screen, and not one of them was
+  ever looked at during a fight.
+
+The small events stay small on purpose: an ordinary clear gets a three
+pixel nudge and no stop, because a field that halts every few seconds is a
+stutter rather than a reward.
+
 **A playstyle is assembled, not handed over.** Every card before these
 made a blow heavier however it was struck, so every build wanted the same
 things and a run was a pile rather than a plan. The Style family names a

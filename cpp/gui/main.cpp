@@ -633,6 +633,41 @@ struct App {
 	// not need to.
 	std::array<bool, kHeight> was_iron{};
 	long shake_until = -1;
+	// --- Impact. ------------------------------------------------------
+	//
+	// The old shudder was three pixels of noise for a fixed count of
+	// frames, identical for a double and for a perfect clear, and it never
+	// decayed. Every blow in the game looked the same size and none of
+	// them read as having a direction. What lands in the hands instead is
+	// three things, all of them cosmetic and all of them GUI-only:
+	//
+	//   a KICK - an impulse with a direction and a size, ringing down
+	//   rather than rattling flat, so a blow sent shoves the well one way
+	//   and a blow taken shoves it the other;
+	//
+	//   HIT-STOP - the whole match holding still for a few frames on a big
+	//   one, which is the oldest trick there is and the one that does the
+	//   most: the pause is what makes the hit feel like it hit;
+	//
+	//   the NUMBER - what the blow was worth, thrown off the well in the
+	//   size it deserves. Everything the game does was already legible in
+	//   a meter somewhere; none of it was ever felt.
+	float kick_x = 0.f;        // Direction of the current impulse.
+	float kick_y = 0.f;
+	float kick_mag = 0.f;      // Pixels, decaying every frame.
+	float kick_phase = 0.f;
+	int freeze = 0;            // Frames the whole match holds still.
+	struct Pop {               // A number thrown off the board.
+		std::string text;
+		float x = 0.f;
+		float y = 0.f;
+		float rise = 0.f;
+		float size = 1.f;
+		int life = 0;
+		int born = 0;
+		ImU32 ink = 0;
+	};
+	std::vector<Pop> pops;
 	// The lock pulse: the piece that just landed flashes for a beat, so
 	// every placement has weight even when nothing clears.
 	Piece lock_piece{};
@@ -3673,6 +3708,23 @@ void draw_backdrop (App& app) {
 	if (app.ui_guard > 0) {
 		--app.ui_guard;
 	}
+	// The impulse rings down rather than rattling flat: a fast sine under
+	// a falling envelope, which is what a struck thing does.
+	if (app.kick_mag > 0.05f) {
+		app.kick_phase += 1.6f;
+		app.kick_mag *= 0.80f;
+	} else {
+		app.kick_mag = 0.f;
+	}
+	for (size_t at = 0; at < app.pops.size();) {
+		App::Pop& pop = app.pops[at];
+		pop.rise += 1.4f;
+		if (--pop.life <= 0) {
+			app.pops.erase(app.pops.begin() + static_cast<long>(at));
+		} else {
+			++at;
+		}
+	}
 	const float t = ++app.backdrop_tick * 0.01f;
 	// The hall itself is a painting now - gfx/backdrop.png, scaled to
 	// cover - with the living light drawn over it. A checkout without the
@@ -3850,6 +3902,10 @@ void lock_centre (App& app, float& x, float& y) {
 }
 
 // Remember the just-locked piece for the pulse the board draws over it.
+void kick (App& app, float dx, float dy, float mag);
+void pop_number (App& app, const std::string& text, ImU32 ink, float size,
+	float x, float y);
+
 void note_lock (App& app) {
 	if (!app.session.has_value() || app.session->sim().locked().empty()) {
 		return;
@@ -3857,11 +3913,73 @@ void note_lock (App& app) {
 	const Locked& lock = app.session->sim().locked().back();
 	app.lock_piece = Piece{lock.form, lock.state, lock.x, lock.y};
 	app.lock_flash = app.session->sim().frame();
+	// What the blow was worth, said where the blow happened. Every one of
+	// these numbers was already in a meter down the side of the screen and
+	// not one of them was ever looked at during a fight.
+	if (lock.attack > 0) {
+		char worth[16];
+		std::snprintf(worth, sizeof worth, "%d", lock.attack);
+		const float weight = std::min(2.2f, 0.9f + lock.attack * 0.13f);
+		pop_number(app, worth,
+			lock.attack >= 8 ? IM_COL32(255, 255, 236, 255)
+				: lock.attack >= 4 ? IM_COL32(255, 214, 94, 255)
+				: IM_COL32(255, 176, 60, 255),
+			weight,
+			kBoardX + kBoardW * 0.5f,
+			kBoardY + kBoardH * 0.34f);
+		// And the well takes the recoil in proportion, so a ten-row blow
+		// does not shove exactly as hard as a two-row one.
+		kick(app, 0.f, 1.f, std::min(12.f, 2.f + lock.attack * 0.9f));
+	}
+}
+
+// An impulse into the well, with a direction and a size.
+//
+// The strongest kick wins rather than the newest: a quad landing while a
+// garbage slam still rings must not shrink the quake to whatever the
+// second event asked for.
+void kick (App& app, float dx, float dy, float mag) {
+	const float len = std::sqrt(dx * dx + dy * dy);
+	if (len > 0.0001f && mag > app.kick_mag) {
+		app.kick_x = dx / len;
+		app.kick_y = dy / len;
+		app.kick_mag = mag;
+		app.kick_phase = 0.f;
+	}
+}
+
+// The match holds still. Cosmetic and GUI-only - the sim simply is not
+// stepped, exactly as it is not stepped while the game is paused - and
+// both boards freeze together, so a duel never gains a tempo from it.
+void hit_stop (App& app, int frames) {
+	app.freeze = std::max(app.freeze, frames);
+}
+
+// What the blow was worth, thrown off the well. Size carries the weight:
+// a double is a note, a quad is a shout, and the player never has to read
+// a meter to know which one just happened.
+void pop_number (App& app, const std::string& text, ImU32 ink, float size,
+		float x, float y) {
+	App::Pop pop;
+	pop.text = text;
+	pop.ink = ink;
+	pop.size = size;
+	pop.x = x;
+	pop.y = y;
+	pop.life = 46;
+	pop.born = 46;
+	app.pops.push_back(pop);
+	if (app.pops.size() > 24) {
+		app.pops.erase(app.pops.begin());
+	}
 }
 
 // The cues' visible half: what the ear hears, the eye sees.
 void juice_cue (App& app, const std::string& cue) {
 	if (cue == "clear") {
+		// The small one gets a small one: a nudge, no stop. A field that
+		// halts every few seconds reads as a stutter, not a reward.
+		kick(app, 0.f, 1.f, 3.f);
 		// Sparks, no shudder: an ordinary clear happens every few seconds,
 		// and a field that jolts on every one of them reads as a seizure,
 		// not a reward. The big events below keep the quake.
@@ -3869,6 +3987,7 @@ void juice_cue (App& app, const std::string& cue) {
 	} else if (cue == "lock") {
 		note_lock(app);
 	} else if (cue == "drop") {
+		kick(app, 0.f, 1.f, 2.f);
 		// The slam felt in the hands: the piece's own pulse and dust off
 		// the landing cells - the field itself stays still.
 		note_lock(app);
@@ -3881,6 +4000,10 @@ void juice_cue (App& app, const std::string& cue) {
 		app.shake_until = std::max(app.shake_until,
 			app.session->sim().frame() + 2);
 	} else if (cue == "tetris") {
+		// A quad: the well takes the recoil downward and the match holds
+		// still for four frames. The stop is the half that lands.
+		kick(app, 0.f, 1.f, 9.f);
+		hit_stop(app, 4);
 		// The rows themselves are broken by light_burn_rows, which knows
 		// which four they were. What belongs here is the well: a quad
 		// punches a hole clean through it, so the column goes bright.
@@ -3889,6 +4012,8 @@ void juice_cue (App& app, const std::string& cue) {
 			kBoardH, {255, 214, 94, 255}, 14);
 		app.shake_until = app.session->sim().frame() + 8;
 	} else if (cue == "tspin") {
+		kick(app, 1.f, 0.6f, 8.f);
+		hit_stop(app, 4);
 		// A turn, drawn as one: a ring opening off the piece and its
 		// fragments leaving along the circle rather than away from it.
 		float cx = kBoardX + kBoardW * 0.5f;
@@ -3901,6 +4026,9 @@ void juice_cue (App& app, const std::string& cue) {
 			static_cast<float>(kCell) * 0.26f);
 		app.shake_until = app.session->sim().frame() + 6;
 	} else if (cue == "perfect") {
+		// The rarest thing on the board gets the longest hold in the game.
+		kick(app, 0.f, 1.f, 14.f);
+		hit_stop(app, 9);
 		// Nothing left standing: the whole well goes white and a wave
 		// runs out of its middle. The rarest event on the board gets the
 		// only effect that touches every pixel of it.
@@ -3911,11 +4039,15 @@ void juice_cue (App& app, const std::string& cue) {
 		spawn_sparks(app, {255, 255, 255, 255}, 10, 4.0f);
 		app.shake_until = app.session->sim().frame() + 10;
 	} else if (cue == "overdrive") {
+		kick(app, 0.f, -1.f, 12.f);
+		hit_stop(app, 6);
 		spawn_sparks(app, {255, 214, 94, 255}, 8, 3.6f);
 		app.shake_until = app.session->sim().frame() + 10;
 	} else if (cue == "burn") {
 		spawn_sparks(app, {255, 122, 46, 255}, 4, 2.6f);
 	} else if (cue == "cascade") {
+		kick(app, 0.f, 1.f, 8.f);
+		hit_stop(app, 5);
 		// The whole chain resolved in one frame - make the collapse felt:
 		// a wide rubble-toned burst and a longer rumble than a plain clear.
 		spawn_sparks(app, {214, 138, 82, 255}, 8, 3.6f);
@@ -3926,6 +4058,8 @@ void juice_cue (App& app, const std::string& cue) {
 		// lock later arrives as the clear it pays for.
 		spawn_sparks(app, {180, 216, 255, 255}, 5, 2.2f);
 	} else if (cue == "crit") {
+		kick(app, -1.f, 0.4f, 7.f);
+		hit_stop(app, 3);
 		// Loaded dice landing: a white-gold burst and a jolt, so the
 		// doubled blow is felt going out.
 		spawn_sparks(app, {255, 244, 190, 255}, 7, 3.4f);
@@ -4153,6 +4287,42 @@ void draw_banner (App& app) {
 	ImGui::GetForegroundDrawList()->AddText(font, size,
 		ImVec2(kBoardX + (kBoardW - extent.x) / 2, kBoardY - ui(38)),
 		IM_COL32(255, 214, 94, static_cast<int>(alpha * 255)), banner.text.c_str());
+}
+
+// The blows, thrown off the well and fading as they rise.
+//
+// Drawn on the foreground list so nothing on the board can bury them, and
+// in the title face because a number that has to be squinted at is a
+// number the player will go back to reading off a meter.
+void draw_pops (App& app) {
+	if (app.pops.empty() || app.fonts.title == nullptr) {
+		return;
+	}
+	ImDrawList* dl = ImGui::GetForegroundDrawList();
+	for (const App::Pop& pop : app.pops) {
+		const float life = static_cast<float>(pop.life)
+			/ std::max(1, pop.born);
+		// A short punch out at the start, then a long even fade: the eye
+		// catches the arrival and is not held by the departure.
+		const float grow = life > 0.86f ? 1.35f - (1.f - life) * 2.5f : 1.f;
+		const float size = app.fonts.title->FontSize * pop.size
+			* std::max(0.7f, grow);
+		const int alpha = static_cast<int>(255.f
+			* std::min(1.f, life * 2.2f));
+		const ImVec2 wide = app.fonts.title->CalcTextSizeA(size, FLT_MAX,
+			0.f, pop.text.c_str());
+		const ImVec2 at(pop.x - wide.x * 0.5f, pop.y - pop.rise);
+		// A hard shadow rather than a glow: on a well full of embers a
+		// soft one disappears into the background it is drawn over.
+		dl->AddText(app.fonts.title, size,
+			ImVec2(at.x + ui(2), at.y + ui(2)),
+			IM_COL32(0, 0, 0, static_cast<int>(alpha * 0.75f)),
+			pop.text.c_str());
+		dl->AddText(app.fonts.title, size, at,
+			(pop.ink & 0x00FFFFFF)
+				| (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT),
+			pop.text.c_str());
+	}
 }
 
 // The colour a skill announces itself in - the charge, the bolt, the plate
@@ -9064,6 +9234,14 @@ int run (bool smoke, long smoke_frames) {
 			app.input_nudge = false;
 			if (app.screen == Screen::Game && !app.paused && !app.editing
 				&& app.offers.empty()) {
+				if (app.freeze > 0) {
+					// Hit-stop: the whole match holds, the way it holds
+					// for the countdown. Particles and the kick go on
+					// living - what stops is the game, which is the point.
+					--app.freeze;
+					++frames;
+					continue;
+				}
 				if (app.countdown > 0) {
 					// The pre-game breath: both boards stand frozen - the
 					// versus step is skipped too, so the bot waits with you.
@@ -9226,15 +9404,31 @@ int run (bool smoke, long smoke_frames) {
 			// The shudder: the whole board pane jolts a few pixels while a
 			// quad, spin or Overdrive still rings - cosmetic, and off by a
 			// Rules switch.
+			// The shudder: the board pane rides the impulse - along its
+			// own direction, at its own size, ringing down - with the old
+			// noise kept underneath for the events that only set a
+			// duration. Cosmetic, and off by a Rules switch.
+			const bool ringing = app.config.shake && app.kick_mag > 0.05f;
 			const bool quaking = app.config.shake
 				&& app.session->sim().frame() < app.shake_until;
 			SDL_Rect quake{0, 0, 0, 0};
-			if (quaking) {
+			if (ringing || quaking) {
 				int w = 0;
 				int h = 0;
 				SDL_GetRendererOutputSize(app.renderer, &w, &h);
-				quake = {static_cast<int>(app.seeds() % 7) - 3,
-					static_cast<int>(app.seeds() % 7) - 3, w, h};
+				float ox = 0.f;
+				float oy = 0.f;
+				if (ringing) {
+					const float swing = std::sin(app.kick_phase)
+						* app.kick_mag;
+					ox = app.kick_x * swing;
+					oy = app.kick_y * swing;
+				}
+				if (quaking) {
+					ox += static_cast<float>(app.seeds() % 5) - 2.f;
+					oy += static_cast<float>(app.seeds() % 5) - 2.f;
+				}
+				quake = {static_cast<int>(ox), static_cast<int>(oy), w, h};
 				SDL_RenderSetViewport(app.renderer, &quake);
 			}
 			light_burn_rows(app);
@@ -9274,6 +9468,20 @@ int run (bool smoke, long smoke_frames) {
 				if (pending > app.last_pending) {
 					app.hit_flash = 8;
 					app.audio.play("hit");
+					// Upward, because it came from under you - the one
+					// direction nothing you do yourself ever pushes.
+					const int took = pending - app.last_pending;
+					kick(app, 0.f, -1.f,
+						std::min(11.f, 3.f + took * 1.1f));
+					if (took >= 4) {
+						hit_stop(app, 3);
+					}
+					char worth[16];
+					std::snprintf(worth, sizeof worth, "-%d", took);
+					pop_number(app, worth, IM_COL32(236, 96, 72, 255),
+						std::min(1.9f, 0.9f + took * 0.12f),
+						kBoardX + kBoardW * 0.5f,
+						kBoardY + kBoardH * 0.72f);
 					if (app.config.shake) {
 						app.shake_until = sim.frame() + 4;
 					}
@@ -9455,6 +9663,7 @@ int run (bool smoke, long smoke_frames) {
 				draw_stat_panels(app);
 			}
 			draw_banner(app);
+			draw_pops(app);
 			if (app.versus.has_value()) {
 				draw_versus_panel(app);
 			}
