@@ -20,6 +20,9 @@ int weight_of (Family family) {
 		// only matter in the rooms that threaten what they guard, and a
 		// guard drawn where there is nothing to guard is a wasted pick.
 		case Family::Ward: return 3;
+		// Common: a style is only a style if the run sees enough of one
+		// to lean on it, and the pieces are small on purpose.
+		case Family::Style: return 4;
 		default: return 4;
 	}
 }
@@ -91,22 +94,48 @@ const std::vector<Temper>& pool () {
 			"every clear stirs the hold", Family::Rule, 1},
 		{"linked_chain", "The Linked Chain",
 			"clears cascade, and the pieces stay whole", Family::Rule, 1},
-		// The four styles. Each names a way of playing, pays it, and
-		// charges every other way for the privilege - so a run can be a
-		// plan instead of a pile, and two of them together is a worse
-		// hand than one of them alone.
+		// --- Style: how you play, sold in pieces. -------------------------
+		// The first cut of this was four cards, one a style, each one
+		// carrying its whole gain AND its whole price. That does not let
+		// a run choose a style, it hands it one: take the card and every
+		// other way of playing is worse whether you wanted that or not.
+		//
+		// So each style is three cards instead. Two of them only pay -
+		// take one for a lean, both for a habit - and the third is a
+		// creed: it pays most and charges every other style for it. The
+		// creed is where commitment lives, and it is optional.
 		{"plonking", "The Plonker",
-			"struck while digging it lands harder; struck over a bare "
-			"floor it lands soft", Family::Rule, 2},
+			"a clear that ate rubble lands harder", Family::Style, 2},
+		{"dig_toll", "The Toll",
+			"rubble pays twice: once in the blow, once in the gauge",
+			Family::Style, 2},
+		{"dig_creed", "The Rubble Creed",
+			"rubble pays most of all, and a clear over a bare floor "
+			"lands soft", Family::Style, 1},
 		{"striding", "The Strider",
-			"every link past the first adds to the blow; the one that "
-			"breaks the chain lands soft", Family::Rule, 2},
+			"every link past the first adds to the blow", Family::Style, 2},
+		{"stride_span", "The Long Span",
+			"a link pays in the blow and in the gauge", Family::Style, 2},
+		{"stride_creed", "The Unbroken",
+			"links pay most of all, and the blow that breaks the chain "
+			"lands soft", Family::Style, 1},
 		{"opener", "The Opening",
-			"the first of a room hits far harder, and everything after "
-			"it is lighter", Family::Rule, 2},
+			"the first of a room hits harder, and for longer",
+			Family::Style, 2},
+		{"open_flare", "First Flare",
+			"the opening hits harder still", Family::Style, 2},
+		{"open_creed", "All In The First",
+			"the opening hits hardest, and everything after it is "
+			"lighter", Family::Style, 1},
 		{"downstacker", "The Downstacker",
-			"a plain clear hits like a rare one, and the rare ones hit "
-			"like plain", Family::Rule, 2},
+			"a plain clear - no spin, no quad - lands harder",
+			Family::Style, 2},
+		{"plain_edge", "The Blunt Edge",
+			"a plain clear pays in the blow and in the gauge",
+			Family::Style, 2},
+		{"plain_creed", "Nothing Fancy",
+			"plain clears land hardest, and the rare ones land like "
+			"plain", Family::Style, 1},
 		// --- Ward: nothing here wins faster; everything here survives. ----
 		// The guard family. Half of it only matters in the rooms that
 		// threaten what it guards, which is the point: a ward is a bet on
@@ -251,26 +280,45 @@ void apply (SimConfig& rules, const std::string& id) {
 		// shatters a lock later - and the hand behind it hits far harder.
 		rules.cold_iron = true;
 		rules.attack_scale += 0.75;
+	// --- The styles. Two steps that only pay, then a creed that trades.
 	} else if (id == "plonking") {
-		// Two rows a dug row is a lot on a four-row dig and nothing at
-		// all on a clean board, which is the shape wanted: the card is
-		// only worth its price to someone who lives in the rubble. The
-		// floors keep a second copy from erasing the other style whole.
+		rules.plonk_dig += 1;
+	} else if (id == "dig_toll") {
+		rules.plonk_dig += 1;
+		rules.flow_gain_dig += 2.;
+	} else if (id == "dig_creed") {
+		// The only one of the four that charges, and the only one capped
+		// at a single copy: a creed is a decision, not a dial.
 		rules.plonk_dig += 2;
-		rules.plonk_clean = std::max(0.4, rules.plonk_clean - 0.3);
+		rules.plonk_clean = std::max(0.5, rules.plonk_clean - 0.3);
 	} else if (id == "striding") {
 		rules.stride_chain += 1;
-		rules.stride_cold = std::max(0.35, rules.stride_cold - 0.4);
+	} else if (id == "stride_span") {
+		rules.stride_chain += 1;
+		rules.flow_gain_attack += 2.;
+	} else if (id == "stride_creed") {
+		rules.stride_chain += 1;
+		rules.stride_cold = std::max(0.45, rules.stride_cold - 0.35);
 	} else if (id == "opener") {
-		// Half a minute, and a second copy buys a LONGER opening rather
-		// than a louder one - a build that wants the whole room loud has
-		// to spend twice for it.
+		// Every opening card carries some window, or a card that only
+		// raises the gain would do nothing at all on its own.
+		rules.opener_rows += 2;
+		rules.opener_ms += 20000;
+	} else if (id == "open_flare") {
+		rules.opener_rows += 2;
+		rules.opener_ms += 10000;
+	} else if (id == "open_creed") {
 		rules.opener_rows += 3;
-		rules.opener_ms += 30000;
-		rules.opener_late = std::max(0.5, rules.opener_late - 0.2);
+		rules.opener_ms += 15000;
+		rules.opener_late = std::max(0.55, rules.opener_late - 0.25);
 	} else if (id == "downstacker") {
+		rules.plain_rows += 1;
+	} else if (id == "plain_edge") {
+		rules.plain_rows += 1;
+		rules.flow_gain_line += 2.;
+	} else if (id == "plain_creed") {
 		rules.plain_rows += 2;
-		rules.plain_heavy = std::max(0.4, rules.plain_heavy - 0.35);
+		rules.plain_heavy = std::max(0.5, rules.plain_heavy - 0.3);
 	} else if (id == "turning_rack") {
 		rules.hold_churn = true;
 	} else if (id == "wild_spins") {
@@ -463,6 +511,11 @@ int bot_pick (const std::vector<std::string>& offers, int rank_index,
 				break;
 			case Family::Chaos:
 				break;        // Unreachable: skipped above.
+			case Family::Style:
+				// A bot has no habits to build on, so a style is worth
+				// its plain gain to it and nothing more.
+				weight = 2;
+				break;
 			case Family::Ward:
 				// A net is worth most to the ranks that still fall in. It
 				// is never worth nothing, though: every branch here must

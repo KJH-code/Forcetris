@@ -41,6 +41,12 @@ enum class Family {
 	// floor that sweeps itself, a blow that lands thinner. Conditional by
 	// nature, which is why it sits at Risk's weight rather than Flow's.
 	Ward = 5,
+	// How you play, sold in pieces. The four styles - the rubble, the
+	// chain, the opening, the plain clear - each come as three small
+	// cards rather than one that decides for you: two that only pay, and
+	// one creed that pays more and charges every other style for it.
+	// A run leans by picking, and commits only if it wants to.
+	Style = 6,
 };
 
 struct Temper {

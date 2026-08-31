@@ -166,14 +166,26 @@ std::vector<std::string> claimed (const std::string& id) {
 	if (id == "loaded_dice") return {"crit_every"};
 	if (id == "cold_forge") return {"cold_iron", "attack_scale"};
 	if (id == "turning_rack") return {"hold_churn"};
-	// The four styles: each moves its own gain and its own price, and
-	// nothing else. That pairing IS the design, so the test states it.
-	if (id == "plonking") return {"plonk_dig", "plonk_clean"};
-	if (id == "striding") return {"stride_chain", "stride_cold"};
-	if (id == "opener") {
+	// The Style family, split three ways per playstyle: two steps that only
+	// pay, and one creed that pays most and is the only one that charges
+	// the other styles. The split IS the design - a build is assembled by
+	// picking, not handed over whole by one card - so the test states it
+	// card by card, and the absent price on a step is as much of a pin as
+	// the present one on a creed.
+	if (id == "plonking") return {"plonk_dig"};
+	if (id == "dig_toll") return {"plonk_dig", "flow_gain_dig"};
+	if (id == "dig_creed") return {"plonk_dig", "plonk_clean"};
+	if (id == "striding") return {"stride_chain"};
+	if (id == "stride_span") return {"stride_chain", "flow_gain_attack"};
+	if (id == "stride_creed") return {"stride_chain", "stride_cold"};
+	if (id == "opener") return {"opener_rows", "opener_ms"};
+	if (id == "open_flare") return {"opener_rows", "opener_ms"};
+	if (id == "open_creed") {
 		return {"opener_rows", "opener_ms", "opener_late"};
 	}
-	if (id == "downstacker") return {"plain_rows", "plain_heavy"};
+	if (id == "downstacker") return {"plain_rows"};
+	if (id == "plain_edge") return {"plain_rows", "flow_gain_line"};
+	if (id == "plain_creed") return {"plain_rows", "plain_heavy"};
 	if (id == "wild_spins") return {"wild_spins"};
 	if (id == "ring_walls") return {"wrap_walls", "fall_delay"};
 	// The two chaos cards that curse the hands do their damage in the GUI's
@@ -509,11 +521,118 @@ int main () {
 			linked.cleartype == 2, std::to_string(linked.cleartype));
 	}
 
+	// --- The Style family. --------------------------------------------------
+	// A playstyle is assembled, not handed over. Three cards per style: two
+	// steps that only pay, and one creed that pays most and is the only one
+	// that charges the other styles. So a hand can offer a lean towards
+	// plonking without also selling the player the whole cost of it.
+	{
+		const char* steps[] = {
+			"plonking", "dig_toll", "striding", "stride_span",
+			"opener", "open_flare", "downstacker", "plain_edge",
+		};
+		const char* creeds[] = {
+			"dig_creed", "stride_creed", "open_creed", "plain_creed",
+		};
+		bool all_style = true;
+		std::string detail;
+		for (const char* id : steps) {
+			const temper::Temper* card = temper::find(id);
+			if (card == nullptr || card->family != temper::Family::Style) {
+				all_style = false;
+				detail += std::string(id) + " strays; ";
+			}
+		}
+		for (const char* id : creeds) {
+			const temper::Temper* card = temper::find(id);
+			if (card == nullptr || card->family != temper::Family::Style) {
+				all_style = false;
+				detail += std::string(id) + " strays; ";
+			}
+		}
+		check("every style card is in the Style family", all_style, detail);
+
+		SimConfig base = rules();
+		bool free_steps = true;
+		detail.clear();
+		for (const char* id : steps) {
+			SimConfig cfg = rules();
+			temper::apply(cfg, id);
+			const bool charged = cfg.plonk_clean < base.plonk_clean
+				|| cfg.stride_cold < base.stride_cold
+				|| cfg.opener_late < base.opener_late
+				|| cfg.plain_heavy < base.plain_heavy;
+			if (charged) {
+				free_steps = false;
+				detail += std::string(id) + " charges; ";
+			}
+		}
+		check("a step only pays, and never charges another style",
+			free_steps, detail);
+
+		bool creeds_charge = true;
+		detail.clear();
+		for (const char* id : creeds) {
+			SimConfig cfg = rules();
+			temper::apply(cfg, id);
+			const bool charged = cfg.plonk_clean < base.plonk_clean
+				|| cfg.stride_cold < base.stride_cold
+				|| cfg.opener_late < base.opener_late
+				|| cfg.plain_heavy < base.plain_heavy;
+			if (!charged) {
+				creeds_charge = false;
+				detail += std::string(id) + " is free; ";
+			}
+		}
+		check("and a creed is the one that charges", creeds_charge, detail);
+
+		// Three cards make a lean the sim can feel, and no amount of
+		// stacking takes a price past its floor.
+		SimConfig dig = rules();
+		temper::apply(dig, "plonking");
+		temper::apply(dig, "dig_toll");
+		temper::apply(dig, "dig_creed");
+		check("three plonking cards stack into a real lean",
+			dig.plonk_dig == 4 && dig.flow_gain_dig > base.flow_gain_dig
+				&& dig.plonk_clean < base.plonk_clean,
+			std::to_string(dig.plonk_dig) + "/" + number(dig.plonk_clean));
+		for (int i = 0; i < 8; ++i) {
+			temper::apply(dig, "dig_creed");
+			temper::apply(dig, "stride_creed");
+			temper::apply(dig, "open_creed");
+			temper::apply(dig, "plain_creed");
+		}
+		check("and no creed grinds a rival style to nothing",
+			dig.plonk_clean >= 0.5 - 1e-9 && dig.stride_cold >= 0.45 - 1e-9
+				&& dig.opener_late >= 0.55 - 1e-9
+				&& dig.plain_heavy >= 0.5 - 1e-9,
+			number(dig.plonk_clean) + "/" + number(dig.stride_cold) + "/"
+				+ number(dig.opener_late) + "/" + number(dig.plain_heavy));
+
+		// Every opener card has to carry some window, because the sim gates
+		// the whole opening on there being one.
+		bool windowed = true;
+		detail.clear();
+		for (const char* id : {"opener", "open_flare", "open_creed"}) {
+			SimConfig cfg = rules();
+			temper::apply(cfg, id);
+			if (cfg.opener_ms <= 0 || cfg.opener_rows <= 0) {
+				windowed = false;
+				detail += std::string(id) + " opens nothing; ";
+			}
+		}
+		check("every opener card carries both a window and a gain",
+			windowed, detail);
+	}
+
 	// --- The pool's shape. --------------------------------------------------
-	// Five families, thirty-three cards, and the counts written down here so
+	// Six families, forty-one cards, and the counts written down here so
 	// that growing one family is a decision rather than an accident. Chaos
 	// is not among them any more: nobody drafts a curse, so the climb lays
-	// them instead and they live in curses(), pinned further down.
+	// them instead and they live in curses(), pinned further down. Style is
+	// the largest on purpose - twelve small cards, three per playstyle, so
+	// a hand can offer a step towards a build without handing over the
+	// whole build.
 	{
 		std::map<int, int> counted;
 		std::set<std::string> seen;
@@ -532,18 +651,20 @@ int main () {
 				}
 			}
 		}
-		check("the pool is thirty-three cards in five families",
-			temper::pool().size() == 33 && counted.size() == 5,
+		check("the pool is forty-one cards in six families",
+			temper::pool().size() == 41 && counted.size() == 6,
 			std::to_string(temper::pool().size()) + " cards, "
 				+ std::to_string(counted.size()) + " families");
-		check("and the families are five, seven, seven, eight, six",
+		check("and the families are five, seven, seven, four, six, twelve",
 			counted[0] == 5 && counted[1] == 7 && counted[2] == 7
-				&& counted[3] == 8 && counted[4] == 0 && counted[5] == 6,
+				&& counted[3] == 4 && counted[4] == 0 && counted[5] == 6
+				&& counted[6] == 12,
 			std::to_string(counted[0]) + "/" + std::to_string(counted[1])
 				+ "/" + std::to_string(counted[2]) + "/"
 				+ std::to_string(counted[3]) + "/"
 				+ std::to_string(counted[4]) + "/"
-				+ std::to_string(counted[5]));
+				+ std::to_string(counted[5]) + "/"
+				+ std::to_string(counted[6]));
 		check("no two cards share an id, and every id is findable",
 			unique && findable);
 		// The card face carries no numbers - the arithmetic lives in

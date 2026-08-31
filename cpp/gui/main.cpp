@@ -1081,6 +1081,10 @@ ImU32 family_ink (temper::Family family) {
 		// of iron that has been let alone to cool. Nothing that defends
 		// should look like fire.
 		case temper::Family::Ward: return IM_COL32(120, 150, 186, 255);
+		// The styles get green - the one hue neither the fire nor the
+		// iron nor the chaos owns - because a style is not a bigger
+		// number, it is a different way to be worth one.
+		case temper::Family::Style: return IM_COL32(126, 196, 128, 255);
 		case temper::Family::Fuel:
 		default: return IM_COL32(214, 128, 62, 255);
 	}
@@ -1094,6 +1098,7 @@ const char* family_tag (temper::Family family) {
 		case temper::Family::Rule: return "RULE";
 		case temper::Family::Chaos: return "CHAOS";
 		case temper::Family::Ward: return "WARD";
+		case temper::Family::Style: return "STYLE";
 		case temper::Family::Fuel:
 		default: return "FUEL";
 	}
@@ -1153,6 +1158,18 @@ void family_glyph (ImDrawList* draw, temper::Family family, ImVec2 at,
 				ImVec2(mid.x - r * 0.72f, mid.y + r * 0.12f),
 				ImVec2(mid.x + r * 0.72f, mid.y + r * 0.12f),
 				ImVec2(mid.x, at.y + size - r * 0.15f), ink);
+			break;
+		case temper::Family::Style:
+			// A footprint: three bars climbing, because a style is a
+			// habit built one placement at a time and nothing else on
+			// the table is a sequence.
+			for (int step = 0; step < 3; ++step) {
+				const float tall = r * (0.34f + 0.28f * step);
+				const float x = mid.x + (step - 1) * r * 0.56f;
+				draw->AddRectFilled(
+					ImVec2(x - r * 0.2f, mid.y + r * 0.62f - tall),
+					ImVec2(x + r * 0.2f, mid.y + r * 0.62f), ink);
+			}
 			break;
 		case temper::Family::Fuel:
 		default:

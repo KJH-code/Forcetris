@@ -194,36 +194,44 @@ made ready. The **cooldown** puts it out again over half a second under
 the verdict - the board stays drawn underneath the whole time, because a
 loss screen over a well that vanished reads as a crash.
 
-**Four cards that are a way of playing, not a bigger number.** Every card
-before them made a blow heavier however it was struck, so every build
-wanted the same things and a run was a pile rather than a plan. These four
-each name a style, pay it, and charge every other style for the privilege
-- and the price is the design, not an apology for it. Taking two that
-disagree is allowed, and is meant to be a worse hand than committing to
-one.
+**A playstyle is assembled, not handed over.** Every card before these
+made a blow heavier however it was struck, so every build wanted the same
+things and a run was a pile rather than a plan. The Style family names a
+way of playing, pays it, and charges the other ways for the privilege.
 
-| card | what it pays | what it charges |
+The first draft of it was four cards, one per style, each carrying a whole
+style AND its whole price - and that chose the build for the player: take
+the card and you are a plonker now, bill included. So each style is split
+three ways instead. Two **steps** only pay. One **creed** pays most and is
+the only card in the game that charges the other styles. A hand can offer
+a lean towards digging without also selling the whole cost of it, and the
+commitment happens when the player reaches for the creed.
+
+| style | steps (pay only) | creed (pays most, and charges) |
 |---|---|---|
-| The Plonker | rows by the row of rubble the clear ate | a clear over a bare floor |
-| The Strider | every back-to-back link past the first | the blow that breaks the chain |
-| The Opening | the first half-minute of a room | every blow after it |
-| The Downstacker | a plain clear - no spin, no quad | the quads and the spins |
+| plonking | rows by the rubble the clear ate; the same again plus a faucet of Flow for digging | the deepest dig, and a clear over a bare floor is worth less |
+| striding | the back-to-back chain past its first link; the same again plus Flow on what you land | the chain again, and the blow that breaks it hurts |
+| the opening | a loud first half-minute; a second, shorter, louder window | the longest loud window, and every blow after it is lighter |
+| downstacking | a plain clear - no spin, no quad - pays like a rare one; the same again plus Flow by the line | the plain clear again, and the quads and spins give it back |
 
 They land on the raw table value, before the multipliers and therefore
 before the ceiling: a style changes what the clear was worth, the ceiling
 bounds what the cards can multiply it by, and the two do not fight. Nine
-new SimConfig fields carry them, adds at zero and prices at one, so
-nothing that does not draft them notices - equivalence and trace do not
-move a step. The second copy of a card deepens the same bet rather than
-buying a different one (a second Opening buys a longer opening, not a
-louder one), and every price has a floor so two copies can never erase the
-other style entirely.
+SimConfig fields carry them, adds at zero and prices at one, so nothing
+that does not draft them notices - equivalence and trace do not move a
+step. A second copy of a step deepens the same bet rather than buying a
+different one (a second Opening buys a longer opening, not a louder one),
+and every price has a floor so no stack of creeds can erase another style
+entirely.
 
-fusecheck pins each of the four as a PAIR - the style is worth more AND
-the rest is worth less - because a card that only gave would not need a
-test, it would need a nerf. The plonk's dig case took two tries: handing
-garbage to `receive_attack` and then calling `seed()` overwrites the
-board, so the first version quietly measured nothing.
+The tests hold the split rather than the flavour. fusecheck measures one
+quad off an all-I deck under each card: a step must leave that quad
+*exactly* where it was, and a creed is where the bill arrives - so a step
+that quietly nerfed something would fail even though the copy still read
+like a step. tempercheck says the same thing from the other side, over
+every card in the family at once. The plonk's dig case took two tries:
+handing garbage to `receive_attack` and then calling `seed()` overwrites
+the board, so the first version quietly measured nothing.
 
 **A blow has a ceiling now, and it was measured rather than argued.**
 Adding the multipliers instead of composing them stopped the runaway; it

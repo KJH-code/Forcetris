@@ -153,14 +153,17 @@ int main () {
 			at_ten > 3.0 && ships.fuse_min > 1.0, number(at_ten));
 	}
 
-	// --- The four playstyles. -----------------------------------------
+	// --- The Style family. --------------------------------------------
 	//
 	// Every card before these made a blow bigger however it was struck,
-	// so every build wanted the same things and a run was a pile. Each of
-	// these pays for a WAY of playing and charges every other way, which
-	// is the whole design - so what is pinned here is always the PAIR:
-	// the style is worth more AND the rest is worth less. A card that
-	// only gave would not need a test, it would need a nerf.
+	// so every build wanted the same things and a run was a pile. These
+	// pay for a WAY of playing instead - but a single card that carried a
+	// whole style AND its whole price chose the build for the player, so
+	// the style is split three ways: two STEPS that only pay, and one
+	// CREED that pays most and is the only card that charges the other
+	// ways of playing. What is pinned here is that split, measured on a
+	// real blow: a step leaves the rest of the game exactly where it was,
+	// and a creed is where the bill arrives.
 	{
 		// One quad off an all-I deck, with whatever tuning is handed in,
 		// and what it was worth on the way out.
@@ -193,67 +196,109 @@ int main () {
 		const SimConfig plain = fused();
 		const int base = quad_worth(plain, 0);
 
-		// The Downstacker: a plain clear pays like a rare one, and the
-		// rare ones give it back. A quad is exactly the rare one, so the
-		// card must make this SMALLER.
+		// The Downstacker, a step: the plain clear pays, and the quad -
+		// which is exactly the flashy clear the style is not about - is
+		// left alone. A step that quietly nerfed the quad would be the
+		// old bundled card wearing a smaller name.
 		SimConfig digger = plain;
 		temper::apply(digger, "downstacker");
-		const int quad_ds = quad_worth(digger, 0);
-		check("the downstacker's price lands on the quad",
-			quad_ds > 0 && quad_ds < base,
-			std::to_string(base) + " -> " + std::to_string(quad_ds));
-		check("and its gain lands on the plain clear",
-			digger.plain_rows > 0 && digger.plain_heavy < 1.0,
+		check("a downstacking step leaves the quad exactly where it was",
+			quad_worth(digger, 0) == base,
+			std::to_string(base) + " -> "
+				+ std::to_string(quad_worth(digger, 0)));
+		check("and its gain is on the plain clear",
+			digger.plain_rows > 0 && digger.plain_heavy == 1.0,
 			number(digger.plain_heavy));
 
-		// The Opening: loud early, quiet after. Both halves off one
+		// The creed is where the bill is. Same style, same measurement,
+		// and now the quad is worth less.
+		SimConfig creed_plain = plain;
+		temper::apply(creed_plain, "plain_creed");
+		const int quad_creed = quad_worth(creed_plain, 0);
+		check("the downstacker's CREED is what charges the quad",
+			quad_creed > 0 && quad_creed < base,
+			std::to_string(base) + " -> " + std::to_string(quad_creed));
+
+		// The opening: loud early either way. Both halves off one
 		// tuning, by moving only where the window sits.
 		SimConfig dawn = plain;
 		temper::apply(dawn, "opener");
-		SimConfig dusk = dawn;
-		dusk.opener_ms = 0;          // The window has closed...
-		dusk.opener_late = dawn.opener_late;
-		SimConfig shut = plain;
-		shut.opener_late = dawn.opener_late;
-		shut.opener_ms = 1;          // ...open, but already past.
-		shut.opener_rows = dawn.opener_rows;
+		SimConfig late_step = dawn;
+		late_step.opener_ms = 1;     // Open, but already past.
 		const int loud = quad_worth(dawn, 0);
-		const int quiet = quad_worth(shut, 0);
-		check("the opening pays while it is open",
+		check("an opening step pays while it is open",
 			loud > base, std::to_string(base) + " -> " + std::to_string(loud));
-		check("and charges for every blow after it",
-			quiet < base,
+		check("and asks nothing of the game after it",
+			quad_worth(late_step, 0) == base && dawn.opener_late == 1.0,
+			std::to_string(base) + " -> "
+				+ std::to_string(quad_worth(late_step, 0)));
+
+		SimConfig creed_open = plain;
+		temper::apply(creed_open, "open_creed");
+		SimConfig late_creed = creed_open;
+		late_creed.opener_ms = 1;
+		const int quiet = quad_worth(late_creed, 0);
+		check("the opening's CREED is what charges the long quiet after",
+			quiet > 0 && quiet < base,
 			std::to_string(base) + " -> " + std::to_string(quiet));
 
-		// The Plonker: worth it over rubble, worse over a bare floor.
+		// Plonking: worth more over rubble either way, worth less on a
+		// bare floor only once the creed is taken.
 		SimConfig plonk = plain;
 		temper::apply(plonk, "plonking");
 		const int clean = quad_worth(plonk, 0);
 		const int dug = quad_worth(plonk, 4);
-		check("the plonker is worse on a bare floor",
-			clean > 0 && clean < base,
+		check("a plonking step pays by the row it dug",
+			dug > base, std::to_string(base) + " -> " + std::to_string(dug));
+		check("and costs nothing on a bare floor",
+			clean == base && plonk.plonk_clean == 1.0,
 			std::to_string(base) + " -> " + std::to_string(clean));
-		check("and pays by the row it dug",
-			dug > clean, std::to_string(clean) + " -> "
-				+ std::to_string(dug));
 
-		// The Strider: the chain pays, and the blow that breaks it is
-		// the one that hurts. The first quad of a game breaks nothing
-		// and starts nothing, so it takes the cold price.
+		SimConfig creed_dig = plain;
+		temper::apply(creed_dig, "dig_creed");
+		const int bare = quad_worth(creed_dig, 0);
+		check("the plonker's CREED is what charges the bare floor",
+			bare > 0 && bare < base,
+			std::to_string(base) + " -> " + std::to_string(bare));
+
+		// Striding: the chain pays, and the blow that breaks it hurts
+		// only under the creed. The first quad of a game breaks nothing
+		// and starts nothing, so it is the cold one.
 		SimConfig stride = plain;
 		temper::apply(stride, "striding");
-		const int cold = quad_worth(stride, 0);
-		check("the strider's first blow is cold",
+		check("a striding step's first cold blow is unhurt",
+			quad_worth(stride, 0) == base && stride.stride_cold == 1.0,
+			std::to_string(base) + " -> "
+				+ std::to_string(quad_worth(stride, 0)));
+		check("and the chain is what it pays for",
+			stride.stride_chain > 0,
+			std::to_string(stride.stride_chain));
+
+		SimConfig creed_stride = plain;
+		temper::apply(creed_stride, "stride_creed");
+		const int cold = quad_worth(creed_stride, 0);
+		check("the strider's CREED is what charges the cold blow",
 			cold > 0 && cold < base,
 			std::to_string(base) + " -> " + std::to_string(cold));
-		check("and the chain is what it pays for",
-			stride.stride_chain > 0 && stride.stride_cold < 1.0,
-			number(stride.stride_cold));
 
-		// And the point of all four: none of them is a free gain.
-		check("no style is a gain without a price",
-			digger.plain_heavy < 1.0 && dawn.opener_late < 1.0
-				&& plonk.plonk_clean < 1.0 && stride.stride_cold < 1.0);
+		// And the point of the split, said once: no step charges
+		// anything, and every creed does.
+		bool steps_free = true;
+		for (const char* id : {"plonking", "dig_toll", "striding",
+				"stride_span", "opener", "open_flare", "downstacker",
+				"plain_edge"}) {
+			SimConfig cfg = plain;
+			temper::apply(cfg, id);
+			steps_free = steps_free && cfg.plonk_clean == 1.0
+				&& cfg.stride_cold == 1.0 && cfg.opener_late == 1.0
+				&& cfg.plain_heavy == 1.0;
+		}
+		check("a style is assembled from steps that cost nothing",
+			steps_free);
+		check("and only a creed asks the rest of the game to pay",
+			creed_plain.plain_heavy < 1.0 && creed_open.opener_late < 1.0
+				&& creed_dig.plonk_clean < 1.0
+				&& creed_stride.stride_cold < 1.0);
 	}
 
 	// The ceiling on a blow, stated where it can be argued with.
