@@ -1471,6 +1471,37 @@ three with a seam still burning, each breathing on its own clock. Every
 face is hashed off the cell's own place on the board, so the pile is
 irregular but never crawls.
 
+### The title screen
+
+The menu used to be a 330-pixel box floating dead centre of nineteen
+hundred, which is a dialog, not a title screen - and inside it the two
+doors of the game sat above five identical grey slabs, so nothing on the
+screen said which of the seven mattered.
+
+It takes the display now. The left half is who you are and what is
+waiting: the burning mark, and a plate that says whether a climb is
+standing open - chapter or Endless ring, which row, how many tempers, how
+many lives - and what this player's record is. The right half is where you
+can go: the two doors, big, and the five drawers as a row of small tiles
+under them. On anything narrow the two halves stack instead. The page is
+centred from the previous frame's measurement of its own height, so it is
+right whether or not there is a rating line to show, and the state plate is
+drawn on a second draw-list channel *after* its text and *behind* it, so a
+line added to it can never grow out of its own frame. It is the one full
+screen that skips `forge_panel`: every other screen wants a plate under its
+form, and this one wants the fire.
+
+### The veil between screens
+
+It used to be a wipe - a dark rectangle whose top edge climbed the frame
+with a hot seam drawn along it. On paper that is the forge's own
+vocabulary; at a quarter of a second, with a cubic ease that spent most of
+the veil in the first third, what a player actually saw was a bright line
+appear in the middle of the screen and vanish. The veil it was leading was
+gone before the line was. So there is no line and no edge: the whole frame
+is under one warm darkness that lifts, which - since the incoming screen is
+already drawn underneath - is a fade up into it.
+
 ## Building and grading it
 
 ```bash
@@ -1485,6 +1516,23 @@ gives the same answers. Nothing is compared against a stored
 file: the reference is regenerated every run, so the check is against the engine
 as it stands rather than as it once was. Python and pygame have to be installed
 for that reason.
+
+### A fall disarms the spin
+
+The spin rule is that the last thing done to the piece was a turn. Sliding
+disarmed it and falling did not, which is the whole of the loophole the
+Tetris wiki draws a picture of: turn a T anywhere in open air, slam it down
+the board, and whatever three-cornered notch it happens to land in reads as
+a spin the player never made. The turn was real; it happened twenty rows
+away from anything it could have turned against.
+
+Both the hard drop and gravity now disarm it, and only when the piece
+actually travelled - a hard drop of nothing, the piece already resting
+where it was turned, is not a movement, and that placement is a spin
+exactly as it was. Both engines carry the same change, so `equivalence` and
+`trace` still agree; `chaoscheck` pins the flag itself rather than a
+verdict, because a verdict is the flag plus a board and it was the flag
+that was wrong.
 
 ## Why it is graded rather than tested
 

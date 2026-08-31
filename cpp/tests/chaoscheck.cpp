@@ -137,6 +137,57 @@ int main () {
 		check("and a wedged O is never a spin, cursed or not", !paid);
 	}
 
+	// --- What a fall does to the spin flag. ---------------------------------
+	// The rule is that the last thing done to the piece was a turn. Sliding
+	// disarmed it; falling did not, and that was the whole of the loophole
+	// the wiki draws a picture of - turn a T anywhere in open air, slam it
+	// down the board, and whatever three-cornered notch it happens to land
+	// in reads as a spin the player never made.
+	//
+	// Both halves are pinned, because the fix is only right if it keeps the
+	// honest placement: a turn made where the piece already rests is still
+	// a turn, and still the last thing done to it. The flag itself is what
+	// is read here rather than a verdict, because the verdict is the flag
+	// plus a board, and it is the flag that was wrong.
+	{
+		SimConfig config = plain();
+		config.spin_rule = 1;
+		Sim sim(config, std::vector<int>(20, 2));
+		sim.seed(notched(kSpawnX, 4));
+		wait_spawn(sim);
+		tap(sim, Key::Cw);
+		tap(sim, Key::Hard);
+		const bool armed = !sim.locked().empty() && sim.locked().back().rotated;
+		check("a turn in open air does not survive the fall under it", !armed);
+		check("and nothing about that landing is scored a spin",
+			spin_of(sim) == attack::NOT_SPIN,
+			"spin " + std::to_string(spin_of(sim)));
+	}
+	{
+		// The same turn, made after the piece is already down: soft drop it
+		// home first, then turn. The hard drop that locks it travels
+		// nothing, so nothing disarms.
+		SimConfig config = plain();
+		config.spin_rule = 1;
+		// plain() all but stops gravity, and the soft drop rides gravity's
+		// own clock - so this block gives the clock back to get the piece
+		// down to the floor at all.
+		config.fall_delay = 1;
+		Sim sim(config, std::vector<int>(20, 2));
+		wait_spawn(sim);
+		// Soft drop at its maximum puts the piece on the floor; the turn
+		// after it is made where the piece already stands.
+		sim.step(Event{Key::Soft, true});
+		sim.step(std::nullopt);
+		sim.step(std::nullopt);
+		sim.step(Event{Key::Soft, false});
+		tap(sim, Key::Cw);
+		tap(sim, Key::Hard);
+		const bool armed = !sim.locked().empty() && sim.locked().back().rotated;
+		check("but a turn made where the piece rests is still the last word",
+			armed);
+	}
+
 	// --- The Ring. ----------------------------------------------------------
 	// Walked to the left wall one press at a time and asked for one column
 	// more, the piece comes back against the RIGHT wall - and its far edge

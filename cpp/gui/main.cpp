@@ -354,7 +354,7 @@ const SDL_Color kFormColors[8] = {
 
 // How long the polish beats run, in frames at the 50Hz sim clock the
 // render loop is paced against.
-constexpr int kCurtain = 16;   // A screen change: quick, or it is a wait.
+constexpr int kCurtain = 20;   // A screen change: quick, or it is a wait.
 constexpr int kCooling = 26;   // The well going out under a verdict.
 constexpr int kStrike = 96;    // The maul, on a run's first frame.
 
@@ -746,6 +746,10 @@ struct App {
 	size_t burn_at = 0;
 	long burn_seen_lock = -1;   // The lock whose rows were already lit.
 	long backdrop_tick = 0;     // A clock for the backdrop, alive everywhere.
+	// How tall the title page came out last frame, so this frame can centre
+	// it. Measured rather than guessed: the state plate grows a line when
+	// there is a rating to show and shrinks when there is not.
+	float menu_tall = 0.f;
 	// One soft radial sprite, built once: every glow in the game is this
 	// texture stretched and tinted. Stacked translucent rectangles band
 	// into visible bricks; a falloff sprite simply does not.
@@ -5211,15 +5215,20 @@ void draw_countdown (App& app) {
 
 // --- The polish pass: what happens between the things that happen. -------
 
-// The curtain, over everything including ImGui.
+// The veil between screens.
 //
-// Screens used to cut. Forty-odd places in this file assign a screen, and
-// a transition each of them had to remember to start would have been a
-// transition half the game did not have - so nothing announces a change;
-// the curtain watches for one. What it draws is a soot veil lifting off a
-// hot seam: the seam runs across at the height the veil has reached, so
-// the eye follows one bright line up and out rather than watching a
-// rectangle get less grey.
+// It used to be a wipe: a dark rectangle whose top edge climbed the frame
+// with a hot seam drawn along it. On paper that is the forge's own
+// vocabulary; on screen, at a quarter of a second and a cubic ease that
+// spent most of the veil in the first third, what a player actually saw
+// was a bright line appear in the middle of the screen and vanish. The
+// veil it was supposed to be leading was gone before the line was.
+//
+// So there is no line and no edge. The whole frame is under one warm
+// darkness that simply lifts - the incoming screen is already drawn
+// underneath, so this is a fade up into it, which is the most natural
+// transition there is and the only one that never draws an artefact the
+// player has to explain to themselves.
 void draw_curtain (App& app) {
 	if (app.curtain <= 0) {
 		return;
@@ -5229,24 +5238,18 @@ void draw_curtain (App& app) {
 	int h = 0;
 	SDL_GetRendererOutputSize(app.renderer, &w, &h);
 	const float part = app.curtain / static_cast<float>(kCurtain);
-	// Cubic out: most of the veil is gone in the first third, so a screen
-	// change feels quick and only the seam lingers.
-	const float lift = 1.f - part * part * part;
-	const float edge = h * lift;
+	// Held a little at full, then away: a fade that starts leaving on the
+	// first frame reads as a flicker rather than as a change of place.
+	const float shade = std::min(1.f, part * 1.25f);
 	ImDrawList* draw = ImGui::GetForegroundDrawList();
-	draw->AddRectFilled(ImVec2(0.f, edge), ImVec2(static_cast<float>(w),
-		static_cast<float>(h)),
-		IM_COL32(16, 10, 7, static_cast<int>(236 * part)));
-	// The seam: a hot line at the veil's edge, with its own falloff above
-	// and below, brightest while there is still veil to burn off.
-	const int glow = static_cast<int>(210 * part);
-	draw->AddRectFilledMultiColor(
-		ImVec2(0.f, edge - ui(26)), ImVec2(static_cast<float>(w), edge),
-		IM_COL32(255, 122, 46, 0), IM_COL32(255, 122, 46, 0),
-		IM_COL32(255, 176, 60, glow), IM_COL32(255, 176, 60, glow));
-	draw->AddRectFilled(ImVec2(0.f, edge - ui(2)),
-		ImVec2(static_cast<float>(w), edge + ui(2)),
-		IM_COL32(255, 236, 190, glow));
+	draw->AddRectFilled(ImVec2(0.f, 0.f),
+		ImVec2(static_cast<float>(w), static_cast<float>(h)),
+		IM_COL32(16, 10, 7, static_cast<int>(238 * shade)));
+	// And the last of it is ember rather than grey, so the screen arrives
+	// out of the fire the room is lit by instead of out of nothing.
+	draw->AddRectFilled(ImVec2(0.f, 0.f),
+		ImVec2(static_cast<float>(w), static_cast<float>(h)),
+		IM_COL32(150, 62, 22, static_cast<int>(70 * part * (1.f - part) * 4.f)));
 }
 
 // The well coming up to heat, behind the count.
@@ -8666,6 +8669,87 @@ bool card_button (App& app, const char* icon, const char* name,
 	return clicked;
 }
 
+// A tile: an icon over its name, square-ish, for the places a menu keeps
+// rather than the places it leads. Five of these in a row take the space
+// one of the old full-width grey slabs took, and being small is the whole
+// point - what separates the two doors from the drawers is that the doors
+// are big.
+bool tile_button (App& app, const char* icon, const char* label,
+		float wide, float tall) {
+	const ImVec2 at = ImGui::GetCursorScreenPos();
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.f, 0.f, 0.f, 0.f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.f, 0.f, 0.f, 0.f));
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.f, 0.f, 0.f, 0.f));
+	char id[96];
+	std::snprintf(id, sizeof id, "##tile_%s", label);
+	const bool clicked = ImGui::Button(id, ImVec2(wide, tall));
+	ImGui::PopStyleColor(3);
+	const bool hot = ImGui::IsItemHovered();
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	const ImVec2 low(at.x + wide, at.y + tall);
+	forge_plate(dl, at, low, ui(7),
+		hot ? IM_COL32(46, 34, 25, 240) : IM_COL32(30, 23, 18, 220),
+		hot ? IM_COL32(255, 150, 70, 220) : IM_COL32(96, 70, 46, 150),
+		ui(1.5f));
+	const float art = tall * 0.44f;
+	if (SDL_Texture* image = gfx::get(icon)) {
+		dl->AddImage(reinterpret_cast<ImTextureID>(image),
+			ImVec2(at.x + (wide - art) * 0.5f, at.y + ui(9)),
+			ImVec2(at.x + (wide + art) * 0.5f, at.y + ui(9) + art));
+	}
+	const float size = ImGui::GetFontSize() * 0.86f;
+	const ImVec2 span = ImGui::GetFont()->CalcTextSizeA(size, FLT_MAX, 0.f,
+		label);
+	dl->AddText(ImGui::GetFont(), size,
+		ImVec2(at.x + (wide - span.x) * 0.5f, low.y - ui(9) - size),
+		hot ? IM_COL32(255, 222, 176, 255) : IM_COL32(198, 182, 162, 255),
+		label);
+	(void) app;
+	return clicked;
+}
+
+// The wordmark: a tongue of real fire, then the letters cooling from gold
+// at the flame's edge to ember at the far end. Drawn through ImGui rather
+// than SDL, because the plate is drawn over the SDL pass and a logo behind
+// its own panel would be a strange thing to ship.
+void draw_wordmark (App& app, float scale) {
+	ImFont* mark = app.fonts.title;
+	if (mark == nullptr) {
+		ImGui::TextUnformatted("FORCETRIS");
+		return;
+	}
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	const ImVec2 at = ImGui::GetCursorScreenPos();
+	const float tall = mark->FontSize * scale;
+	if (app.flames != nullptr) {
+		const int frame
+			= static_cast<int>(app.backdrop_tick / 3) % kFlameFrames;
+		const float edge = static_cast<float>(frame) / kFlameFrames;
+		const float wide = tall * 0.66f;
+		const float fx = at.x + tall * 0.28f;
+		const float fy = at.y + tall * 0.52f;
+		dl->AddImage(reinterpret_cast<ImTextureID>(app.flames),
+			ImVec2(fx - wide / 2, fy - tall * 0.52f),
+			ImVec2(fx + wide / 2, fy + tall * 0.48f),
+			ImVec2(edge, 0.f), ImVec2(edge + 1.f / kFlameFrames, 1.f));
+	}
+	float pen = at.x + tall * 0.66f;
+	const char* word = "FORCETRIS";
+	const int letters = 9;
+	for (int i = 0; i < letters; ++i) {
+		const char glyph[2] = {word[i], '\0'};
+		const float part = static_cast<float>(i) / (letters - 1);
+		const ImU32 shade = IM_COL32(255,
+			static_cast<int>(214 - 76 * part),
+			static_cast<int>(96 - 38 * part), 255);
+		dl->AddText(mark, tall, ImVec2(pen + 2.f, at.y + 2.f),
+			IM_COL32(40, 16, 6, 200), glyph);
+		dl->AddText(mark, tall, ImVec2(pen, at.y), shade, glyph);
+		pen += mark->CalcTextSizeA(tall, FLT_MAX, 0.f, glyph).x;
+	}
+	ImGui::Dummy(ImVec2(pen - at.x, tall));
+}
+
 // One option in a picker row: drawn selected in the accent, and returns
 // true when clicked.
 bool option_button (const char* label, bool selected, float width) {
@@ -8689,93 +8773,189 @@ void draw_menus (App& app) {
 		| ImGuiWindowFlags_NoSavedSettings;
 
 	if (app.screen == Screen::Menu) {
-		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-		ImGui::Begin("main menu", nullptr, box);
-		forge_panel(app);
-		// The wordmark: a tongue of real fire, then the letters cooling
-		// from gold at the flame's edge to ember at the far end.
-		ImGui::PushFont(app.fonts.title);
-		ImFont* mark = app.fonts.title;
-		ImDrawList* dl = ImGui::GetWindowDrawList();
-		const ImVec2 at = ImGui::GetCursorScreenPos();
-		const float tall = mark->FontSize;
-		const float fx = at.x + tall * 0.28f;
-		const float fy = at.y + tall * 0.52f;
-		if (app.flames != nullptr) {
-			// The mark burns for real: one tongue off the same strip the
-			// room uses, cycling beside the letters. Through ImGui rather
-			// than SDL, because the plate is drawn over the SDL pass and a
-			// logo behind its own panel would be a strange thing to ship.
-			const int frame = static_cast<int>(app.backdrop_tick / 3) % kFlameFrames;
-			const float edge = static_cast<float>(frame) / kFlameFrames;
-			const float wide = tall * 0.66f;
-			dl->AddImage(reinterpret_cast<ImTextureID>(app.flames),
-				ImVec2(fx - wide / 2, fy - tall * 0.52f),
-				ImVec2(fx + wide / 2, fy + tall * 0.48f),
-				ImVec2(edge, 0.f),
-				ImVec2(edge + 1.f / kFlameFrames, 1.f));
-		}
-		float pen = at.x + tall * 0.66f;
-		const char* word = "FORCETRIS";
-		const int letters = 9;
-		for (int i = 0; i < letters; ++i) {
-			const char glyph[2] = {word[i], '\0'};
-			const float part = static_cast<float>(i) / (letters - 1);
-			const ImU32 shade = IM_COL32(255,
-				static_cast<int>(214 - 76 * part),
-				static_cast<int>(96 - 38 * part), 255);
-			dl->AddText(mark, tall, ImVec2(pen + 2.f, at.y + 2.f),
-				IM_COL32(40, 16, 6, 200), glyph);
-			dl->AddText(mark, tall, ImVec2(pen, at.y), shade, glyph);
-			pen += mark->CalcTextSizeA(tall, FLT_MAX, 0.f, glyph).x;
-		}
-		ImGui::Dummy(ImVec2(pen - at.x, tall));
-		ImGui::PopFont();
+		// The title screen takes the display.
+		//
+		// It used to be a 330-pixel box floating dead centre of nineteen
+		// hundred, which is a dialog, not a title screen - and inside it
+		// the two doors of the game sat above five identical grey slabs,
+		// so nothing on the screen said which of the seven mattered.
+		//
+		// Now it is a composed page. The left half is who you are and what
+		// is waiting: the burning mark, and a plate that says whether
+		// there is a climb standing open and what this player's best is.
+		// The right half is where you can go: the two doors, big, and the
+		// five drawers as a row of small tiles under them. On anything
+		// narrow - a phone held upright - the two halves stack instead.
+		full_screen();
+		// No plate: the title screen IS the room, so the hall behind it
+		// shows through. Every other full screen wants a plate under its
+		// form; this one wants the fire.
+		ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(0, 0, 0, 0));
+		ImGui::Begin("main menu", nullptr, ImGuiWindowFlags_NoTitleBar
+			| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+			| ImGuiWindowFlags_NoCollapse
+			| ImGuiWindowFlags_NoSavedSettings);
+		const ImVec2 screen = ImGui::GetIO().DisplaySize;
+		const float door = std::min(ui(400), screen.x - ui(40));
+		const bool beside = screen.x > door * 2.f + ui(120);
+		const float block = beside ? door * 2.f + ui(60) : door;
+		const float left = std::max(ui(16), (screen.x - block) * 0.5f);
+		// Vertically centred as one page rather than pinned to the top: a
+		// menu that starts at the ceiling on a tall display leaves the
+		// whole floor empty under it. The height comes from the last
+		// frame's measurement, so it is right for whatever the state plate
+		// grew to rather than for a number typed here.
+		const float top = app.menu_tall > 0.f
+			? std::max(ui(16), (screen.y - app.menu_tall) * 0.5f) : ui(60);
+		ImGui::SetCursorPos(ImVec2(left, top));
+		const float page_from = ImGui::GetCursorScreenPos().y;
+		ImGui::BeginGroup();
+
+		// --- The left half: the mark, and the state of the forge. ------
+		ImGui::BeginGroup();
+		draw_wordmark(app, beside ? 1.f : 0.86f);
 		ImGui::TextDisabled("every piece burns");
-		ImGui::Dummy(ImVec2(0.f, ui(10)));
-		// The two doors, as cards: the campaign is the game, so it stands
-		// first and biggest with a gold breath on its edge.
+		ImGui::Dummy(ImVec2(0.f, ui(14)));
+		{
+			// What is waiting. A title screen that says nothing about the
+			// save behind it makes the player open a screen to find out.
+			const campaign::Run& run = app.campaign.run;
+			const ImVec2 at = ImGui::GetCursorScreenPos();
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			// The plate is drawn after the text and behind it, on its own
+			// channel: a plate given a height in advance is a plate the
+			// text grows out of the moment a line is added to it.
+			dl->ChannelsSplit(2);
+			dl->ChannelsSetCurrent(1);
+			ImGui::SetCursorScreenPos(ImVec2(at.x + ui(16), at.y + ui(13)));
+			ImGui::BeginGroup();
+			ImGui::PushStyleColor(ImGuiCol_Text,
+				IM_COL32(206, 158, 100, 235));
+			ImGui::TextUnformatted(run.active ? "CLIMB IN PROGRESS"
+				: "THE FORGE IS COLD");
+			ImGui::PopStyleColor();
+			ImGui::PushFont(app.fonts.head);
+			if (run.active && run.endless) {
+				ImGui::Text("The Endless Climb - ring %d", run.ring + 1);
+			} else if (run.active) {
+				const auto& book = campaign::chapters();
+				const int at_chapter = std::clamp(run.chapter, 0,
+					static_cast<int>(book.size()) - 1);
+				ImGui::TextUnformatted(book[at_chapter].name);
+			} else {
+				ImGui::TextUnformatted("No climb standing open");
+			}
+			ImGui::PopFont();
+			if (run.active) {
+				ImGui::Text("row %d of %d  -  %d tempers  -  %d lives",
+					std::min(run.depth + 1, campaign::kMapDepth),
+					campaign::kMapDepth,
+					static_cast<int>(run.tempers.size()), run.lives);
+			} else {
+				ImGui::TextDisabled("The map deals a new one.");
+			}
+			// The three numbers a player checks a title screen for.
+			ImGui::Dummy(ImVec2(0.f, ui(6)));
+			double best = 0.;
+			for (const profile::GameRecord& game : app.history) {
+				best = std::max(best, game.tr);
+			}
+			char figures[128];
+			std::snprintf(figures, sizeof figures,
+				"%zu games   -   slag %d   -   deepest climb %d",
+				app.history.size(), app.campaign.slag,
+				app.campaign.endless_best);
+			ImGui::TextDisabled("%s", figures);
+			if (best > 0.) {
+				ImGui::TextDisabled("best rating %.0f  (%s)", best,
+					rating::rank_for(best));
+			}
+			ImGui::EndGroup();
+			const float foot = ImGui::GetItemRectMax().y + ui(13);
+			dl->ChannelsSetCurrent(0);
+			forge_plate(dl, at, ImVec2(at.x + door, foot), ui(9),
+				IM_COL32(26, 20, 15, 220), IM_COL32(104, 74, 46, 160),
+				ui(1.5f));
+			dl->ChannelsMerge();
+			ImGui::SetCursorScreenPos(ImVec2(at.x, foot + ui(14)));
+		}
+		if (beside) {
+			// Quit sits under the state plate, quietly: it is the one
+			// thing on this screen nobody is looking for.
+			ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 132, 114, 255));
+			if (ImGui::Button("Quit", ImVec2(ui(110), ui(30)))) {
+				app.quit = true;
+			}
+			ImGui::PopStyleColor(2);
+		}
+		ImGui::EndGroup();
+
+		// --- The right half: the two doors, and the five drawers. ------
+		if (beside) {
+			ImGui::SameLine(0.f, ui(60));
+		} else {
+			ImGui::Dummy(ImVec2(0.f, ui(10)));
+		}
+		ImGui::BeginGroup();
 		if (card_button(app, "em_map", "The Forge Map",
-			"Climb the map, forge a build.",
-			ui(310), ui(62), true)) {
+			app.campaign.run.active ? "Take the climb back up."
+				: "Climb the map, forge a build.",
+			door, ui(84), true)) {
 			app.career = career::load(career::path(app.root));
 			app.campaign = campaign::load(campaign::path(app.root));
 			app.screen = Screen::Career;
 		}
-		ImGui::Dummy(ImVec2(0.f, ui(2)));
+		ImGui::Dummy(ImVec2(0.f, ui(8)));
 		if (card_button(app, "em_free", "Quick Play",
-			"The yard: six fires, no map.",
-			ui(310), ui(54))) {
+			"The yard: six fires, no map.", door, ui(72))) {
 			app.screen = Screen::Modes;
 			app.mode_popup = 0;
 		}
-		ImGui::Dummy(ImVec2(0.f, ui(8)));
-		if (card_button(app, "ic_replay", "Replays", "", ui(310), ui(38))) {
-			app.shelf = replay::listing(replay::folder(app.root));
-			app.screen = Screen::Replays;
+		ImGui::Dummy(ImVec2(0.f, ui(14)));
+		{
+			// Five tiles across the door's width, whatever that width is.
+			const float gap = ui(8);
+			const float tile = (door - gap * 4.f) / 5.f;
+			const float tall = std::max(ui(66), tile * 0.92f);
+			if (tile_button(app, "ic_replay", "Replays", tile, tall)) {
+				app.shelf = replay::listing(replay::folder(app.root));
+				app.screen = Screen::Replays;
+			}
+			ImGui::SameLine(0.f, gap);
+			if (tile_button(app, "ic_profile", "Profile", tile, tall)) {
+				app.history = profile::load(profile::path(app.root));
+				app.screen = Screen::Profile;
+			}
+			ImGui::SameLine(0.f, gap);
+			if (tile_button(app, "ic_scores", "Scores", tile, tall)) {
+				app.score_page = 0;
+				app.screen = Screen::Scores;
+			}
+			ImGui::SameLine(0.f, gap);
+			if (tile_button(app, "ic_help", "How to", tile, tall)) {
+				app.help_back = Screen::Menu;
+				app.screen = Screen::Help;
+			}
+			ImGui::SameLine(0.f, gap);
+			if (tile_button(app, "ic_settings", "Settings", tile, tall)) {
+				app.show_settings = true;
+			}
 		}
-		if (card_button(app, "ic_profile", "Profile", "", ui(310), ui(38))) {
-			app.history = profile::load(profile::path(app.root));
-			app.screen = Screen::Profile;
+		if (!beside) {
+			ImGui::Dummy(ImVec2(0.f, ui(12)));
+			ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(0, 0, 0, 0));
+			ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(150, 132, 114, 255));
+			if (ImGui::Button("Quit", ImVec2(door, ui(30)))) {
+				app.quit = true;
+			}
+			ImGui::PopStyleColor(2);
 		}
-		if (card_button(app, "ic_scores", "High scores", "",
-			ui(310), ui(38))) {
-			app.score_page = 0;
-			app.screen = Screen::Scores;
-		}
-		if (card_button(app, "ic_help", "How to play", "", ui(310), ui(38))) {
-			app.help_back = Screen::Menu;
-			app.screen = Screen::Help;
-		}
-		if (card_button(app, "ic_settings", "Settings", "",
-			ui(310), ui(38))) {
-			app.show_settings = true;
-		}
-		ImGui::Dummy(ImVec2(0.f, ui(6)));
-		if (ImGui::Button("Quit", ImVec2(ui(310), 0))) {
-			app.quit = true;
-		}
+		ImGui::EndGroup();
+		ImGui::EndGroup();
+		app.menu_tall = ImGui::GetItemRectMax().y - page_from;
 		ImGui::End();
+		ImGui::PopStyleColor();
 	} else if (app.screen == Screen::Modes) {
 		ImGui::SetNextWindowPos(ImVec2(middle.x, ui(8)),
 			ImGuiCond_Always, ImVec2(0.5f, 0.f));
@@ -9639,6 +9819,12 @@ int run (bool smoke, long smoke_frames) {
 #else
 	app.root = game_root();
 #endif
+	// The two files the title screen reads from. Loaded once, here, rather
+	// than on the way into the screens that own them: the menu now says
+	// what is waiting - a climb in progress, a best - and a screen that
+	// re-read a save file every frame to say it would be a poor trade.
+	app.campaign = campaign::load(campaign::path(app.root));
+	app.history = profile::load(profile::path(app.root));
 	// No audio device is not a reason not to play; the mixer just stays shut.
 	if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
 		app.audio.open(app.root);

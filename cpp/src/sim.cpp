@@ -751,6 +751,22 @@ bool Sim::hard_drop (bool forced) {
 	const int posdif = landed.y - piece_.y;
 	piece_ = landed;
 	cand_x_ = piece_.x;
+	if (posdif > 0) {
+		// A fall disarms the spin.
+		//
+		// The rule is that the last thing done to the piece was a turn.
+		// Sliding already disarmed it; falling did not, and that is the
+		// whole of the loophole the Tetris wiki draws a picture of: turn a
+		// T anywhere in open air, slam it down the board, and whatever
+		// three-cornered notch it happens to land in reads as a spin the
+		// player never made. The turn was real, but it happened twenty
+		// rows away from anything it could have turned against.
+		//
+		// Only a drop that actually travelled disarms it. A hard drop of
+		// nothing - the piece already resting where it was turned - is not
+		// a movement, and that placement is a spin exactly as it was.
+		rotated_last_ = false;
+	}
 	if (eval_finesse(forced)) {
 		// Handed back rather than locked, cue and all.
 		return false;
@@ -847,11 +863,17 @@ void Sim::gravity () {
 			++grav_frame_;
 		} else {
 			grav_frame_ = 0;
+			const int was = piece_.y;
 			if (soft_ && soft_instant_) {
 				// SDF at its maximum: fall to the floor now, without locking.
 				piece_ = board_.dropped(piece_);
 			} else {
 				piece_.y += 1;
+			}
+			if (piece_.y != was) {
+				// Falling disarms the spin, the same way sliding does.
+				// See hard_drop for why.
+				rotated_last_ = false;
 			}
 			cand_x_ = piece_.x;
 		}

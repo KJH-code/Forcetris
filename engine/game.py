@@ -395,6 +395,15 @@ class Core:
 		self.settle_move()
 		posdif = self.ghostshape.pos[1] - self.freeshape.pos[1]
 		self.freeshape.pos = self.ghostshape.pos[:]
+		if posdif > 0:
+			# A fall disarms the spin. The rule is that the last thing done to the
+			# piece was a turn; sliding already disarmed it and falling did not, which
+			# is the whole of the loophole the wiki draws a picture of - turn a T in
+			# open air, slam it down, and whatever three-cornered notch it lands in
+			# reads as a spin nobody made. Only a drop that actually travelled counts:
+			# a hard drop of nothing is not a movement, and that placement is a spin
+			# exactly as it was.
+			self.rotated_last = False
 		# Judged where it is about to land, before it becomes part of the board. A
 		# retry sends the piece back to spawn instead of locking it, so nothing below
 		# this point should run for it.
@@ -1108,6 +1117,7 @@ class Core:
 							self.grav_frame += 1
 						else: # Move shape down.
 							self.grav_frame = 0
+							was = self.freeshape.pos[1]
 							if self.soft_drop and self.soft_instant:
 								# SDF at its maximum: fall to the floor now, without locking, so
 								# the piece can still be slid or spun once it is down there.
@@ -1116,6 +1126,10 @@ class Core:
 							else:
 								self.freeshape.translate(( 0, 1))
 								self.newshape.translate(( 0, 1))
+							if self.freeshape.pos[1] != was:
+								# Falling disarms the spin, the same way sliding does. See
+								# hard_drop for why.
+								self.rotated_last = False
 			# If it is, count down the number of frames until it's time to deactivate it.
 			elif self.entry_frame > 1:
 				self.entry_frame -= 1
