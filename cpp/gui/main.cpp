@@ -506,6 +506,8 @@ struct App {
 	// entering a stop consumes it, so quitting mid-visit can never farm
 	// it), and whether this forge visit has drawn its free hand.
 	int visiting = -1;
+	// Frames a freshly opened overlay refuses to be clicked. See kUiGuard.
+	int ui_guard = 0;
 	// Smoke only: walk the run onto the stops and press what they offer.
 	bool smoke_stops = false;
 	bool smoke_forced = false;
@@ -1069,6 +1071,32 @@ void forge_plate (ImDrawList* dl, ImVec2 a, ImVec2 b, float cut,
 }
 
 // What each family of temper is painted in: fuel the iron's own orange,
+// A window that just opened does not take the tap that opened it.
+//
+// On a phone one touch arrives as a press on one frame and a release on
+// the next, so a tap that opens a window can be released over whatever the
+// new window has put under the finger - and the map's nodes sit exactly
+// where the room's own buttons land. That is one tap walking through three
+// widgets: the node, the forge's free hand, and the first card of the
+// spoils it deals, which is why the room read as slamming shut the moment
+// it was touched. A fifth of a second of deafness costs a player nothing
+// and closes the whole class of it.
+constexpr int kUiGuard = 10;
+
+// And a window on a phone must not grow taller than the phone.
+//
+// The centred overlays are AlwaysAutoResize, which on a desk is right and
+// on a 1080x2280 screen is not: a run holding twenty tempers gives the
+// forge a melt list long enough to push Leave off the bottom of the
+// screen, and a room that cannot be left is a lost run. Bounding the box
+// hands ImGui a scrollbar instead - and a finger already drags windows on
+// this build, so the content stays reachable either way.
+void bound_window () {
+	const ImVec2 screen = ImGui::GetIO().DisplaySize;
+	ImGui::SetNextWindowSizeConstraints(ImVec2(0.f, 0.f),
+		ImVec2(screen.x * 0.94f, screen.y * 0.90f));
+}
+
 // Flow the gold Overdrive already uses, risk the danger red the board's
 // edges close in with, and the two rule cards a pale hot white so they read
 // as the rare ones they are.
@@ -1620,6 +1648,7 @@ void deal_reward (App& app) {
 	app.offer_at = 0;
 	app.offer_shown = 0;
 	app.offer_reward = !app.offers.empty();
+	app.ui_guard = kUiGuard;
 	if (app.offer_reward) {
 		app.audio.play("overdrive");
 	}
@@ -1860,6 +1889,8 @@ void enter_node (App& app, int node, bool forced = false) {
 	run.path.push_back(node);
 	run.depth += 1;
 	app.visiting = node;
+	// The tap that opened the room does not get to press anything in it.
+	app.ui_guard = kUiGuard;
 	app.forge_hand_used = false;
 	app.forge_life_used = false;
 	campaign::save(campaign::path(app.root), app.campaign);
@@ -3561,6 +3592,9 @@ void draw_backdrop (App& app) {
 	int w = 0;
 	int h = 0;
 	SDL_GetRendererOutputSize(app.renderer, &w, &h);
+	if (app.ui_guard > 0) {
+		--app.ui_guard;
+	}
 	const float t = ++app.backdrop_tick * 0.01f;
 	// The hall itself is a painting now - gfx/backdrop.png, scaled to
 	// cover - with the living light drawn over it. A checkout without the
@@ -7413,11 +7447,16 @@ void draw_career (App& app) {
 		ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x / 2,
 			ImGui::GetIO().DisplaySize.y / 2), ImGuiCond_Always,
 			ImVec2(0.5f, 0.5f));
+		bound_window();
 		ImGui::Begin("visit", nullptr, ImGuiWindowFlags_AlwaysAutoResize
 			| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 			| ImGuiWindowFlags_NoTitleBar
 			| ImGuiWindowFlags_NoSavedSettings);
 		forge_panel(app);
+		// Phone only: on a desk a click is one press and one release on
+		// the same widget, and greying every draft for a fifth of a second
+		// would be a visible tax paid for a bug that lives on touch.
+		ImGui::BeginDisabled(kMobile && app.ui_guard > 0);
 		if (node.kind == 2) {
 			ImGui::PushFont(app.fonts.head);
 			ImGui::TextUnformatted("The Forge");
@@ -7434,15 +7473,23 @@ void draw_career (App& app) {
 				deal_reward(app);
 			}
 			ImGui::EndDisabled();
+			ImGui::SameLine();
+			// The way out, at the top as well as the bottom. A run holding
+			// twenty tempers gives this room a melt list forty rows long,
+			// and a Leave that can only be reached by scrolling past all
+			// of it is a Leave a phone player will not find.
+			if (ImGui::Button("Leave##top", ImVec2(ui(110), 0))) {
+				leave_visit(app);
+			}
 			if (!visited.tempers.empty()) {
 				ImGui::Spacing();
 				ImGui::TextUnformatted("Melt down");
 				int melted = -1;
 				int paid = 0;
-				if (app.smoke_poke == 1) {
+				if (app.smoke_poke == 2) {
 					melted = 0;
 					paid = 0;
-					app.smoke_poke = 2;
+					app.smoke_poke = 3;
 				}
 				for (size_t i = 0; i < visited.tempers.size(); ++i) {
 					const temper::Temper* card
@@ -7510,9 +7557,9 @@ void draw_career (App& app) {
 					const int copy_cost
 						= ember_price(app, temper::kDuplicateCost);
 					std::string struck;
-					if (app.smoke_poke == 2) {
+					if (app.smoke_poke == 3) {
 						struck = forgeable.front();
-						app.smoke_poke = 3;
+						app.smoke_poke = 4;
 					}
 					for (size_t i = 0; i < forgeable.size(); ++i) {
 						const temper::Temper* card
@@ -7588,6 +7635,7 @@ void draw_career (App& app) {
 				leave_visit(app);
 			}
 		}
+		ImGui::EndDisabled();
 		ImGui::End();
 	}
 }
@@ -7939,8 +7987,15 @@ void draw_menus (App& app) {
 		// with it; on the map it is the spoils of the last battle. Either
 		// way the pick itself is one press.
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+		bound_window();
 		ImGui::Begin("temper", nullptr, box);
 		forge_panel(app);
+		// The hand a tap opened is deaf for a fifth of a second, or the
+		// same tap takes the first card off it.
+		// Phone only: on a desk a click is one press and one release on
+		// the same widget, and greying every draft for a fifth of a second
+		// would be a visible tax paid for a bug that lives on touch.
+		ImGui::BeginDisabled(kMobile && app.ui_guard > 0);
 		ImGui::PushFont(app.fonts.head);
 		if (app.offer_reward) {
 			ImGui::TextUnformatted("The Spoils");
@@ -8055,6 +8110,7 @@ void draw_menus (App& app) {
 			ImGui::Separator();
 			temper_badges(app, app.tempers, true);
 		}
+		ImGui::EndDisabled();
 		ImGui::End();
 	} else if (app.screen == Screen::Game && app.paused) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -9366,7 +9422,7 @@ int run (bool smoke, long smoke_frames) {
 						const campaign::MapNode& stop = app.run_map[
 							static_cast<size_t>(app.visiting)];
 						if (stop.kind == 2 && app.smoke_stops
-							&& app.smoke_poke < 2) {
+							&& app.smoke_poke < 4) {
 							// Melt one card, then strike a second copy of
 							// another: the two buttons a played forge is
 							// actually used for, and the two that rewrite
@@ -9425,6 +9481,15 @@ int run (bool smoke, long smoke_frames) {
 						int forced = -1;
 						if (app.smoke_stops && stop < 0) {
 							forced = force_stop(app);
+							if (forced < 0 && !app.smoke_forced) {
+								// A resumed campaign file whose run has
+								// already walked every stop would leave
+								// this smoke proving nothing at all. Put
+								// the run down; the next tick sets out on
+								// a fresh map with stops still standing.
+								end_run(app, false);
+								continue;
+							}
 						}
 						if (forced >= 0) {
 							enter_node(app, forced, true);

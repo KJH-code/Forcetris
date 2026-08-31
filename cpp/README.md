@@ -438,6 +438,28 @@ duplicate. `gui_smoke_stops` is the thirtieth ctest. Found while chasing a
 crash report about the forge that has not reproduced here yet - the hole
 in the coverage is real either way.
 
+**Two phone bugs the forge made, and both are shapes rather than
+accidents.** A player reported that tapping the forge on a phone slammed
+the room shut, and that a room reached later took no input at all.
+
+The first is one tap walking through three widgets. On touch a press
+lands on one frame and the release on the next, so the tap that opens a
+window is still in flight when the window draws - and a map node sits
+exactly where the room's own buttons land. Node, then the forge's free
+hand, then the first card of the spoils it deals: three presses, one
+finger. `kUiGuard` makes a freshly opened overlay deaf for ten frames.
+Phone only: on a desk a click is a press and a release on the same widget,
+and greying every draft for a fifth of a second would be a tax paid for a
+bug that lives on touch.
+
+The second is arithmetic. The centred overlays are `AlwaysAutoResize`,
+which on a desk is right and on 1080x2280 is not: a run holding twenty
+tempers gives the forge a melt list forty rows long, so Leave sat below
+the bottom of the screen and the run was over. `bound_window` caps every
+overlay at 94% by 90% of the screen and lets ImGui put a scrollbar on it,
+and Leave is now at the top of the room as well as the bottom - a way out
+that can only be reached by scrolling past forty rows is not a way out.
+
 **And for two arcs the blow did not happen at all**, which is worth
 writing down because of how it hid. `begin_run` arms the strike and clears
 `map_seen`, and `draw_forge_strike` was supposed to wait for the map to
