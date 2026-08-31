@@ -452,6 +452,16 @@ Phone only: on a desk a click is a press and a release on the same widget,
 and greying every draft for a fifth of a second would be a tax paid for a
 bug that lives on touch.
 
+And the forge itself is a grid now rather than two lists. It used to
+print every card as a row of name-and-button to melt, then every stackable
+card again as a row of name-and-button to duplicate: twenty tempers made
+forty rows, which is a wall of text to scroll through looking for one name
+even once it fits on the screen. The plates are the same emblems the map
+header already reads, so a build looks the same everywhere it is shown;
+tapping one opens the card - its name in the family's ink, its one line,
+and its own two deeds, with the duplicate absent on a curse or on a card
+already struck as deep as it goes. Twenty-one tempers is three rows.
+
 The second is arithmetic. The centred overlays are `AlwaysAutoResize`,
 which on a desk is right and on 1080x2280 is not: a run holding twenty
 tempers gives the forge a melt list forty rows long, so Leave sat below

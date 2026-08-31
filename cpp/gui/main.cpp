@@ -515,6 +515,8 @@ struct App {
 	bool forge_hand_used = false;
 	// A life can be bought back once per forge visit, not farmed.
 	bool forge_life_used = false;
+	// Which plate of the forge's grid is open, if any.
+	std::string forge_pick;
 	// The oils painted on the map, carried into the battle being launched:
 	// consumed by the launch - one coat, one fight.
 	bool oil_hot = false;
@@ -1300,8 +1302,12 @@ std::string temper_mark (const std::string& name) {
 // stamped with its count when a run holds more than one. Colour groups
 // them at a glance - all the ember plates are the wick, all the slate ones
 // the guard - and the full name and what it does are one hover away.
+// The same row of plates, and - when `tapped` is handed in - a row that
+// can be pressed. A forge holding twenty tempers used to list them as
+// forty rows of name-and-button; the grid says the same build in six lines
+// and a tap opens the one card the player came for.
 void temper_badges (App& app, const std::vector<std::string>& taken,
-	bool small = false) {
+	bool small = false, std::string* tapped = nullptr) {
 	if (taken.empty()) {
 		ImGui::TextDisabled("No tempers yet.");
 		return;
@@ -1338,7 +1344,13 @@ void temper_badges (App& app, const std::vector<std::string>& taken,
 		const ImVec2 pen = ImGui::GetCursorScreenPos();
 		ImGui::PushID(id.c_str());
 		ImGui::InvisibleButton("##badge", ImVec2(side, side));
-		const bool hot = ImGui::IsItemHovered();
+		if (tapped != nullptr && ImGui::IsItemClicked()) {
+			*tapped = id;
+		}
+		// The chosen plate wears the same lit rim a hovered one does, so
+		// a finger that cannot hover still sees what it picked.
+		const bool hot = ImGui::IsItemHovered()
+			|| (tapped != nullptr && id == app.forge_pick);
 		const ImVec2 low(pen.x + side, pen.y + side);
 		const ImU32 ink = card != nullptr ? family_ink(card->family)
 			: IM_COL32(150, 140, 130, 255);
@@ -1893,6 +1905,7 @@ void enter_node (App& app, int node, bool forced = false) {
 	app.ui_guard = kUiGuard;
 	app.forge_hand_used = false;
 	app.forge_life_used = false;
+	app.forge_pick.clear();
 	campaign::save(campaign::path(app.root), app.campaign);
 	app.audio.play("hold");
 }
@@ -1900,6 +1913,7 @@ void enter_node (App& app, int node, bool forced = false) {
 void leave_visit (App& app) {
 	app.visiting = -1;
 	app.forge_hand_used = false;
+	app.forge_pick.clear();
 	campaign::save(campaign::path(app.root), app.campaign);
 }
 
@@ -7482,104 +7496,116 @@ void draw_career (App& app) {
 				leave_visit(app);
 			}
 			if (!visited.tempers.empty()) {
+				// The build as a grid of plates rather than as a list.
+				//
+				// It used to be two lists - every card as a row of name
+				// and button to melt, then every stackable card again as a
+				// row of name and button to duplicate. Twenty tempers made
+				// that forty rows, which on a phone is a wall of text the
+				// player scrolls past looking for one name, and which used
+				// to run off the bottom of the screen entirely. The plates
+				// are the same emblems the map header already reads, so
+				// the build looks the same everywhere it is shown; tapping
+				// one opens the card, and the card carries its own two
+				// deeds.
 				ImGui::Spacing();
-				ImGui::TextUnformatted("Melt down");
-				int melted = -1;
-				int paid = 0;
-				if (app.smoke_poke == 2) {
-					melted = 0;
-					paid = 0;
-					app.smoke_poke = 3;
+				ImGui::TextUnformatted("What you carry - tap to work it");
+				std::string tapped;
+				ImGui::PushTextWrapPos(0.f);
+				temper_badges(app, visited.tempers, false, &tapped);
+				ImGui::PopTextWrapPos();
+				// Smoke: one tap, not one a frame - the tick that sets
+				// this stays put for eight frames, and a tap a frame would
+				// open and shut the card faster than a screen can show it.
+				if (app.smoke_poke == 3 && app.forge_pick.empty()) {
+					tapped = visited.tempers.front();
 				}
-				for (size_t i = 0; i < visited.tempers.size(); ++i) {
-					const temper::Temper* card
-						= temper::find(visited.tempers[i]);
+				if (!tapped.empty()) {
+					// A second tap on the open plate shuts it again, which
+					// is the gesture a phone player will try first.
+					app.forge_pick = tapped == app.forge_pick
+						? std::string() : tapped;
+				}
+				const temper::Temper* picked = app.forge_pick.empty()
+					? nullptr : temper::find(app.forge_pick);
+				if (picked != nullptr) {
+					const long held = std::count(visited.tempers.begin(),
+						visited.tempers.end(), app.forge_pick);
 					// A curse costs most of a good room to burn off. It is
 					// what the ring did to you, not something you picked,
 					// and one you could shed for the price of a card would
 					// not be a difficulty at all.
-					const bool cursed = card != nullptr
-						&& card->family == temper::Family::Chaos;
+					const bool cursed
+						= picked->family == temper::Family::Chaos;
 					const int melt_cost = ember_price(app, cursed
 						? temper::kCurseCost : temper::kRemoveCost);
-					ImGui::PushID(static_cast<int>(i));
-					if (cursed) {
-						ImGui::TextColored(ImVec4(0.85f, 0.42f, 0.9f, 1.f),
-							"%s", card->name);
-					} else {
-						ImGui::TextUnformatted(card != nullptr
-							? card->name : visited.tempers[i].c_str());
-					}
-					ImGui::SameLine();
-					ImGui::BeginDisabled(visited.embers < melt_cost);
-					char label[32];
-					std::snprintf(label, sizeof label, cursed
-						? "Burn off (%d)" : "Remove (%d)", melt_cost);
-					if (ImGui::SmallButton(label)) {
-						melted = static_cast<int>(i);
-						paid = melt_cost;
-					}
-					ImGui::EndDisabled();
-					ImGui::PopID();
-				}
-				if (melted >= 0) {
-					visited.embers -= paid;
-					visited.tempers.erase(visited.tempers.begin() + melted);
-					app.tempers = visited.tempers;
-					app.audio.play("clear");
-					campaign::save(campaign::path(app.root), app.campaign);
-				}
-			}
-			{
-				// Strike again: a second copy of a card already carried,
-				// for the builds that live on stacking - offered only
-				// where the card's own stack cap leaves room.
-				std::vector<std::string> forgeable;
-				for (const std::string& id : visited.tempers) {
-					const temper::Temper* card = temper::find(id);
-					// Never a second copy of a curse: the ring lays those,
-					// and the shop is not in that trade.
-					if (card == nullptr
-						|| card->family == temper::Family::Chaos) {
-						continue;
-					}
-					const long held = std::count(visited.tempers.begin(),
-						visited.tempers.end(), id);
-					const bool listed = std::find(forgeable.begin(),
-						forgeable.end(), id) != forgeable.end();
-					if (held < card->stacks && !listed) {
-						forgeable.push_back(id);
-					}
-				}
-				if (!forgeable.empty()) {
-					ImGui::Spacing();
-					ImGui::TextUnformatted("Strike again");
 					const int copy_cost
 						= ember_price(app, temper::kDuplicateCost);
-					std::string struck;
-					if (app.smoke_poke == 3) {
-						struck = forgeable.front();
-						app.smoke_poke = 4;
+					ImGui::Spacing();
+					ImGui::PushStyleColor(ImGuiCol_Text,
+						family_ink(picked->family));
+					ImGui::Text("%s", picked->name);
+					ImGui::PopStyleColor();
+					ImGui::SameLine();
+					if (held > 1) {
+						ImGui::TextDisabled("x%d", static_cast<int>(held));
 					}
-					for (size_t i = 0; i < forgeable.size(); ++i) {
-						const temper::Temper* card
-							= temper::find(forgeable[i]);
-						ImGui::PushID(static_cast<int>(i + 100));
-						ImGui::TextUnformatted(card->name);
+					ImGui::PushTextWrapPos(0.f);
+					ImGui::TextDisabled("%s", picked->text);
+					ImGui::PopTextWrapPos();
+					bool melted = false;
+					bool struck = false;
+					ImGui::BeginDisabled(visited.embers < melt_cost);
+					char label[40];
+					std::snprintf(label, sizeof label, cursed
+						? "Burn off (%d)" : "Melt down (%d)", melt_cost);
+					if (ImGui::Button(label, ImVec2(ui(150), 0))) {
+						melted = true;
+					}
+					ImGui::EndDisabled();
+					// Strike again: a second copy of a card already
+					// carried, for the builds that live on stacking -
+					// offered only where the card's own stack cap leaves
+					// room, and never on a curse. The ring lays those, and
+					// the shop is not in that trade.
+					if (!cursed && held < picked->stacks) {
 						ImGui::SameLine();
 						ImGui::BeginDisabled(visited.embers < copy_cost);
-						char label[32];
 						std::snprintf(label, sizeof label,
-							"Duplicate (%d)", copy_cost);
-						if (ImGui::SmallButton(label)) {
-							struck = forgeable[i];
+							"Strike again (%d)", copy_cost);
+						if (ImGui::Button(label, ImVec2(ui(170), 0))) {
+							struck = true;
 						}
 						ImGui::EndDisabled();
-						ImGui::PopID();
+					} else if (!cursed) {
+						ImGui::SameLine();
+						ImGui::TextDisabled("struck as deep as it goes");
 					}
-					if (!struck.empty()) {
+					if (app.smoke_poke == 5) {
+						melted = visited.embers >= melt_cost;
+						struck = !cursed && held < picked->stacks
+							&& visited.embers >= copy_cost;
+						app.smoke_poke = 6;
+					}
+					if (melted) {
+						const auto at = std::find(visited.tempers.begin(),
+							visited.tempers.end(), app.forge_pick);
+						if (at != visited.tempers.end()) {
+							visited.embers -= melt_cost;
+							visited.tempers.erase(at);
+							app.tempers = visited.tempers;
+							app.audio.play("clear");
+							if (std::find(visited.tempers.begin(),
+									visited.tempers.end(), app.forge_pick)
+								== visited.tempers.end()) {
+								app.forge_pick.clear();
+							}
+							campaign::save(campaign::path(app.root),
+								app.campaign);
+						}
+					} else if (struck) {
 						visited.embers -= copy_cost;
-						visited.tempers.push_back(struck);
+						visited.tempers.push_back(app.forge_pick);
 						app.tempers = visited.tempers;
 						app.audio.play("crit");
 						campaign::save(campaign::path(app.root),
@@ -9422,7 +9448,7 @@ int run (bool smoke, long smoke_frames) {
 						const campaign::MapNode& stop = app.run_map[
 							static_cast<size_t>(app.visiting)];
 						if (stop.kind == 2 && app.smoke_stops
-							&& app.smoke_poke < 4) {
+							&& app.smoke_poke < 6) {
 							// Melt one card, then strike a second copy of
 							// another: the two buttons a played forge is
 							// actually used for, and the two that rewrite
