@@ -333,6 +333,39 @@ void Sim::drain_flow (double share) {
 	flow_ = std::max(0., flow_ * (1. - std::clamp(share, 0., 1.)));
 }
 
+void Sim::stoke_flow (double gain) {
+	// The other half of drain_flow, and it stops at the same ceiling the
+	// ordinary charging does - a tool must not put the gauge somewhere a
+	// clear could not.
+	flow_ = std::clamp(flow_ + std::max(0., gain), 0., config_.flow_cap);
+}
+
+int Sim::shed_garbage (int rows) {
+	const int shed = std::min(std::max(0, rows), pending_garbage_);
+	pending_garbage_ -= shed;
+	return shed;
+}
+
+int Sim::shear_floor (int rows) {
+	// The bottom rows struck out and the stack settled onto the floor -
+	// the same collapse clear_lines performs, aimed by height instead of
+	// by fullness. An empty row is not worth a tool's charge, so the count
+	// only rises for rows that actually held something.
+	int taken = 0;
+	for (int i = 0; i < std::max(0, rows); ++i) {
+		bool held = false;
+		for (int x = 0; x < kWidth; ++x) {
+			held = held || board_.at(x, kHeight - 1) >= 0;
+		}
+		if (!held) {
+			break;
+		}
+		board_.strike_row(kHeight - 1);
+		++taken;
+	}
+	return taken;
+}
+
 void Sim::set_pressure (bool on) {
 	// Silent on purpose: a cue raised between steps would be wiped by the
 	// next step's clear before anyone drained it. The screen watches the

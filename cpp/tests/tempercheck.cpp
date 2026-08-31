@@ -626,7 +626,7 @@ int main () {
 	}
 
 	// --- The pool's shape. --------------------------------------------------
-	// Six families, forty-one cards, and the counts written down here so
+	// Six families, forty cards, and the counts written down here so
 	// that growing one family is a decision rather than an accident. Chaos
 	// is not among them any more: nobody drafts a curse, so the climb lays
 	// them instead and they live in curses(), pinned further down. Style is
@@ -651,13 +651,13 @@ int main () {
 				}
 			}
 		}
-		check("the pool is forty-one cards in six families",
-			temper::pool().size() == 41 && counted.size() == 6,
+		check("the pool is forty cards in six families",
+			temper::pool().size() == 40 && counted.size() == 6,
 			std::to_string(temper::pool().size()) + " cards, "
 				+ std::to_string(counted.size()) + " families");
-		check("and the families are five, seven, seven, four, six, twelve",
+		check("and the families are five, seven, seven, three, six, twelve",
 			counted[0] == 5 && counted[1] == 7 && counted[2] == 7
-				&& counted[3] == 4 && counted[4] == 0 && counted[5] == 6
+				&& counted[3] == 3 && counted[4] == 0 && counted[5] == 6
 				&& counted[6] == 12,
 			std::to_string(counted[0]) + "/" + std::to_string(counted[1])
 				+ "/" + std::to_string(counted[2]) + "/"
@@ -1136,7 +1136,7 @@ int main () {
 					&& found->family == temper::Family::Chaos;
 			}
 			check("a held curse is still a card the screens can name",
-				named && temper::curses().size() == 5);
+				named && temper::curses().size() == 6);
 		}
 		// The climb lays them one at a time, in the run's own order, and
 		// never lays the same one twice.
@@ -1146,16 +1146,16 @@ int main () {
 			bool stable = true;
 			for (unsigned seed = 1; seed <= 200; ++seed) {
 				std::set<std::string> laid;
-				for (int step = 0; step < 5; ++step) {
+				for (int step = 0; step < 6; ++step) {
 					const std::string one = temper::curse_at(seed, step);
 					ordered = ordered && !one.empty();
 					distinct = distinct && laid.insert(one).second;
 					stable = stable && temper::curse_at(seed, step) == one;
 				}
-				ordered = ordered && temper::curse_at(seed, 5).empty()
+				ordered = ordered && temper::curse_at(seed, 6).empty()
 					&& temper::curse_at(seed, -1).empty();
 			}
-			check("a climb lays all five and then stops", ordered);
+			check("a climb lays all six and then stops", ordered);
 			check("and never the same curse twice", distinct);
 			check("and lays the same ones when the run is resumed", stable);
 		}

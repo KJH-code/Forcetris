@@ -148,6 +148,22 @@ int Board::clear_lines () {
 	return taken;
 }
 
+void Board::strike_row (int y) {
+	if (y < 0 || y >= kHeight) {
+		return;
+	}
+	for (int above = y; above > 0; --above) {
+		cells_[above] = cells_[above - 1];
+		links_[above] = links_[above - 1];
+		fallen_[above] = fallen_[above - 1];
+		iron_[above] = iron_[above - 1];
+	}
+	cells_[0].fill(-1);
+	links_[0].fill(0);
+	fallen_[0].fill(false);
+	iron_[0] = false;
+}
+
 void Board::push_garbage (int hole) {
 	push_garbage_mask(1 << hole);
 }

@@ -90,8 +90,6 @@ const std::vector<Temper>& pool () {
 			"clears cascade", Family::Rule, 1},
 		{"every_twist", "Every Twist",
 			"every spin scores", Family::Rule, 1},
-		{"turning_rack", "The Turning Rack",
-			"every clear stirs the hold", Family::Rule, 1},
 		{"linked_chain", "The Linked Chain",
 			"clears cascade, and the pieces stay whole", Family::Rule, 1},
 		// --- Style: how you play, sold in pieces. -------------------------
@@ -181,13 +179,24 @@ const std::vector<Temper>& curses () {
 		{"sticky_tongs", "Sticky Tongs",
 			"every fourth hold sticks",
 			Family::Chaos, 1},
+		// The Turning Rack was a RULE card for four arcs, offered as
+		// though stirring the hold on every clear were a way to play. It
+		// is not: nothing in the game wants the box shuffled, so the card
+		// was a trap wearing the colour of the rare ones and nobody who
+		// read it twice ever took it. It does what a curse does, so it is
+		// a curse - laid by the ring, priced like one to burn off, and no
+		// longer taking a seat in a hand that owes the player three real
+		// choices.
+		{"turning_rack", "The Turning Rack",
+			"every clear stirs the hold",
+			Family::Chaos, 1},
 	};
 	return laid;
 }
 
 // Which curse the climb lays down at the given step, or empty once it has
 // laid them all. The order is the run's own, so two climbs from different
-// seeds meet the same five in a different sequence - and it is a pure
+// seeds meet the same six in a different sequence - and it is a pure
 // function of (seed, step), so a resumed run lays exactly what it laid.
 std::string curse_at (unsigned seed, int step) {
 	const int count = static_cast<int>(curses().size());

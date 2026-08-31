@@ -47,19 +47,49 @@ const std::vector<Upgrade>& anvil () {
 		// wick used to lengthen a clock most rooms no longer carry, and
 		// the bank used to refill it. They feed the gauge now, which is
 		// live in every room on the road.
-		{"wick", "Forged Wick", "the fire holds its heat in stages", 3, 25},
-		{"bank", "Deep Bank", "digging charges the gauge in stages", 2, 30},
-		{"bellows", "Great Bellows", "Overdrive lasts longer in stages", 2, 30},
-		{"sense", "Ember Sense", "earn more embers in stages", 2, 35},
+		{"wick", "Forged Wick", "the fire holds its heat in stages", 5, 25},
+		{"bank", "Deep Bank", "digging charges the gauge in stages", 4, 30},
+		{"bellows", "Great Bellows", "Overdrive lasts longer in stages", 4, 30},
+		{"sense", "Ember Sense", "earn more embers in stages", 4, 35},
 		{"preheat", "Preheat", "start every stage with a free draft", 1, 60},
 		// The V2.1d pair, read by begin_run: a life for the forged runs,
 		// and coin in the purse before the first fight.
 		{"lifeblood", "Forged Lifeblood",
-			"forged runs carry one more life", 1, 70},
+			"forged runs carry one more life", 2, 70},
 		{"warchest", "War Chest",
-			"runs set out with embers in the purse", 2, 40},
+			"runs set out with embers in the purse", 4, 40},
+		// --- The tools. ----------------------------------------------
+		// The Anvil used to run out. Seven upgrades, twelve levels between
+		// them, six hundred and eighty-five slag - two good climbs - and
+		// after that every run rendered its embers down into a number
+		// nothing would ever spend. A roguelite whose meta finishes in two
+		// runs has no meta; it has a tutorial with a price tag.
+		//
+		// So the Anvil sells three TOOLS, bought once and carried into
+		// every room: one charge a room, spent by hand, and only one of
+		// the three is carried at a time. They are the first thing in this
+		// game the player does rather than has - every other permanent
+		// buy is a number that leans on a rule - and choosing which one to
+		// carry is a decision that survives the run that bought it.
+		{"tool_shear", "The Shear",
+			"a tool: shear the bottom row off your own well", 1, 90},
+		{"tool_cull", "The Cull",
+			"a tool: strike four rows off what is coming", 1, 110},
+		{"tool_flare", "The Flare",
+			"a tool: throw half a gauge on the fire", 1, 130},
 	};
 	return forge;
+}
+
+const std::vector<std::string>& tools () {
+	static const std::vector<std::string> carried = {
+		"tool_shear", "tool_cull", "tool_flare",
+	};
+	return carried;
+}
+
+bool is_tool (const std::string& id) {
+	return std::find(tools().begin(), tools().end(), id) != tools().end();
 }
 
 const Upgrade* upgrade (const std::string& id) {
@@ -168,6 +198,8 @@ State load (const std::string& path) {
 		} else if (key == "run_ring") {
 			in >> state.run.ring;
 			state.run.ring = std::clamp(state.run.ring, 0, 999);
+		} else if (key == "tool") {
+			in >> state.tool;
 		} else if (key == "endless_best") {
 			in >> state.endless_best;
 			state.endless_best = std::max(0, state.endless_best);
@@ -198,6 +230,9 @@ bool save (const std::string& path, const State& state) {
 	}
 	out << "# forcetris campaign 1\n";
 	out << "slag " << state.slag << "\n";
+	if (!state.tool.empty()) {
+		out << "tool " << state.tool << "\n";
+	}
 	if (state.endless_best > 0) {
 		out << "endless_best " << state.endless_best << "\n";
 	}
@@ -564,7 +599,11 @@ SimConfig stage_config (const Stage& stage, SimConfig base,
 		const auto found = forge.find(id);
 		return found != forge.end() ? found->second : 0;
 	};
-	config.flow_keep += 0.08 * level("wick");
+	// The wick's metal is a share of the gauge, so it needs the same
+	// ceiling the cards that feed it have: five levels of it plus a Slow
+	// Burn would otherwise keep more of the fire than there is fire.
+	config.flow_keep = std::min(0.6,
+		config.flow_keep + 0.08 * level("wick"));
 	config.flow_gain_dig += 0.5 * level("bank");
 	config.overdrive_secs += 0.5 * level("bellows");
 	return config;
@@ -849,6 +888,19 @@ int slag_award (const Stage& stage, bool first_clear, bool won, int stars,
 	return std::max(0, embers_left) / 5;
 }
 
+std::string carried_tool (const State& state) {
+	// The stored choice only counts while it is still bought and still a
+	// tool: a save written by a build that sold something else, or by a
+	// hand editing the file, carries nothing rather than something the
+	// battle screen would have to guess at.
+	const auto held = state.forge.find(state.tool);
+	if (!is_tool(state.tool) || held == state.forge.end()
+		|| held->second <= 0) {
+		return std::string();
+	}
+	return state.tool;
+}
+
 int ember_bonus_percent (const std::map<std::string, int>& forge) {
 	const auto found = forge.find("sense");
 	return found != forge.end() ? found->second * 25 : 0;
@@ -860,7 +912,15 @@ int free_drafts (const std::map<std::string, int>& forge) {
 }
 
 int upgrade_cost (const Upgrade& upgrade, int level) {
-	return upgrade.cost_base * std::max(1, level);
+	// Linear was right while nothing went past three levels. With the
+	// deeper metal it made the last level of a thing cost the same as the
+	// first level of two others, so the tail of the Anvil was bought in
+	// the order the list happened to be written. The curve steepens
+	// instead: level n costs n(n+1)/2 bases, so the fifth level of the
+	// wick is fifteen times its first rather than five, and a deep buy is
+	// a decision against every other deep buy.
+	const int n = std::max(1, level);
+	return upgrade.cost_base * n * (n + 1) / 2;
 }
 
 } // namespace campaign

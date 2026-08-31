@@ -638,10 +638,41 @@ int main () {
 			campaign::slag_award(first, true, false, 0, 50) == 10
 				&& campaign::slag_award(first, true, false, 0, 0) == 0);
 		const campaign::Upgrade* wick = campaign::upgrade("wick");
+		// The curve, not a multiplier: level n costs n(n+1)/2 bases, so a
+		// deep level is a decision against every other deep level rather
+		// than the same price with a bigger number on it.
 		check("the Anvil's ledger is sane",
-			wick != nullptr && campaign::upgrade_cost(*wick, 2)
-				== wick->cost_base * 2
+			wick != nullptr && campaign::upgrade_cost(*wick, 1)
+					== wick->cost_base
+				&& campaign::upgrade_cost(*wick, 2) == wick->cost_base * 3
+				&& campaign::upgrade_cost(*wick, 5) == wick->cost_base * 15
 				&& campaign::upgrade("no_such") == nullptr);
+		// The tools: sold like anything else, carried unlike anything
+		// else, and only one at a time however many have been bought.
+		{
+			bool sold = true;
+			for (const std::string& id : campaign::tools()) {
+				const campaign::Upgrade* tool = campaign::upgrade(id);
+				sold = sold && tool != nullptr && tool->levels == 1
+					&& campaign::is_tool(id);
+			}
+			check("every tool is in the catalogue, one level deep", sold);
+			check("and nothing else is a tool",
+				!campaign::is_tool("wick") && !campaign::is_tool(""));
+			campaign::State kit;
+			check("a tool that has not been bought is not carried",
+				campaign::carried_tool(kit).empty());
+			kit.tool = campaign::tools().front();
+			check("nor is one chosen but unbought",
+				campaign::carried_tool(kit).empty());
+			kit.forge[kit.tool] = 1;
+			check("a bought and chosen tool is carried",
+				campaign::carried_tool(kit) == campaign::tools().front());
+			kit.tool = "wick";
+			kit.forge["wick"] = 3;
+			check("and an upgrade can never be carried as one",
+				campaign::carried_tool(kit).empty());
+		}
 	}
 
 	// --- The file. ----------------------------------------------------------
@@ -658,12 +689,15 @@ int main () {
 		state.stars["c1s1"] = 3;
 		state.stars["c1s2"] = 1;
 		state.forge["wick"] = 2;
+		state.forge["tool_cull"] = 1;
+		state.tool = "tool_cull";
 		state.unknown.push_back("futurething 42");
 		check("the road saves", campaign::save(file, state));
 		const campaign::State back = campaign::load(file);
 		check("and loads back whole",
 			back.slag == 123 && back.stars.at("c1s1") == 3
-				&& back.stars.at("c1s2") == 1 && back.forge.at("wick") == 2);
+				&& back.stars.at("c1s2") == 1 && back.forge.at("wick") == 2
+				&& campaign::carried_tool(back) == "tool_cull");
 		check("a key this build does not know survives the round trip",
 			back.unknown.size() == 1 && back.unknown[0] == "futurething 42"
 				&& campaign::save(file, back)
@@ -679,7 +713,7 @@ int main () {
 		const campaign::State fixed = campaign::load(file);
 		check("a damaged file is clamped into sense",
 			fixed.slag == 0 && fixed.stars.at("c1s1") == 3
-				&& fixed.forge.at("wick") == 3);
+				&& fixed.forge.at("wick") == 5);
 
 		// --- The run rides in the same file. --------------------------------
 		campaign::State climbing;

@@ -194,6 +194,52 @@ made ready. The **cooldown** puts it out again over half a second under
 the verdict - the board stays drawn underneath the whole time, because a
 loss screen over a well that vanished reads as a crash.
 
+**The Anvil used to run out, and a roguelite whose meta finishes in two
+runs has a tutorial with a price tag.** Seven upgrades, twelve levels
+between them, six hundred and eighty-five slag - two good climbs - and
+after that every run rendered its embers down into a number nothing would
+ever spend.
+
+Three things changed. The metal goes deeper (five levels of wick, four of
+bank, bellows, sense and war chest, two of lifeblood). The cost curve
+steepens from linear to triangular - level n costs n(n+1)/2 bases, so the
+wick's fifth level is fifteen times its first rather than five, and a deep
+buy is a decision against every other deep buy rather than whatever the
+list happened to print first. Together the Anvil now holds 4,245 slag
+instead of 685.
+
+And it sells **tools**. A tool is bought once and carried into every room
+on the road: one charge a room, spent by hand, and only one of the three
+rides at a time.
+
+| tool | one charge |
+|---|---|
+| The Shear | the bottom row of your own well, gone, the stack settling onto it |
+| The Cull | four rows struck off what is coming, before it ever rises |
+| The Flare | half a gauge thrown on the fire |
+
+They are the first permanent buy in this game the player *does* rather
+than *has* - everything else at the Anvil is a number leaning on a rule -
+and which one to carry is a decision that outlives the run that bought it.
+`E` spends it on a desk; a chip under the board spends it on a phone and
+says whether the charge is still in hand.
+
+All three land through GUI-only levers - `Sim::shear_floor`,
+`Sim::shed_garbage`, `Sim::stoke_flow` - through the same door
+`impose_gravity` and `drain_flow` already came through, so a game that
+carries no tool is bit-for-bit the game it always was and equivalence and
+trace do not move. The Flare leaves ignition to the ordinary path: a flare
+that falls short of the bar lights nothing, and the player has spent a
+charge on a warmer fire, which is a decision they made.
+
+**And the Turning Rack is a curse now.** It was a RULE card for four arcs,
+offered as though stirring the hold on every clear were a way to play.
+Nothing in the game wants the box shuffled, so it was a trap wearing the
+colour of the rare ones, and it was taking a seat in a hand that owes the
+player three real choices. It does what a curse does, so it is one: laid
+by the ring rather than drafted, priced like a curse to burn off. Rule
+drops to three, the climb lays six curses instead of five.
+
 **A playstyle is assembled, not handed over.** Every card before these
 made a blow heavier however it was struck, so every build wanted the same
 things and a run was a pile rather than a plan. The Style family names a

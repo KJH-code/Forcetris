@@ -258,6 +258,12 @@ struct Upgrade {
 	int cost_base;
 };
 const std::vector<Upgrade>& anvil ();
+// The Anvil's tools, in the order they are sold. A tool is an upgrade
+// like any other in the catalogue - bought once, stored in `forge` - but
+// unlike the rest it is carried rather than applied, and only one at a
+// time, so the screens need to know which ids are of that kind.
+const std::vector<std::string>& tools ();
+bool is_tool (const std::string& id);
 const Upgrade* upgrade (const std::string& id);
 
 // What has been earned and bought, in campaign.dat: the same tolerant
@@ -269,11 +275,17 @@ struct State {
 	Run run;                            // The climb in progress, if any.
 	// The record board: the most rows any Endless Climb has managed.
 	int endless_best = 0;
+	// Which tool is carried. Empty for none; only one at a time, however
+	// many have been bought.
+	std::string tool;
 	std::vector<std::string> unknown;
 };
 
 // FORCETRIS_CAMPAIGN if set, else <root>/data/campaign.dat.
 std::string path (const std::string& root);
+// The tool the state actually carries: the stored choice, if it has been
+// bought. Empty when nothing is carried or the choice is stale.
+std::string carried_tool (const State& state);
 State load (const std::string& path);
 bool save (const std::string& path, const State& state);
 

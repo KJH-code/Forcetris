@@ -436,6 +436,26 @@ public:
 	// The gauge, taken. A share of what is banked, drained on the spot -
 	// what a heat wave does now that there is no clock to lean on.
 	void drain_flow (double share);
+	// --- The player's own three levers. -------------------------------
+	//
+	// A tool bought at the Anvil, spent once in a room. All three are
+	// GUI-only in the same way impose_gravity and drain_flow are: nothing
+	// graded calls them, so equivalence and trace never see them, and a
+	// game that never buys one is bit-for-bit the game it was.
+	//
+	// The gauge, fed rather than taken - the other half of drain_flow.
+	// Ignition is left to the ordinary path, so a stoke that falls short
+	// of the bar lights nothing and the player has spent a tool on a
+	// half-full fire, which is a decision they made.
+	void stoke_flow (double gain);
+	// Rows struck off the queue before they ever rise. Returns how many
+	// were actually shed, because a tool that reports nothing cannot tell
+	// the screen whether it did anything.
+	int shed_garbage (int rows);
+	// The floor sheared off: the bottom rows of your own well, gone, with
+	// the stack settling onto the floor. Returns the rows taken.
+	int shear_floor (int rows);
+
 	void impose_gimmick (int sealed, bool cold_iron) {
 		config_.sealed = sealed;
 		config_.cold_iron = cold_iron;

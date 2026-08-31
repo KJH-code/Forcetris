@@ -517,6 +517,11 @@ struct App {
 	bool forge_life_used = false;
 	// Which plate of the forge's grid is open, if any.
 	std::string forge_pick;
+	// The tool carried into the room being played, and whether its one
+	// charge is still in hand. Empty outside a campaign stage.
+	std::string tool_held;
+	bool tool_spent = false;
+	int tool_flash = 0;         // Frames of "it went off" on the HUD.
 	// The oils painted on the map, carried into the battle being launched:
 	// consumed by the launch - one coat, one fight.
 	bool oil_hot = false;
@@ -826,6 +831,11 @@ void reset_effects (App& app) {
 
 void start_game (App& app, int mode,
 		std::optional<unsigned> fixed_seed = std::nullopt) {
+	// No Anvil behind a trainer game, so no tool in it either.
+	app.tool_held.clear();
+	app.tool_spent = false;
+	app.tool_flash = 0;
+
 	app.versus.reset();
 	app.career_stage = -1;
 	app.campaign_stage = -1;
@@ -1513,6 +1523,11 @@ void start_stage (App& app, int index, int run_node = -1) {
 	const unsigned seed = app.seeds();
 	app.temper_seed = seed;
 	app.temper_start = mine;
+	// The tool rides into the room with one charge. Only on the road: a
+	// trainer game has no Anvil behind it and no slag in front of it.
+	app.tool_held = campaign::carried_tool(app.campaign);
+	app.tool_spent = false;
+	app.tool_flash = 0;
 	replay::Meta meta = meta_for(app.config, stage.mode);
 	stamp_fuse(meta, mine);
 	// Its own name in every record: fuse_table_for has no fall-through, so
@@ -1881,6 +1896,45 @@ int force_stop (App& app) {
 		return static_cast<int>(at);
 	}
 	return -1;
+}
+
+// The tool, spent. One charge a room, by hand, on the player's own board.
+//
+// Every effect here is a GUI-only lever the graded engine never touches -
+// the same door impose_gravity and drain_flow already came through - so a
+// game that carries no tool is bit-for-bit the game it always was.
+bool spend_tool (App& app) {
+	if (app.tool_held.empty() || app.tool_spent || !app.session.has_value()
+		|| app.screen != Screen::Game || app.paused || app.countdown > 0
+		|| !app.offers.empty() || app.session->over()) {
+		return false;
+	}
+	Sim& sim = app.session->sim_mutable();
+	bool worked = false;
+	if (app.tool_held == "tool_shear") {
+		// The floor, sheared: the bottom row of your own well and the
+		// stack settling onto it. Nothing if the floor is already bare -
+		// a charge is not spent on air.
+		worked = sim.shear_floor(1) > 0;
+	} else if (app.tool_held == "tool_cull") {
+		// Four rows struck off what is coming, before it ever rises.
+		worked = sim.shed_garbage(4) > 0;
+	} else if (app.tool_held == "tool_flare") {
+		// Half a gauge on the fire. Ignition is left to the ordinary path,
+		// so a flare that falls short lights nothing and the player has
+		// spent a charge on a warmer fire - which is a decision they made.
+		const double before = sim.flow();
+		sim.stoke_flow(sim.config().flow_cap * 0.5);
+		worked = sim.flow() > before;
+	}
+	if (!worked) {
+		return false;
+	}
+	app.tool_spent = true;
+	app.tool_flash = 40;
+	app.audio.play("crit");
+	app.shake_until = app.session->sim().frame() + 8;
+	return true;
 }
 
 // A stop on the map, entered: the node is spent on the way in - path and
@@ -2555,6 +2609,16 @@ void handle_event (App& app, const SDL_Event& event) {
 		if (app.show_frames) {
 			app.tick_hist[0] = app.tick_hist[1] = app.tick_hist[2] = 0;
 		}
+		return;
+	}
+	// E spends the tool. Hardcoded beside R for the same reason: a binding
+	// would put it in the smoke masher's pool, and a masher that can fire
+	// the tool would fire it on the first frame of every room.
+	if (down && event.key.keysym.scancode == SDL_SCANCODE_E
+		&& !ImGui::GetIO().WantCaptureKeyboard
+		&& app.screen == Screen::Game && !app.editing
+		&& !app.layout_preview) {
+		spend_tool(app);
 		return;
 	}
 	// R restarts the run, hardcoded like Escape rather than rebindable - a
@@ -7405,6 +7469,9 @@ void draw_career (App& app) {
 	ImGui::TextDisabled("stage on the road - and only there.");
 	ImGui::Dummy(ImVec2(0.f, ui(2)));
 	for (const campaign::Upgrade& sold : campaign::anvil()) {
+		if (campaign::is_tool(sold.id)) {
+			continue;   // The tools get their own shelf, below.
+		}
 		const auto held = app.campaign.forge.find(sold.id);
 		const int level = held != app.campaign.forge.end() ? held->second : 0;
 		ImGui::PushID(sold.id);
@@ -7427,6 +7494,61 @@ void draw_career (App& app) {
 		}
 		ImGui::TextDisabled("%s", sold.text);
 		ImGui::PopID();
+	}
+	// --- The tools. --------------------------------------------------
+	// Bought like the metal above and carried unlike it: one charge a
+	// room, spent by hand, and only one of the three rides at a time. The
+	// first permanent buy in this game that the player DOES rather than
+	// HAS, and the reason a purse of slag is worth carrying past the
+	// second climb.
+	ImGui::Dummy(ImVec2(0.f, ui(4)));
+	ImGui::TextUnformatted("Tools - one charge a room, one carried");
+	{
+		const std::string carried = campaign::carried_tool(app.campaign);
+		for (const std::string& id : campaign::tools()) {
+			const campaign::Upgrade* tool = campaign::upgrade(id);
+			if (tool == nullptr) {
+				continue;
+			}
+			const auto held = app.campaign.forge.find(id);
+			const bool bought
+				= held != app.campaign.forge.end() && held->second > 0;
+			ImGui::PushID(id.c_str());
+			if (!bought) {
+				const int cost = campaign::upgrade_cost(*tool, 1);
+				ImGui::TextUnformatted(tool->name);
+				ImGui::SameLine();
+				ImGui::BeginDisabled(app.campaign.slag < cost);
+				char label[32];
+				std::snprintf(label, sizeof label, "Forge (%d)", cost);
+				if (ImGui::SmallButton(label)) {
+					app.campaign.slag -= cost;
+					app.campaign.forge[id] = 1;
+					if (campaign::carried_tool(app.campaign).empty()) {
+						// The first one bought is carried without asking:
+						// a tool in the rack and no hand on it is a buy
+						// the player would think had failed.
+						app.campaign.tool = id;
+					}
+					app.audio.play("crit");
+					campaign::save(campaign::path(app.root), app.campaign);
+				}
+				ImGui::EndDisabled();
+			} else if (id == carried) {
+				ImGui::TextColored(ImVec4(1.f, 0.84f, 0.38f, 1.f),
+					"%s - carried", tool->name);
+			} else {
+				ImGui::TextUnformatted(tool->name);
+				ImGui::SameLine();
+				if (ImGui::SmallButton("Carry")) {
+					app.campaign.tool = id;
+					app.audio.play("hold");
+					campaign::save(campaign::path(app.root), app.campaign);
+				}
+			}
+			ImGui::TextDisabled("%s", tool->text);
+			ImGui::PopID();
+		}
 	}
 	ImGui::Separator();
 	ImGui::PushFont(app.fonts.head);
@@ -8137,6 +8259,40 @@ void draw_menus (App& app) {
 			temper_badges(app, app.tempers, true);
 		}
 		ImGui::EndDisabled();
+		ImGui::End();
+	} else if (app.screen == Screen::Game && !app.tool_held.empty()
+		&& !app.paused && app.offers.empty()) {
+		// The tool's chip: what is carried, whether the charge is still in
+		// hand, and a target to press. A key alone would leave the phone
+		// without the tool at all, and a tool nobody can see is a tool
+		// nobody spends.
+		const campaign::Upgrade* tool = campaign::upgrade(app.tool_held);
+		const ImVec2 screen = ImGui::GetIO().DisplaySize;
+		ImGui::SetNextWindowPos(ImVec2(screen.x / 2, screen.y - ui(10)),
+			ImGuiCond_Always, ImVec2(0.5f, 1.f));
+		ImGui::Begin("tool", nullptr,
+			box | ImGuiWindowFlags_NoFocusOnAppearing
+				| ImGuiWindowFlags_NoNav);
+		const bool ready = !app.tool_spent;
+		ImGui::PushStyleColor(ImGuiCol_Text, ready
+			? ImVec4(1.f, 0.84f, 0.38f, 1.f)
+			: ImVec4(0.55f, 0.5f, 0.46f, 1.f));
+		char label[80];
+		std::snprintf(label, sizeof label, ready
+			? (kMobile ? "%s" : "%s  (E)") : "%s - spent",
+			tool != nullptr ? tool->name : app.tool_held.c_str());
+		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+			ImVec2(ui(14), ui(8)));
+		ImGui::BeginDisabled(!ready);
+		if (ImGui::Button(label, ImVec2(ui(210), 0))) {
+			spend_tool(app);
+		}
+		ImGui::EndDisabled();
+		ImGui::PopStyleVar();
+		ImGui::PopStyleColor();
+		if (app.tool_flash > 0) {
+			--app.tool_flash;
+		}
 		ImGui::End();
 	} else if (app.screen == Screen::Game && app.paused) {
 		ImGui::SetNextWindowPos(middle, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
