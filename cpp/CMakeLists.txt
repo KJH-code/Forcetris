@@ -342,4 +342,14 @@ if (SDL2_FOUND)
 	add_test(NAME gui_smoke_endless COMMAND forcetris)
 	set_tests_properties(gui_smoke_endless PROPERTIES ENVIRONMENT
 		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=2200;FORCETRIS_SMOKE_ENDLESS=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-endless-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-endless-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat;FORCETRIS_CAMPAIGN=${CMAKE_CURRENT_BINARY_DIR}/smoke-endless-campaign.dat")
+
+	# The map's two rooms that never fight. The run smoke's player never
+	# presses a key, so it loses every battle, so it never leaves the
+	# entrance row - which left the forge and the event rooms with no
+	# coverage at all. FORCETRIS_SMOKE_STOPS walks a run onto one with a
+	# real build and every curse in its hands, and presses what the room
+	# offers: the free hand, a melt, a duplicate.
+	add_test(NAME gui_smoke_stops COMMAND forcetris)
+	set_tests_properties(gui_smoke_stops PROPERTIES ENVIRONMENT
+		"SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;FORCETRIS_SMOKE=900;FORCETRIS_SMOKE_RUN=1;FORCETRIS_SMOKE_STOPS=1;FORCETRIS_GUI_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/smoke-stops-gui.cfg;FORCETRIS_REPLAYS=${CMAKE_CURRENT_BINARY_DIR}/smoke-stops-replays;FORCETRIS_HISCORE=${CMAKE_CURRENT_BINARY_DIR};FORCETRIS_PROFILE=${CMAKE_CURRENT_BINARY_DIR}/smoke-profile.dat;FORCETRIS_CAREER=${CMAKE_CURRENT_BINARY_DIR}/smoke-career.dat;FORCETRIS_CAMPAIGN=${CMAKE_CURRENT_BINARY_DIR}/smoke-stops-campaign.dat")
 endif()

@@ -426,6 +426,18 @@ that cannot be won at any speed is not a fight. Both tolls are printed in
 the map header beside the ring, because the player did not agree to either
 one and should not have to infer them from a fight going badly.
 
+**The map has two rooms that never fight, and neither had ever been
+drawn by a test.** The run smoke's player does not press keys, so it loses
+every battle, so a run it drives never leaves the entrance row - and the
+forge and the event room sit on the middle rows. Two of the four kinds of
+node in the mode, and the matrix had walked past both of them for their
+whole life. `FORCETRIS_SMOKE_STOPS` walks a run onto one, first putting a
+full hand of cards and every curse the climb can lay into the run's
+hands, and then presses what the room offers: the free draft, a melt, a
+duplicate. `gui_smoke_stops` is the thirtieth ctest. Found while chasing a
+crash report about the forge that has not reproduced here yet - the hole
+in the coverage is real either way.
+
 **And for two arcs the blow did not happen at all**, which is worth
 writing down because of how it hid. `begin_run` arms the strike and clears
 `map_seen`, and `draw_forge_strike` was supposed to wait for the map to

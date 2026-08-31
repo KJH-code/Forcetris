@@ -105,37 +105,31 @@ const std::vector<Temper>& pool () {
 		// creed: it pays most and charges every other style for it. The
 		// creed is where commitment lives, and it is optional.
 		{"plonking", "The Plonker",
-			"a clear that ate rubble lands harder", Family::Style, 2},
+			"digging hits harder", Family::Style, 2},
 		{"dig_toll", "The Toll",
-			"rubble pays twice: once in the blow, once in the gauge",
-			Family::Style, 2},
+			"digging also charges Flow", Family::Style, 2},
 		{"dig_creed", "The Rubble Creed",
-			"rubble pays most of all, and a clear over a bare floor "
-			"lands soft", Family::Style, 1},
+			"digging hits hardest - bare floors land soft",
+			Family::Style, 1},
 		{"striding", "The Strider",
-			"every link past the first adds to the blow", Family::Style, 2},
+			"each back-to-back link hits harder", Family::Style, 2},
 		{"stride_span", "The Long Span",
-			"a link pays in the blow and in the gauge", Family::Style, 2},
+			"links also charge Flow", Family::Style, 2},
 		{"stride_creed", "The Unbroken",
-			"links pay most of all, and the blow that breaks the chain "
-			"lands soft", Family::Style, 1},
+			"links hit hardest - breaking one hurts", Family::Style, 1},
 		{"opener", "The Opening",
-			"the first of a room hits harder, and for longer",
-			Family::Style, 2},
+			"a room's opening hits harder", Family::Style, 2},
 		{"open_flare", "First Flare",
-			"the opening hits harder still", Family::Style, 2},
+			"a shorter, louder opening", Family::Style, 2},
 		{"open_creed", "All In The First",
-			"the opening hits hardest, and everything after it is "
-			"lighter", Family::Style, 1},
+			"the loudest opening - a lighter rest", Family::Style, 1},
 		{"downstacker", "The Downstacker",
-			"a plain clear - no spin, no quad - lands harder",
-			Family::Style, 2},
+			"plain clears hit harder", Family::Style, 2},
 		{"plain_edge", "The Blunt Edge",
-			"a plain clear pays in the blow and in the gauge",
-			Family::Style, 2},
+			"plain clears also charge Flow", Family::Style, 2},
 		{"plain_creed", "Nothing Fancy",
-			"plain clears land hardest, and the rare ones land like "
-			"plain", Family::Style, 1},
+			"plain clears hit hardest - rare ones land soft",
+			Family::Style, 1},
 		// --- Ward: nothing here wins faster; everything here survives. ----
 		// The guard family. Half of it only matters in the rooms that
 		// threaten what it guards, which is the point: a ward is a bet on

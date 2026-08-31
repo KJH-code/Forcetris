@@ -506,6 +506,10 @@ struct App {
 	// entering a stop consumes it, so quitting mid-visit can never farm
 	// it), and whether this forge visit has drawn its free hand.
 	int visiting = -1;
+	// Smoke only: walk the run onto the stops and press what they offer.
+	bool smoke_stops = false;
+	bool smoke_forced = false;
+	int smoke_poke = 0;
 	bool forge_hand_used = false;
 	// A life can be bought back once per forge visit, not farmed.
 	bool forge_life_used = false;
@@ -1786,11 +1790,65 @@ void apply_event (App& app, int id) {
 	}
 }
 
+// Smoke only: the first stop still standing on the map, with a build put
+// in the run's hands so the room is drawn with something in it.
+//
+// Nothing here is reachable in a played game - it is gated on the smoke's
+// own flag - and it exists because the rooms it opens had no coverage at
+// all: a player who never presses a key never wins a battle, and a run
+// that never wins a battle never reaches the second row.
+int force_stop (App& app) {
+	campaign::Run& run = app.campaign.run;
+	// Once a process, not once a save. The point is to have the rooms
+	// drawn with a build under them, not to march a run through every stop
+	// on the map - and every forced entry spends a row the smoke's player
+	// never earned. Keyed on the run of the program rather than on the
+	// run's own path, so a smoke that resumes yesterday's campaign file
+	// still walks a room instead of quietly proving nothing.
+	if (app.smoke_forced) {
+		return -1;
+	}
+	for (size_t at = 0; at < app.run_map.size(); ++at) {
+		const int kind = app.run_map[at].kind;
+		if (kind != 2 && kind != 3) {
+			continue;
+		}
+		if (std::find(run.path.begin(), run.path.end(),
+				static_cast<int>(at)) != run.path.end()) {
+			continue;
+		}
+		if (run.tempers.empty()) {
+			// A hand of real cards and every curse the climb can lay, so
+			// the melt list, the duplicate list and the badges are all
+			// drawn with something under them.
+			for (int heat = 0; heat < 6; ++heat) {
+				for (const std::string& id
+						: temper::offer(run.seed, heat, run.tempers)) {
+					run.tempers.push_back(id);
+				}
+			}
+			for (int c = 0; c < 8; ++c) {
+				const std::string curse = temper::curse_at(run.seed, c);
+				if (!curse.empty()) {
+					run.tempers.push_back(curse);
+				}
+			}
+			run.embers += 500;
+			app.tempers = run.tempers;
+		}
+		app.smoke_forced = true;
+		return static_cast<int>(at);
+	}
+	return -1;
+}
+
 // A stop on the map, entered: the node is spent on the way in - path and
 // depth advance immediately and are saved, so quitting mid-visit can
 // never farm a forge twice - and the overlay stays up until Leave.
-void enter_node (App& app, int node) {
-	if (!node_pickable(app, node) || app.visiting >= 0) {
+void enter_node (App& app, int node, bool forced = false) {
+	if ((!forced && !node_pickable(app, node)) || node < 0
+		|| node >= static_cast<int>(app.run_map.size())
+		|| app.visiting >= 0) {
 		return;
 	}
 	const campaign::MapNode& at = app.run_map[static_cast<size_t>(node)];
@@ -7381,6 +7439,11 @@ void draw_career (App& app) {
 				ImGui::TextUnformatted("Melt down");
 				int melted = -1;
 				int paid = 0;
+				if (app.smoke_poke == 1) {
+					melted = 0;
+					paid = 0;
+					app.smoke_poke = 2;
+				}
 				for (size_t i = 0; i < visited.tempers.size(); ++i) {
 					const temper::Temper* card
 						= temper::find(visited.tempers[i]);
@@ -7447,6 +7510,10 @@ void draw_career (App& app) {
 					const int copy_cost
 						= ember_price(app, temper::kDuplicateCost);
 					std::string struck;
+					if (app.smoke_poke == 2) {
+						struck = forgeable.front();
+						app.smoke_poke = 3;
+					}
 					for (size_t i = 0; i < forgeable.size(); ++i) {
 						const temper::Temper* card
 							= temper::find(forgeable[i]);
@@ -8677,6 +8744,7 @@ int run (bool smoke, long smoke_frames) {
 	int tour_frames = 0;
 	bool game_ended = false;
 	long run_battles = 0;   // Map battles the smoke run settled.
+	long run_stops = 0;     // Rooms that never fight, entered and left.
 	while (!app.quit) {
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
@@ -9268,6 +9336,8 @@ int run (bool smoke, long smoke_frames) {
 			const bool run_smoke
 				= std::getenv("FORCETRIS_SMOKE_RUN") != nullptr
 				|| std::getenv("FORCETRIS_SMOKE_ENDLESS") != nullptr;
+			app.smoke_stops
+				= std::getenv("FORCETRIS_SMOKE_STOPS") != nullptr;
 			if (run_smoke) {
 				// The map run drives itself: every battle verdict walks back
 				// to the map, spoils are auto-picked by the block above, the
@@ -9295,7 +9365,15 @@ int run (bool smoke, long smoke_frames) {
 						// accepts its card, and either way the visit ends.
 						const campaign::MapNode& stop = app.run_map[
 							static_cast<size_t>(app.visiting)];
-						if (stop.kind == 2 && !app.forge_hand_used) {
+						if (stop.kind == 2 && app.smoke_stops
+							&& app.smoke_poke < 2) {
+							// Melt one card, then strike a second copy of
+							// another: the two buttons a played forge is
+							// actually used for, and the two that rewrite
+							// the run's card list while a screen is
+							// drawing from it.
+							++app.smoke_poke;
+						} else if (stop.kind == 2 && !app.forge_hand_used) {
 							app.forge_hand_used = true;
 							deal_reward(app);
 						} else if (stop.kind == 3) {
@@ -9333,7 +9411,27 @@ int run (bool smoke, long smoke_frames) {
 								fight = static_cast<int>(at);
 							}
 						}
-						enter_node(app, stop >= 0 ? stop : fight);
+						// The stops, forced when the smoke asks for them.
+						//
+						// The smoke's player never touches a key, so it
+						// loses every battle, so a climb driven by it never
+						// leaves the entrance row - which means the forge
+						// and the event rooms had never once been drawn by
+						// the matrix. They are two of the four kinds of
+						// node in the mode. This walks the run onto one and
+						// hands it a real build to show, so the rooms are
+						// built with cards and curses under them rather
+						// than in the empty state a fresh run has.
+						int forced = -1;
+						if (app.smoke_stops && stop < 0) {
+							forced = force_stop(app);
+						}
+						if (forced >= 0) {
+							enter_node(app, forced, true);
+							run_stops += app.visiting >= 0 ? 1 : 0;
+						} else {
+							enter_node(app, stop >= 0 ? stop : fight);
+						}
 					}
 				}
 			} else if (app.screen == Screen::Over) {
@@ -9405,11 +9503,14 @@ int run (bool smoke, long smoke_frames) {
 		}
 		if (std::getenv("FORCETRIS_SMOKE_RUN") != nullptr
 			|| std::getenv("FORCETRIS_SMOKE_ENDLESS") != nullptr) {
-			SDL_Log("smoke: the map run settled %ld battles", run_battles);
-			if (run_battles == 0) {
-				// The whole point of the run smoke is the loop: node picked,
-				// battle fought, verdict settled, back to the map. Zero
-				// settlements means it never turned once.
+			SDL_Log("smoke: the map run settled %ld battles, walked "
+				"%ld stops", run_battles, run_stops);
+			// The stops smoke is about the two rooms that never fight, so
+			// entering one is what it has to prove; every other run smoke
+			// is about the loop - node picked, battle fought, verdict
+			// settled, back to the map - and zero settlements there means
+			// it never turned once.
+			if (app.smoke_stops ? run_stops == 0 : run_battles == 0) {
 				return 1;
 			}
 		}
