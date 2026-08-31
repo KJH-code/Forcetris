@@ -3287,19 +3287,94 @@ void draw_cell (SDL_Renderer* renderer, int px, int py, SDL_Color c,
 	int size = kCell);
 
 
-// Rubble: the same cast block as everything else, in dead iron, with two
-// cracks still glowing through it. Sharing draw_cell rather than drawing
-// its own flat rectangles is the point - garbage should read as the same
-// material as the player's stack, only cooled and spoiled, and a slab that
-// missed the chamfer everything else has just looked unfinished.
-void draw_char_cell (SDL_Renderer* renderer, int x, int y, int size = kCell) {
-	draw_cell(renderer, x, y, SDL_Color{78, 66, 60, 255}, size);
-	const int t = std::max(1, size / 8);
+// Rubble is not iron - it is burnt-out coal.
+//
+// It used to be the same cast block as the player's stack in a dead grey,
+// which made a garbage row read as ten tidy tiles somebody had greyed out.
+// What comes up the well is the fire's leavings: a crust that broke when
+// it cooled, matte, ashy where it split, still red down in the seams. So
+// it is drawn as a lump and not as a block - no chamfer, no specular, no
+// seat down the sides - and neighbouring lumps run together, so a row
+// arrives as one crusted slab across the well rather than as a pattern.
+//
+// Every face is hashed off the cell's own place on the board, so the pile
+// is irregular but never crawls: the same cell is the same lump for as
+// long as it stands there.
+void draw_char_cell (SDL_Renderer* renderer, int px, int py, int cx, int cy,
+		long tick, int size = kCell) {
+	const int key = cx * 73 + cy * 149 + 7;
 	SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-	fill(renderer, x + size / 3, y + t + 1, std::max(1, t / 2),
-		size - 2 * t - 2, {196, 82, 34, 150});
-	fill(renderer, x + t + 1, y + size / 2, size / 3, std::max(1, t / 2),
-		{196, 82, 34, 110});
+	// The clinker, and each lump a slightly different black so the wall
+	// does not read as a printed texture.
+	const int base = 26 + static_cast<int>(drift_hash(key, 11) * 15.f);
+	fill(renderer, px, py, size, size,
+		{static_cast<Uint8>(base + 5), static_cast<Uint8>(base),
+		 static_cast<Uint8>(std::max(0, base - 4)), 255});
+	// Two broken faces - one pale where the crust turned to ash, one dark
+	// where it caved - each with its own shape, because a coal that broke
+	// twice the same way is a tile.
+	for (int f = 0; f < 2; ++f) {
+		const float wide = 0.30f + 0.40f * drift_hash(key, 60 + f);
+		const float tall = 0.24f + 0.46f * drift_hash(key, 70 + f);
+		const int fx = px + static_cast<int>(
+			drift_hash(key, 20 + f) * size * (1.f - wide));
+		const int fy = py + static_cast<int>(
+			drift_hash(key, 40 + f) * size * (1.f - tall));
+		fill(renderer, fx, fy, std::max(2, static_cast<int>(size * wide)),
+			std::max(2, static_cast<int>(size * tall)),
+			f == 0 ? SDL_Color{104, 96, 88, 46} : SDL_Color{8, 7, 6, 120});
+	}
+	// The cleave: a stepped dark edge across the lump, which is what a
+	// fracture looks like when the only brush is a rectangle.
+	{
+		const int steps = 4;
+		const int step = std::max(1, size / steps);
+		const bool leaning = drift_hash(key, 90) > 0.5f;
+		const int from = px + static_cast<int>(
+			drift_hash(key, 92) * size * 0.35f);
+		const int down = py + static_cast<int>(
+			drift_hash(key, 94) * size * 0.4f);
+		for (int i = 0; i < steps; ++i) {
+			const int sx = from + (leaning ? i : steps - 1 - i) * step / 2;
+			fill(renderer, std::min(sx, px + size - step),
+				std::min(down + i * step / 2, py + size - 1),
+				step, std::max(1, size / 12), {6, 5, 4, 150});
+		}
+	}
+	// Ash along the top lip, where it would settle.
+	fill(renderer, px, py, size, std::max(1, size / 10),
+		{124, 114, 104, 66});
+	// And one seam in three still burning, breathing on its own clock -
+	// a glint down in a crack, not a candle standing on the coal. Most
+	// lumps are simply out, which is what makes the lit ones read.
+	if (drift_hash(key, 5) > 0.62f) {
+		const float beat = 0.5f + 0.5f * std::sin(
+			static_cast<float>(tick) * 0.04f
+			+ drift_hash(key, 100) * 6.2832f);
+		const int lit = static_cast<int>(70 + 120 * beat);
+		const int t = std::max(1, size / 10);
+		const int run = std::max(2, static_cast<int>(
+			size * (0.16f + 0.20f * drift_hash(key, 160))));
+		const bool across = drift_hash(key, 170) > 0.45f;
+		const int vw = across ? run : t;
+		const int vh = across ? t : run;
+		const int vx = px + 1 + static_cast<int>(
+			drift_hash(key, 120) * std::max(1, size - vw - 2));
+		const int vy = py + 1 + static_cast<int>(
+			drift_hash(key, 140) * std::max(1, size - vh - 2));
+		fill(renderer, vx, vy, vw, vh,
+			{186, 66, 22, static_cast<Uint8>(lit)});
+		// The core of the seam, half the length, hotter.
+		fill(renderer, across ? vx + run / 4 : vx,
+			across ? vy : vy + run / 4,
+			across ? std::max(1, run / 2) : vw,
+			across ? vh : std::max(1, run / 2),
+			{255, 158, 62, static_cast<Uint8>(std::min(255, lit + 55))});
+	}
+	// A cold seat along the foot - enough to keep one row off the next,
+	// and nothing like the bevel a cast block wears.
+	fill(renderer, px, py + size - std::max(1, size / 10), size,
+		std::max(1, size / 10), {8, 7, 6, 185});
 }
 
 void draw_cell (SDL_Renderer* renderer, int px, int py, SDL_Color c, int size) {
@@ -3484,7 +3559,7 @@ void draw_board (App& app) {
 			const int form = board.at(x, y);
 			if (form == GARBAGE) {
 				draw_char_cell(renderer, kBoardX + x * kCell,
-					kBoardY + y * kCell);
+					kBoardY + y * kCell, x, y, app.backdrop_tick);
 			} else if (form >= 0) {
 				draw_cell(renderer, kBoardX + x * kCell, kBoardY + y * kCell,
 					kFormColors[std::min(form, 7)]);
@@ -4047,11 +4122,17 @@ void note_lock (App& app) {
 	// a number that sits there is furniture, a number that arrives is an
 	// event, and the chain IS the event.
 	const Sim& sim = app.session->sim();
-	if (sim.combo() > app.chain_combo && sim.combo() >= 1) {
+	// The sim counts clears, not links: combo() is 1 on the first clear of
+	// a chain, which is no combo at all. The number every other counter on
+	// this screen shows - the HUD stat, the clear note's step - is one
+	// less, so the shout has to be too, and it has nothing to say until
+	// the second clear.
+	const int links = sim.combo() - 1;
+	if (sim.combo() > app.chain_combo && links >= 1) {
 		char link[24];
-		std::snprintf(link, sizeof link, "COMBO %d", sim.combo() + 1);
+		std::snprintf(link, sizeof link, "COMBO %d", links);
 		pop_number(app, link, IM_COL32(255, 176, 60, 255),
-			std::min(1.5f, 0.7f + sim.combo() * 0.09f),
+			std::min(1.5f, 0.7f + links * 0.09f),
 			kBoardX + kBoardW * 0.5f, kBoardY + kBoardH * 0.52f);
 	}
 	if (sim.b2b() > app.chain_b2b && sim.b2b() >= 2) {
@@ -4065,7 +4146,7 @@ void note_lock (App& app) {
 	// and is cleared outright by a break, because the break is the moment
 	// worth feeling - a fade would let the player miss it.
 	const float want = std::min(1.f,
-		std::max(sim.combo(), std::max(0, sim.b2b() - 1)) / 9.f);
+		std::max(links, std::max(0, sim.b2b() - 1)) / 9.f);
 	app.chain_heat = want <= 0.f ? 0.f
 		: std::max(app.chain_heat, want);
 	app.chain_combo = sim.combo();
@@ -4145,9 +4226,9 @@ double cue_rate (const App& app, const std::string& cue) {
 	}
 	const Sim& sim = app.session->sim();
 	if (cue == "clear" || cue == "tetris" || cue == "tspin") {
-		// The sim's counters read one behind the HUD's: combo() is 0 on
-		// the first clear of a chain, which is exactly the step we want.
-		const int link = std::clamp(sim.combo(), 0, 12);
+		// combo() counts clears, so a lone clear reads 1 and is worth no
+		// step at all - the walk starts on the second one.
+		const int link = std::clamp(sim.combo() - 1, 0, 12);
 		// And a back-to-back chain lifts the floor a little on top, so a
 		// long spin chain sits above a long combo of doubles.
 		const int chain = std::clamp(sim.b2b() - 1, 0, 6);
@@ -5542,12 +5623,85 @@ void draw_stat_panels (App& app) {
 	}
 	app.place_panels = false;
 }
+// The band every full screen wears instead of a title bar.
+//
+// Eight screens - settings, analysis, help, replays, scores, profile, the
+// career map and the layout editor - were still opening with ImGui's own
+// title bar and its little grey close cross. That is the single loudest
+// piece of default chrome in the game: whatever the panel under it looked
+// like, the strip across the top said "debug tool". It also meant eight
+// screens each started at a different vertical offset, so nothing lined up
+// with anything.
+//
+// One band instead: the screen's name in the head face, a hairline under
+// it in the ember the rest of the game is lit by, and a Back on the right
+// where a thumb can reach it. Same height everywhere, so every screen's
+// content begins on the same line.
+// Where a screen's Back goes - the same destinations Escape already uses,
+// so a thumb and a key never disagree about what "out of here" means.
+void leave_screen (App& app) {
+	if (app.screen == Screen::Analysis) {
+		app.screen = app.study_back;
+		app.studying.reset();
+	} else if (app.screen == Screen::Help) {
+		app.screen = app.help_back;
+	} else {
+		app.screen = Screen::Menu;
+	}
+}
+
+void screen_head (App& app, const char* title, bool* open = nullptr) {
+	const float bar = ui(46);
+	const ImVec2 at = ImGui::GetCursorScreenPos();
+	const float wide = ImGui::GetContentRegionAvail().x;
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	// A dark plinth under the name, so the band reads as part of the frame
+	// rather than as text that happens to be at the top.
+	dl->AddRectFilled(at, ImVec2(at.x + wide, at.y + bar),
+		IM_COL32(18, 13, 10, 180));
+	dl->AddLine(ImVec2(at.x, at.y + bar), ImVec2(at.x + wide, at.y + bar),
+		IM_COL32(214, 128, 62, 190), ui(2));
+	ImGui::PushFont(app.fonts.head);
+	const float tall = app.fonts.head->FontSize;
+	ImGui::SetCursorScreenPos(ImVec2(at.x + ui(16),
+		at.y + (bar - tall) * 0.5f));
+	ImGui::TextUnformatted(title);
+	ImGui::PopFont();
+	const float back = ui(96);
+	ImGui::SetCursorScreenPos(ImVec2(at.x + wide - back - ui(12),
+		at.y + (bar - ImGui::GetFrameHeight()) * 0.5f));
+	if (ImGui::Button("Back", ImVec2(back, 0))) {
+		if (open != nullptr) {
+			*open = false;
+		} else {
+			leave_screen(app);
+		}
+	}
+	ImGui::SetCursorScreenPos(ImVec2(at.x, at.y + bar + ui(10)));
+}
+
+// A readable column inside a full-bleed screen.
+//
+// Taking the display is right for the map, whose tree wants every pixel of
+// it, and wrong for a form. A column of sliders or a list of key bindings
+// stretched across nineteen hundred pixels is a label pinned to the far
+// left and its value pinned to the far right with a hand's width of
+// nothing between them, which is harder to read than the small panel it
+// replaced, not easier.
+//
+// So the window is full-bleed - the chrome, the header and the ground fill
+// the screen the way the map does - and the content sits in a column of
+// its own down the middle. Wide content skips this and uses the whole
+// width, because a score table and a replay shelf have somewhere to put
+// it. `reserve` is the room left under the column for a footer that must
+// not scroll away with the rest.
 
 void draw_layout_editor (App& app) {
 	ImGui::SetNextWindowPos(ImVec2(ui(20), ui(48)), ImGuiCond_Appearing);
-	ImGui::Begin("Stat layout", &app.editing,
-		ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse
+	ImGui::Begin("Stat layout", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
+	screen_head(app, "Stat layout", &app.editing);
 	ImGui::TextWrapped("Drag any panel where you want it. Tick a stat to add it.");
 	ImGui::Separator();
 	if (ImGui::BeginTable("editorstats", 2)) {
@@ -5622,21 +5776,6 @@ void full_screen (float top = 0.f) {
 	ImGui::SetNextWindowSize(ImVec2(all.x, all.y - top), ImGuiCond_Always);
 }
 
-// A readable column inside a full-bleed screen.
-//
-// Taking the display is right for the map, whose tree wants every pixel of
-// it, and wrong for a form. A column of sliders or a list of key bindings
-// stretched across nineteen hundred pixels is a label pinned to the far
-// left and its value pinned to the far right with a hand's width of
-// nothing between them, which is harder to read than the small panel it
-// replaced, not easier.
-//
-// So the window is full-bleed - the chrome, the header and the ground fill
-// the screen the way the map does - and the content sits in a column of
-// its own down the middle. Wide content skips this and uses the whole
-// width, because a score table and a replay shelf have somewhere to put
-// it. `reserve` is the room left under the column for a footer that must
-// not scroll away with the rest.
 float open_column (float ideal, float reserve = 0.f) {
 	const float have = ImGui::GetContentRegionAvail().x;
 	const float want = std::min(ideal, have);
@@ -5646,6 +5785,175 @@ float open_column (float ideal, float reserve = 0.f) {
 		ImGui::GetContentRegionAvail().y - reserve);
 	ImGui::BeginChild("column", ImVec2(want, tall), false);
 	return pad;
+}
+
+// --- The screen vocabulary --------------------------------------------
+//
+// Every screen behind the game was built out of raw ImGui widgets, and it
+// showed: a slider wearing its label out on the right, a tab bar drawn as
+// underlined text, a wall of grey paragraphs at one weight. Each of those
+// is ImGui's default rather than a decision, and a screen made entirely of
+// defaults reads as a tool someone left open next to a game.
+//
+// So the screens get a small vocabulary of their own - a section rule, a
+// two-column field, a tab strip and a slab for a number that matters - and
+// use it instead. Four shapes, used everywhere, is what makes a set of
+// screens look like one game.
+
+// A section's name over a hairline. Small, warm, and never the same weight
+// as the rows under it: what a heading is for is to be skipped past.
+void section (App& app, const char* name) {
+	ImGui::Dummy(ImVec2(0.f, ui(9)));
+	const ImVec2 at = ImGui::GetCursorScreenPos();
+	const float wide = ImGui::GetContentRegionAvail().x;
+	ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(206, 158, 100, 235));
+	ImGui::TextUnformatted(name);
+	ImGui::PopStyleColor();
+	// The rule runs from the end of the name to the far edge, on the
+	// name's own line - a rule under the name would sit between the name
+	// and the rows it belongs to, which reads as a divider, not a header.
+	const float span = ImGui::CalcTextSize(name).x;
+	const float mid = at.y + ImGui::GetTextLineHeight() * 0.5f;
+	ImGui::GetWindowDrawList()->AddLine(
+		ImVec2(at.x + span + ui(12), mid), ImVec2(at.x + wide, mid),
+		IM_COL32(214, 128, 62, 70), 1.f);
+	ImGui::Dummy(ImVec2(0.f, ui(7)));
+	(void) app;
+}
+
+// How wide the left-hand gutter is on this column: a label column that
+// holds the longest name in the screen without eating the control.
+float field_gutter () {
+	return std::min(ui(200), ImGui::GetContentRegionAvail().x * 0.42f);
+}
+
+// The line of small print that hangs under a field, lined up with the
+// control rather than with the label, so a column of them reads as one.
+void field_note (const char* note) {
+	if (note == nullptr || *note == '\0') {
+		return;
+	}
+	ImGui::Dummy(ImVec2(field_gutter() - ImGui::GetStyle().ItemSpacing.x,
+		ui(1)));
+	ImGui::SameLine();
+	ImGui::TextDisabled("%s", note);
+}
+
+// A numeric field: name in the gutter, bar filling the rest, and the value
+// drawn at the bar's right end rather than in the middle where ImGui puts
+// it - the grab passes under the middle, and a number with a slider handle
+// sitting on top of it is unreadable exactly while it is being changed.
+bool field_slider (const char* id, const char* label, int* value,
+		int low, int high) {
+	ImGui::PushID(id);
+	const float have = ImGui::GetContentRegionAvail().x;
+	const float gutter = field_gutter();
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted(label);
+	ImGui::SameLine(gutter);
+	ImGui::SetNextItemWidth(std::max(ui(120), have - gutter));
+	// AlwaysClamp: ctrl-click turns a slider into a raw input box, and an
+	// unclamped sdf of 0 would divide the gravity by zero.
+	const bool moved = ImGui::SliderInt("##bar", value, low, high, "",
+		ImGuiSliderFlags_AlwaysClamp);
+	const ImVec2 lo = ImGui::GetItemRectMin();
+	const ImVec2 hi = ImGui::GetItemRectMax();
+	char shown[24];
+	std::snprintf(shown, sizeof shown, "%d", *value);
+	const ImVec2 size = ImGui::CalcTextSize(shown);
+	ImGui::GetWindowDrawList()->AddText(
+		ImVec2(hi.x - size.x - ui(10), (lo.y + hi.y - size.y) * 0.5f),
+		IM_COL32(244, 230, 208, 255), shown);
+	ImGui::PopID();
+	return moved;
+}
+
+// The same two columns for anything that is not a slider - a dropdown, a
+// switch - so a form reads down one edge whatever the controls are.
+void open_field (const char* label) {
+	const float have = ImGui::GetContentRegionAvail().x;
+	const float gutter = field_gutter();
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted(label);
+	ImGui::SameLine(gutter);
+	ImGui::SetNextItemWidth(std::max(ui(120), have - gutter));
+}
+
+// The tab strip: chips off the same plate as everything else. ImGui's own
+// tab bar is text with a line under the live one, which is the single most
+// recognisable piece of default chrome after the title bar.
+bool tab_strip (App& app, const char* id, const char* const* names,
+		int count, int* at) {
+	bool moved = false;
+	ImGui::PushID(id);
+	ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, ui(4));
+	const float have = ImGui::GetContentRegionAvail().x;
+	const float tall = ui(30);
+	float used = 0.f;
+	for (int i = 0; i < count; ++i) {
+		const float wide = ImGui::CalcTextSize(names[i]).x + ui(26);
+		if (i > 0) {
+			if (used + wide > have) {
+				used = 0.f;   // Wraps rather than running off a phone.
+			} else {
+				ImGui::SameLine(0.f, ui(6));
+			}
+		}
+		used += wide + ui(6);
+		const bool live = *at == i;
+		ImGui::PushStyleColor(ImGuiCol_Button, live
+			? IM_COL32(122, 60, 24, 240) : IM_COL32(40, 30, 23, 190));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, live
+			? IM_COL32(146, 74, 30, 250) : IM_COL32(58, 43, 32, 220));
+		ImGui::PushStyleColor(ImGuiCol_Text, live
+			? IM_COL32(255, 228, 180, 255) : IM_COL32(184, 162, 138, 255));
+		ImGui::PushID(i);
+		if (ImGui::Button(names[i], ImVec2(wide, tall)) && *at != i) {
+			*at = i;
+			moved = true;
+		}
+		ImGui::PopID();
+		ImGui::PopStyleColor(3);
+		if (live) {
+			// The live chip is underlined in the ember the head band is
+			// ruled with, so the strip belongs to the band above it.
+			const ImVec2 lo = ImGui::GetItemRectMin();
+			const ImVec2 hi = ImGui::GetItemRectMax();
+			ImGui::GetWindowDrawList()->AddLine(
+				ImVec2(lo.x + ui(4), hi.y - ui(2)),
+				ImVec2(hi.x - ui(4), hi.y - ui(2)),
+				IM_COL32(255, 176, 60, 235), ui(2));
+		}
+	}
+	ImGui::PopStyleVar();
+	ImGui::PopID();
+	ImGui::Dummy(ImVec2(0.f, ui(6)));
+	(void) app;
+	return moved;
+}
+
+// A number worth reading from across the room: the figure in the title
+// face on its own plate, its name under it in small print. Used for the
+// handful of numbers a screen is actually about - everything else stays a
+// line of text, because a screen where everything shouts says nothing.
+void big_stat (App& app, const char* value, const char* name, float wide) {
+	const ImVec2 at = ImGui::GetCursorScreenPos();
+	const float tall = ui(74);
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	forge_plate(dl, at, ImVec2(at.x + wide, at.y + tall), ui(8),
+		IM_COL32(30, 22, 16, 225), IM_COL32(120, 78, 40, 170), ui(1.5f));
+	ImFont* face = app.fonts.head != nullptr ? app.fonts.head : app.fonts.body;
+	if (face != nullptr) {
+		const float size = face->FontSize * 1.35f;
+		const ImVec2 span = face->CalcTextSizeA(size, FLT_MAX, 0.f, value);
+		dl->AddText(face, size,
+			ImVec2(at.x + (wide - span.x) * 0.5f, at.y + ui(10)),
+			IM_COL32(255, 226, 176, 255), value);
+	}
+	const ImVec2 tag = ImGui::CalcTextSize(name);
+	dl->AddText(ImVec2(at.x + (wide - tag.x) * 0.5f, at.y + tall - ui(22)),
+		IM_COL32(178, 154, 128, 235), name);
+	ImGui::Dummy(ImVec2(wide, tall));
 }
 
 // Closes it and puts the cursor back under the column's own left edge, so
@@ -5658,14 +5966,19 @@ void close_column (float pad) {
 
 void draw_settings (App& app) {
 	full_screen();
-	ImGui::Begin("Settings", &app.show_settings,
-		ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+	ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
 		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
-	const float pad = open_column(ui(660), ui(52));
-	if (ImGui::BeginTabBar("settings", ImGuiTabBarFlags_None)) {
-		if (ImGui::BeginTabItem("Handling")) {
-			ImGui::Spacing();
+	screen_head(app, "Settings", &app.show_settings);
+	const float pad = open_column(ui(700), ui(56));
+	static const char* const kTabs[]
+		= {"Handling", "Feel", "Sound", "Keys", "Layout"};
+	static int tab = 0;
+	tab_strip(app, "settings", kTabs, 5, &tab);
+	{
+		if (tab == 0) {
+			section(app, "PRESETS");
 			// The three sets, first, because the numbers below only mean
 			// something to someone who already knows what they want.
 			for (const Handling set : {Handling::Standard, Handling::Instant,
@@ -5680,29 +5993,24 @@ void draw_settings (App& app) {
 					ImGui::SetTooltip("%s", handling_note(set));
 				}
 			}
-			ImGui::Spacing();
-			// The sliders give up a third of their width to their labels:
-			// these are the longest in the settings screen, and a label that
-			// runs off the panel is worse than a shorter bar.
-			ImGui::PushItemWidth(ui(230));
-			// AlwaysClamp: ctrl-click turns a slider into a raw input box,
-			// and an unclamped sdf of 0 would divide the gravity by zero.
-			ImGui::SliderInt("DAS (ms)", &app.config.das, 0, 330,
-				"%d", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderInt("ARR (ms, 0 = instant)", &app.config.arr, 0, 83,
-				"%d", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderInt("DCD (ms)", &app.config.dcd, 0, 330,
-				"%d", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderInt("SDF (x, 40 = instant)", &app.config.sdf, 5, 40,
-				"%d", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::SliderInt("ARE (ms)", &app.config.are, 0, 500,
-				"%d", ImGuiSliderFlags_AlwaysClamp);
-			ImGui::Checkbox("Clear delay", &app.config.clear_delay);
-			ImGui::SameLine();
-			ImGui::TextDisabled("%s", app.config.clear_delay
+			section(app, "SHIFT");
+			field_slider("das", "DAS", &app.config.das, 0, 330);
+			field_note("ms before a held key auto-shifts");
+			field_slider("arr", "ARR", &app.config.arr, 0, 83);
+			field_note("ms between auto-shifts - 0 is instant");
+			field_slider("dcd", "DCD", &app.config.dcd, 0, 330);
+			field_note("ms the shift rests when a direction is dropped");
+			section(app, "DROP AND LOCK");
+			field_slider("sdf", "SDF", &app.config.sdf, 5, 40);
+			field_note("soft drop multiplier - 40 is instant");
+			field_slider("are", "ARE", &app.config.are, 0, 500);
+			field_note("ms between a lock and the next piece");
+			open_field("Clear delay");
+			ImGui::Checkbox("##cleardelay", &app.config.clear_delay);
+			field_note(app.config.clear_delay
 				? "clears animate; the board is frozen while they do"
 				: "clears resolve on the lock frame");
-			ImGui::Spacing();
+			section(app, "WHAT THAT COSTS");
 			// What those numbers cost, in the units they are felt in. The
 			// engine's frame is 20ms, so every one of these is a whole
 			// number of frames whatever the sliders say.
@@ -5720,62 +6028,66 @@ void draw_settings (App& app) {
 					"To the wall ~%dms - to the floor ~%dms - quad freeze %dms",
 					cross * 20, soft * 20, quad * 20);
 			}
-			ImGui::PopItemWidth();
-			ImGui::Spacing();
 			ImGui::TextDisabled("Handling applies from the next game.");
 			ImGui::TextDisabled(
 				"The engine runs 20ms frames; values land on that grid.");
-			ImGui::EndTabItem();
 		}
 		// Feel, not rules: the game's rules are its own now (spins, clears,
 		// kicks, the fuse are fixed or the Forge's gimmicks), and what is
 		// left to set is how the game trains and how it is presented.
-		if (ImGui::BeginTabItem("Feel")) {
-			ImGui::Spacing();
+		if (tab == 1) {
+			section(app, "PRACTICE");
 			const char* finesse_rules[] = {
 				"Off", "Count faults", "Retry on fault"};
-			ImGui::Combo("Finesse", &app.config.finesse_rule, finesse_rules, 3);
-			ImGui::Checkbox("Screen shake", &app.config.shake);
-			if (!kMobile && ImGui::Checkbox("Low-latency rendering",
-				&app.config.lowlatency)) {
-				SDL_RenderSetVSync(app.renderer,
-					app.config.lowlatency ? 0 : 1);
+			open_field("Finesse");
+			ImGui::Combo("##finesse", &app.config.finesse_rule,
+				finesse_rules, 3);
+			field_note("what the game does about a wasted keypress");
+			section(app, "PRESENTATION");
+			open_field("Screen shake");
+			ImGui::Checkbox("##shake", &app.config.shake);
+			open_field("Smooth motion");
+			ImGui::Checkbox("##smooth", &app.config.smooth);
+			field_note("draw the piece between engine steps");
+			if (!kMobile) {
+				open_field("Low latency");
+				if (ImGui::Checkbox("##lowlatency", &app.config.lowlatency)) {
+					SDL_RenderSetVSync(app.renderer,
+						app.config.lowlatency ? 0 : 1);
+				}
+				field_note("vsync off; a frame or two less input lag");
 			}
-			ImGui::SameLine();
-			ImGui::TextDisabled("%s", kMobile ? ""
-				: "vsync off; a frame or two less input lag");
-			ImGui::Checkbox("Smooth motion", &app.config.smooth);
-			ImGui::SameLine();
-			ImGui::TextDisabled("draw the piece between engine steps");
-			ImGui::EndTabItem();
 		}
-		if (ImGui::BeginTabItem("Sound")) {
-			ImGui::Spacing();
-			int sfx = static_cast<int>(std::lround(app.config.sfx_volume * 100.f));
-			if (ImGui::SliderInt("Effects (%)", &sfx, 0, 100)) {
+		if (tab == 2) {
+			section(app, "LEVELS");
+			int sfx = static_cast<int>(
+				std::lround(app.config.sfx_volume * 100.f));
+			if (field_slider("sfx", "Effects", &sfx, 0, 100)) {
 				app.config.sfx_volume = sfx / 100.f;
 				app.audio.set_sfx_volume(app.config.sfx_volume);
 			}
-			int music = static_cast<int>(std::lround(app.config.music_volume * 100.f));
-			if (ImGui::SliderInt("Music (%)", &music, 0, 100)) {
+			int music = static_cast<int>(
+				std::lround(app.config.music_volume * 100.f));
+			if (field_slider("music", "Music", &music, 0, 100)) {
 				app.config.music_volume = music / 100.f;
 				app.audio.set_music_volume(app.config.music_volume);
 			}
+			section(app, "THE ROOM");
 			const char* const tracks[] = {"Forge", "Classic", "Off"};
-			if (ImGui::Combo("Track", &app.config.music_mode, tracks, 3)) {
+			open_field("Track");
+			if (ImGui::Combo("##track", &app.config.music_mode, tracks, 3)) {
 				app.audio.set_music_mode(
 					static_cast<Audio::Music>(app.config.music_mode));
 			}
-			ImGui::TextDisabled("%s", "Forge is generated as you play");
-			ImGui::Spacing();
-			if (ImGui::Checkbox("Furnace ambience", &app.config.ambience)) {
+			field_note("Forge is generated as you play");
+			open_field("Furnace ambience");
+			if (ImGui::Checkbox("##ambience", &app.config.ambience)) {
 				app.audio.set_ambience(app.config.ambience);
 			}
-			ImGui::TextDisabled("%s", "the room's roar, under Music");
-			ImGui::EndTabItem();
+			field_note("the room's roar, under Music");
 		}
-		if (ImGui::BeginTabItem("Keys")) {
-			ImGui::Spacing();
+		if (tab == 3) {
+			section(app, "BINDINGS");
 			for (const ActionDef& action : all_actions()) {
 				ImGui::PushID(action.id);
 				ImGui::AlignTextToFramePadding();
@@ -5818,10 +6130,9 @@ void draw_settings (App& app) {
 			}
 			ImGui::TextDisabled(
 			"Escape pauses and R restarts; neither can be bound.");
-			ImGui::EndTabItem();
 		}
-		if (ImGui::BeginTabItem("Layout")) {
-			ImGui::Spacing();
+		if (tab == 4) {
+			section(app, "PANELS");
 			ImGui::TextDisabled("The panels beside the board while you play.");
 			ImGui::Spacing();
 			if (ImGui::BeginTable("statgrid", 2)) {
@@ -5834,11 +6145,13 @@ void draw_settings (App& app) {
 				}
 				ImGui::EndTable();
 			}
-			ImGui::Spacing();
-			ImGui::AlignTextToFramePadding();
-			ImGui::TextUnformatted("Presets");
+			section(app, "PRESETS");
+			bool first = true;
 			for (const std::string& name : preset_names()) {
-				ImGui::SameLine();
+				if (!first) {
+					ImGui::SameLine();
+				}
+				first = false;
 				if (ImGui::Button(name.c_str())) {
 					apply_preset(app.config, name);
 					app.place_panels = true;
@@ -5852,12 +6165,14 @@ void draw_settings (App& app) {
 			}
 			ImGui::SameLine();
 			ImGui::TextDisabled("drag the panels where you want them");
-			ImGui::EndTabItem();
 		}
-		ImGui::EndTabBar();
 	}
 	close_column(pad);
-	if (ImGui::Button("Save", ImVec2(ui(140), 0))) {
+	// The one commitment on the screen, given the column's whole width so
+	// it reads as the end of the form rather than as one more button.
+	if (ImGui::Button("Save", ImVec2(ui(700) - pad * 0.f > 0.f
+			? std::min(ui(700), ImGui::GetContentRegionAvail().x) : ui(140),
+			ui(38)))) {
 		save_config(app.config, app.config_file);
 		app.show_settings = false;
 	}
@@ -6106,10 +6421,12 @@ void draw_analysis (App& app) {
 	full_screen();
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ui(10), ui(6)));
 	ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ui(8), ui(3)));
-	ImGui::Begin("Analysis", nullptr, ImGuiWindowFlags_NoResize
+	ImGui::Begin("Analysis", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	screen_head(app, "Analysis");
 	const float pad = open_column(ui(720), ui(88));
 	if (app.studying.has_value()) {
 		ImGui::TextDisabled("%s", app.studying->title().c_str());
@@ -6148,10 +6465,6 @@ void draw_analysis (App& app) {
 		ImGui::TextDisabled("That run was too short to record.");
 	}
 	close_column(pad);
-	if (ImGui::Button("Back", ImVec2(ui(240), 0))) {
-		app.screen = app.study_back;
-		app.studying.reset();
-	}
 	ImGui::End();
 	ImGui::PopStyleVar(2);
 }
@@ -6161,10 +6474,12 @@ void draw_analysis (App& app) {
 // bindings the same way.
 void draw_help (App& app) {
 	full_screen();
-	ImGui::Begin("How to Play", nullptr, ImGuiWindowFlags_NoResize
+	ImGui::Begin("How to Play", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	screen_head(app, "How to Play");
 	const float pad = open_column(ui(760), ui(52));
 	if (ImGui::BeginTable("keys", 2)) {
 		for (const ActionDef& action : all_actions()) {
@@ -6237,9 +6552,6 @@ void draw_help (App& app) {
 		"own floor - until it gutters out.");
 	ImGui::PopTextWrapPos();
 	close_column(pad);
-	if (ImGui::Button("Back", ImVec2(ui(240), 0))) {
-		app.screen = app.help_back;
-	}
 	ImGui::End();
 }
 
@@ -6440,10 +6752,12 @@ void draw_viewer (App& app) {
 
 void draw_replays (App& app) {
 	full_screen();
-	ImGui::Begin("Replays", nullptr, ImGuiWindowFlags_NoResize
+	ImGui::Begin("Replays", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	screen_head(app, "Replays");
 	const float pad = open_column(ui(820), ui(52));
 	if (app.shelf.empty()) {
 		ImGui::TextDisabled("No replays yet. Finish a game first.");
@@ -6473,18 +6787,17 @@ void draw_replays (App& app) {
 		ImGui::PopID();
 	}
 	close_column(pad);
-	if (ImGui::Button("Back", ImVec2(ui(140), 0))) {
-		app.screen = Screen::Menu;
-	}
 	ImGui::End();
 }
 
 void draw_scores (App& app) {
 	full_screen();
-	ImGui::Begin("High scores", nullptr, ImGuiWindowFlags_NoResize
+	ImGui::Begin("High scores", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	screen_head(app, "High scores");
 	// The variant's tables first, the trainer's three behind them -
 	// different files, different games, one screen. The variant's count is
 	// the header's, so adding a mode adds a page here without a second
@@ -6493,43 +6806,47 @@ void draw_scores (App& app) {
 		"Bunker", "Duel", "Tempering", "Arcade", "Timed", "Free"};
 	constexpr int kPageCount
 		= static_cast<int>(sizeof kPages / sizeof kPages[0]);
-	for (int page = 0; page < kPageCount; ++page) {
-		if (page > 0 && page != hiscore::kFuseTables) {
-			ImGui::SameLine();
-		}
-		if (ImGui::RadioButton(kPages[page], app.score_page == page)) {
-			app.score_page = page;
-		}
-	}
-	ImGui::Separator();
+	tab_strip(app, "scorepages", kPages, kPageCount, &app.score_page);
 	const hiscore::Tables plain = hiscore::load(hiscore::folder(app.root));
 	const hiscore::FuseTables fuse
 		= hiscore::load_fuse(hiscore::folder(app.root));
 	const hiscore::Table& table = app.score_page < hiscore::kFuseTables
 		? fuse[app.score_page]
 		: plain[app.score_page - hiscore::kFuseTables];
-	if (ImGui::BeginTable("scores", 4)) {
+	// The table is numbered and the top three are lit: a leaderboard where
+	// every row is the same weight is a spreadsheet, and the whole point of
+	// the screen is the first line of it.
+	if (ImGui::BeginTable("scores", 5)) {
+		ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, ui(44));
 		ImGui::TableSetupColumn("Name");
 		ImGui::TableSetupColumn("Score");
 		ImGui::TableSetupColumn("Lines");
 		ImGui::TableSetupColumn("Time taken");
 		ImGui::TableHeadersRow();
+		int place = 0;
 		for (const hiscore::Entry& entry : table) {
+			++place;
 			ImGui::TableNextRow();
+			// Gold, then a cooler silver and bronze, then the rest in the
+			// body colour - the same ladder the blows themselves fly in.
+			const ImVec4 ink = place == 1 ? ImVec4(1.f, 0.84f, 0.37f, 1.f)
+				: place == 2 ? ImVec4(0.85f, 0.85f, 0.86f, 1.f)
+				: place == 3 ? ImVec4(0.83f, 0.60f, 0.38f, 1.f)
+				: ImVec4(0.80f, 0.76f, 0.71f, 1.f);
+			ImGui::PushStyleColor(ImGuiCol_Text, ink);
 			ImGui::TableSetColumnIndex(0);
-			ImGui::TextUnformatted(hiscore::shown_name(entry).c_str());
+			ImGui::Text("%d", place);
 			ImGui::TableSetColumnIndex(1);
-			ImGui::Text("%llu", static_cast<unsigned long long>(entry.score));
+			ImGui::TextUnformatted(hiscore::shown_name(entry).c_str());
 			ImGui::TableSetColumnIndex(2);
-			ImGui::Text("%u", entry.lines);
+			ImGui::Text("%llu", static_cast<unsigned long long>(entry.score));
 			ImGui::TableSetColumnIndex(3);
+			ImGui::Text("%u", entry.lines);
+			ImGui::TableSetColumnIndex(4);
 			ImGui::TextUnformatted(hiscore::shown_timer(entry.timer).c_str());
+			ImGui::PopStyleColor();
 		}
 		ImGui::EndTable();
-	}
-	ImGui::Separator();
-	if (ImGui::Button("Back", ImVec2(ui(140), 0))) {
-		app.screen = Screen::Menu;
 	}
 	ImGui::End();
 }
@@ -6615,10 +6932,12 @@ void draw_chart (const char* label, const std::vector<double>& values,
 
 void draw_profile (App& app) {
 	full_screen();
-	ImGui::Begin("Profile", nullptr, ImGuiWindowFlags_NoResize
+	ImGui::Begin("Profile", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
+	screen_head(app, "Profile");
 	const float pad = open_column(ui(820), ui(52));
 
 	// The mode filter every tab reads.
@@ -6785,9 +7104,6 @@ void draw_profile (App& app) {
 		ImGui::EndTabBar();
 	}
 	close_column(pad);
-	if (ImGui::Button("Back", ImVec2(ui(140), 0))) {
-		app.screen = Screen::Menu;
-	}
 	ImGui::End();
 }
 
@@ -7344,13 +7660,12 @@ void draw_career (App& app) {
 	// right and scrolling inside a box while two thirds of the screen sat
 	// empty behind it.
 	full_screen();
-	ImGui::Begin("Career", nullptr, ImGuiWindowFlags_NoResize
+	ImGui::Begin("Career", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize
 		| ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
-	ImGui::PushFont(app.fonts.head);
-	ImGui::TextUnformatted("The Forge Map");
-	ImGui::PopFont();
+	screen_head(app, "The Forge Map");
 	{
 		char coin[32];
 		std::snprintf(coin, sizeof coin, "SLAG %d", app.campaign.slag);
@@ -10119,7 +10434,12 @@ int run (bool smoke, long smoke_frames) {
 			// One picture per screen, taken a few frames in so the layout
 			// has settled.
 			const std::string key = screen_shot_key(app);
-			if (++shot_frames[key] == 4) {
+			// Past the wipe, not through it: the curtain that carries a
+			// screen change is a bright seam sweeping up the frame, and a
+			// picture taken four frames in caught it across every screen
+			// in the gallery - which is a photograph of the transition,
+			// not of the screen.
+			if (++shot_frames[key] == kCurtain + 6) {
 				capture_frame(app.renderer,
 					(std::filesystem::path(shots_dir) / (key + ".bmp")).string());
 			}
@@ -10263,7 +10583,11 @@ int run (bool smoke, long smoke_frames) {
 				&& app.screen != Screen::Viewer
 				&& (app.screen != Screen::Game || app.paused || app.editing
 					|| !app.offers.empty())) {
-				if (++tour_frames >= 6) {
+				// A gallery run holds each screen long enough for the
+				// transition wipe to finish; a plain smoke run does not
+				// need to wait for it.
+				if (++tour_frames >= (shots_dir != nullptr
+						? kCurtain + 10 : 6)) {
 					tour_frames = 0;
 					app.screen = Screen::Over;
 					app.studying.reset();

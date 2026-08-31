@@ -1429,6 +1429,47 @@ is not a substitute for the cross tests, which is where the text on them
 is actually graded. The `gui_smoke` ctest does exactly this. With
 `FORCETRIS_SHOTS=<dir>` the run also leaves one BMP per screen it visited -
 the way a design change is looked at, screen by screen, without a display.
+Each of those screens is held for the length of the transition wipe before
+the shutter fires, because a picture taken four frames after a screen
+change is a picture of the wipe - a bright seam sweeping up the frame -
+and not of the screen.
+
+### The screens' own vocabulary
+
+Every screen behind the game used to be raw ImGui: a title bar with a grey
+close cross, sliders wearing their labels out on the right, a tab bar drawn
+as underlined text. Each of those is a default rather than a decision, and
+a screen made entirely of defaults reads as a tool someone left open next
+to a game.
+
+So the screens share four shapes and use them everywhere. `screen_head`
+draws one band on every full screen - the name in the head face on the
+left, a hairline in the ember the rest of the game is lit by, and a Back
+on the right that goes exactly where Escape goes. It is the same height
+everywhere, so every screen's content begins on the same line, and the
+Back buttons that used to sit at the foot of five of them are gone.
+`section` names a group and rules off to the right of the name.
+`field_slider` and `open_field` put the label in a left gutter and let the
+control fill the rest, with the small print lined up under the control -
+and the slider's value is drawn at the bar's right end rather than in the
+middle, where ImGui puts it and where the grab passes under it, so a
+number is readable exactly while it is being changed. `tab_strip` replaces
+ImGui's tab bar with chips off the same plate as everything else, and
+takes the high score screen's row of radio buttons with it.
+
+### Garbage is burnt coal
+
+Rubble used to be the same cast block as the player's stack in a dead
+grey - chamfer, specular and seat included - so a garbage row read as ten
+tidy tiles somebody had greyed out. What comes up the well is the fire's
+leavings, so it is drawn as a lump instead: no chamfer, no specular, and
+no seat down the sides, which lets neighbouring lumps run together and a
+row arrive as one crusted slab across the well. Two broken faces (pale
+where the crust turned to ash, dark where it caved), a stepped fracture
+drawn out of rectangles, ash along the top lip, and about one lump in
+three with a seam still burning, each breathing on its own clock. Every
+face is hashed off the cell's own place on the board, so the pile is
+irregular but never crawls.
 
 ## Building and grading it
 
