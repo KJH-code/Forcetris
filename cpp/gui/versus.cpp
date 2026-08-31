@@ -15,13 +15,39 @@ constexpr int kSealMask = 1 << (kWidth - 1);
 
 } // namespace
 
+// What the plate says when a skill is coming.
+//
+// It used to be a phrase typed beside every entry in the roster below -
+// "RUST ON THE WIND", "THE TONGS ARE TAKEN", "THE LAMPS GO OUT" - four
+// words of weather that told the player nothing about the two seconds they
+// had to prepare for. Thirty of them, and because they were typed by hand
+// they drifted: `sealgate` was announced as "THE LAMP GOES OUT" on one
+// stage, which is a different skill's effect entirely. A telegraph that
+// lies is worse than no telegraph.
+//
+// One short label per skill, taken from the skill, so it cannot drift and
+// can be read at a glance in the middle of a fight. Say what happens.
+const char* skill_label (const std::string& id) {
+	if (id == "rustfall") { return "GARBAGE"; }
+	if (id == "coldsnap") { return "ICE"; }
+	if (id == "sealgate") { return "COLUMN SEALED"; }
+	if (id == "heatwave") { return "FLOW DRAINED"; }
+	if (id == "vaultdark") { return "LIGHTS OUT"; }
+	if (id == "smokescreen") { return "NEXT HIDDEN"; }
+	if (id == "deadweight") { return "GRAVITY UP"; }
+	if (id == "tongslock") { return "HOLD LOCKED"; }
+	if (id == "pincer") { return "WALLS IN"; }
+	if (id == "forgestrike") { return "HEAVY BLOW"; }
+	return "INCOMING";
+}
+
 void VersusMatch::arm_skills (const std::string& stage_id) {
 	skills.clear();
-	const auto add = [this] (const char* id, const char* warning,
+	const auto add = [this] (const char* id,
 			long period_s, long duration_s, long telegraph_s = 2) {
 		Skill skill;
 		skill.id = id;
-		skill.warning = warning;
+		skill.warning = skill_label(id);
 		skill.period = period_s * 50;
 		skill.duration = duration_s * 50;
 		skill.telegraph = telegraph_s * 50;
@@ -35,74 +61,74 @@ void VersusMatch::arm_skills (const std::string& stage_id) {
 	// Never darkness and smoke together on one kit - that is not hard, it
 	// is unreadable.
 	if (stage_id == "c1m1") {
-		add("rustfall", "RUST ON THE WIND", 16, 0);
-		add("tongslock", "THE TONGS ARE TAKEN", 21, 5);
+		add("rustfall", 16, 0);
+		add("tongslock", 21, 5);
 	} else if (stage_id == "c1s8") {
-		add("rustfall", "RUST ON THE WIND", 14, 0);
-		add("sealgate", "THE GATE SWINGS SHUT", 27, 8);
-		add("vaultdark", "THE LAMPS GO OUT", 30, 7);
+		add("rustfall", 14, 0);
+		add("sealgate", 27, 8);
+		add("vaultdark", 30, 7);
 	} else if (stage_id == "c2m1") {
-		add("coldsnap", "COLD SNAP", 21, 10);
-		add("smokescreen", "SMOKE IN THE RAFTERS", 26, 8);
+		add("coldsnap", 21, 10);
+		add("smokescreen", 26, 8);
 	} else if (stage_id == "c2s8") {
-		add("coldsnap", "COLD SNAP", 19, 9);
-		add("heatwave", "HEAT WAVE", 24, 6);
-		add("pincer", "THE WALLS CLOSE IN", 31, 7);
+		add("coldsnap", 19, 9);
+		add("heatwave", 24, 6);
+		add("pincer", 31, 7);
 	} else if (stage_id == "c3m1") {
-		add("sealgate", "THE VAULT SEALS", 20, 8);
-		add("deadweight", "THE HAMMER FALLS", 28, 6);
+		add("sealgate", 20, 8);
+		add("deadweight", 28, 6);
 	} else if (stage_id == "c3s9") {
 		// The road's own Warden closes with four - the one fight allowed
 		// to break the three-per-boss rule, because it is the whole
 		// curriculum turned hostile.
-		add("coldsnap", "COLD SNAP", 17, 8);
-		add("heatwave", "HEAT WAVE", 24, 6);
-		add("rustfall", "RUST ON THE WIND", 13, 0);
-		add("forgestrike", "THE ANVIL RISES", 34, 0, 5);
+		add("coldsnap", 17, 8);
+		add("heatwave", 24, 6);
+		add("rustfall", 13, 0);
+		add("forgestrike", 34, 0, 5);
 	// --- The Hammers: two heavy blows, no tricks. ------------------------
 	} else if (stage_id == "c1m2") {
-		add("deadweight", "THE HAMMER FALLS", 26, 6);
+		add("deadweight", 26, 6);
 	} else if (stage_id == "c1b2") {
-		add("deadweight", "THE HAMMER FALLS", 24, 6);
-		add("forgestrike", "THE ANVIL RISES", 36, 0, 5);
+		add("deadweight", 24, 6);
+		add("forgestrike", 36, 0, 5);
 	} else if (stage_id == "c2m2") {
-		add("deadweight", "THE HAMMER FALLS", 24, 7);
+		add("deadweight", 24, 7);
 	} else if (stage_id == "c2b2") {
-		add("deadweight", "THE HAMMER FALLS", 22, 7);
-		add("forgestrike", "THE ANVIL RISES", 33, 0, 5);
+		add("deadweight", 22, 7);
+		add("forgestrike", 33, 0, 5);
 	} else if (stage_id == "c3m2") {
-		add("deadweight", "THE HAMMER FALLS", 22, 7);
+		add("deadweight", 22, 7);
 	} else if (stage_id == "c3b2") {
-		add("deadweight", "THE HAMMER FALLS", 20, 8);
-		add("forgestrike", "THE ANVIL RISES", 30, 0, 5);
+		add("deadweight", 20, 8);
+		add("forgestrike", 30, 0, 5);
 	// --- The Tricksters: the fiddly ones, and more of them. --------------
 	} else if (stage_id == "c1m3") {
-		add("rustfall", "RUST ON THE WIND", 18, 0);
-		add("sealgate", "THE LAMP GOES OUT", 30, 7);
-		add("tongslock", "THE TONGS ARE TAKEN", 23, 5);
+		add("rustfall", 18, 0);
+		add("sealgate", 30, 7);
+		add("tongslock", 23, 5);
 	} else if (stage_id == "c1b3") {
-		add("rustfall", "RUST ON THE WIND", 16, 0);
-		add("sealgate", "THE GATE SWINGS SHUT", 29, 7);
-		add("heatwave", "HEAT WAVE", 34, 5);
-		add("vaultdark", "THE LAMPS GO OUT", 27, 6);
+		add("rustfall", 16, 0);
+		add("sealgate", 29, 7);
+		add("heatwave", 34, 5);
+		add("vaultdark", 27, 6);
 	} else if (stage_id == "c2m3") {
-		add("coldsnap", "COLD SNAP", 23, 9);
-		add("sealgate", "THE CHOIR CLOSES RANKS", 31, 7);
-		add("smokescreen", "SMOKE IN THE RAFTERS", 26, 7);
+		add("coldsnap", 23, 9);
+		add("sealgate", 31, 7);
+		add("smokescreen", 26, 7);
 	} else if (stage_id == "c2b3") {
-		add("coldsnap", "COLD SNAP", 21, 9);
-		add("heatwave", "HEAT WAVE", 30, 5);
-		add("sealgate", "THE QUENCH TANK SEALS", 36, 7);
-		add("smokescreen", "SMOKE IN THE RAFTERS", 25, 7);
+		add("coldsnap", 21, 9);
+		add("heatwave", 30, 5);
+		add("sealgate", 36, 7);
+		add("smokescreen", 25, 7);
 	} else if (stage_id == "c3m3") {
-		add("heatwave", "HEAT WAVE", 22, 6);
-		add("rustfall", "RUST ON THE WIND", 17, 0);
-		add("tongslock", "THE TONGS ARE TAKEN", 20, 5);
+		add("heatwave", 22, 6);
+		add("rustfall", 17, 0);
+		add("tongslock", 20, 5);
 	} else if (stage_id == "c3b3") {
-		add("heatwave", "HEAT WAVE", 20, 6);
-		add("rustfall", "RUST ON THE WIND", 15, 0);
-		add("coldsnap", "COLD SNAP", 27, 8);
-		add("pincer", "THE WALLS CLOSE IN", 32, 7);
+		add("heatwave", 20, 6);
+		add("rustfall", 15, 0);
+		add("coldsnap", 27, 8);
+		add("pincer", 32, 7);
 	}
 }
 

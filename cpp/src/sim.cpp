@@ -1082,9 +1082,25 @@ void Sim::resolve_score () {
 		}
 		// The downstacker: the plain clear - no spin, no quad - is the
 		// build, and the flashy ones give back what it gains.
+		//
+		// The gain is capped by what the clear is worth on its own, plus
+		// one. A flat bonus was wrong in a way that took a build to
+		// notice: the table values a single at nothing, so three of these
+		// cards handed every single four free rows - and a combo is a
+		// column of singles, so a six-link chain fired six quads. The
+		// number the player reported was a single doing ten.
+		//
+		// Capped, the style still does what it promises - a plain double
+		// or triple out-hits what the table pays for it, which is the
+		// whole point of committing to the creed - and the single, the
+		// clear the chain is MADE of, is lifted by one and no more. The
+		// ordinary combo bonus rides on top of that as it does for
+		// everybody, because that reward is the game's, not the style's.
 		if (config_.plain_rows > 0) {
 			if (plain) {
-				rows += config_.plain_rows;
+				rows += std::min(config_.plain_rows,
+					attack::attack_for(total, attack::NOT_SPIN, false, 0,
+						false) + 1);
 			} else {
 				keep *= config_.plain_heavy;
 			}

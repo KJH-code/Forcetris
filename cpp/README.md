@@ -1491,6 +1491,37 @@ line added to it can never grow out of its own frame. It is the one full
 screen that skips `forge_panel`: every other screen wants a plate under its
 form, and this one wants the fire.
 
+### The door is its own screen
+
+Picking a fire and a chapter used to be the top half of the map screen,
+and it was a wall of prose: two lines of preamble, a heading, three radio
+buttons each trailing a sentence about what that fire costs, then for every
+chapter a heading, a blurb, a star tally and a button. Nine or ten lines to
+read before anything could be pressed, on the screen a player sees most.
+
+A choice is not made faster by being explained at greater length. The
+fires are three cards side by side, each saying its three numbers - lives,
+slag, foes - and nothing else; the climbs are cards with a name and a
+tally. The blurbs are gone: a chapter's character is the chapter, not a
+sentence about it. The map screen is only ever the map now, and its header
+went from five stacked lines to two - the Endless tolls are chips (`BLOW
+46%`, `SPOILS 1/3`) rather than sentences, and the ring's curse gives its
+name on the row with the sentence behind a hover.
+
+### Skill telegraphs say what happens
+
+The plate that warns of a boss skill used to carry a phrase typed beside
+every entry in the roster - "RUST ON THE WIND", "THE TONGS ARE TAKEN",
+"THE LAMPS GO OUT". Thirty of them, four words of weather each, and not one
+said anything about the two seconds the player had to prepare for. Because
+they were typed by hand they drifted: `sealgate` was announced as "THE LAMP
+GOES OUT" on one stage, which is a different skill's effect entirely, and a
+telegraph that lies is worse than no telegraph.
+
+One short label per skill, taken from the skill - GARBAGE, ICE, COLUMN
+SEALED, FLOW DRAINED, LIGHTS OUT, NEXT HIDDEN, GRAVITY UP, HOLD LOCKED,
+WALLS IN, HEAVY BLOW - so it cannot drift and can be read mid-fight.
+
 ### The veil between screens
 
 It used to be a wipe - a dark rectangle whose top edge climbed the frame

@@ -360,7 +360,7 @@ constexpr int kStrike = 96;    // The maul, on a run's first frame.
 
 enum class Screen {
 	Menu, Modes, Game, Over, Replays, Viewer, Scores, Help, Analysis,
-	Profile, Career };
+	Profile, Career, Setup };
 
 // A replay being watched: which placement, which stop along its journey.
 struct Viewing {
@@ -4110,7 +4110,7 @@ void lock_centre (App& app, float& x, float& y) {
 // Remember the just-locked piece for the pulse the board draws over it.
 void kick (App& app, float dx, float dy, float mag);
 void pop_number (App& app, const std::string& text, ImU32 ink, float size,
-	float x, float y);
+	float x, float y, int life = 46);
 
 void note_lock (App& app) {
 	if (!app.session.has_value() || app.session->sim().locked().empty()) {
@@ -4135,16 +4135,20 @@ void note_lock (App& app) {
 	if (sim.combo() > app.chain_combo && links >= 1) {
 		char link[24];
 		std::snprintf(link, sizeof link, "COMBO %d", links);
+		// Held about twice as long as a damage number. A chain is a thing
+		// the player is building over several placements, and a label that
+		// is gone before the next piece lands is one they have to catch
+		// rather than read.
 		pop_number(app, link, IM_COL32(255, 176, 60, 255),
 			std::min(1.5f, 0.7f + links * 0.09f),
-			kBoardX + kBoardW * 0.5f, kBoardY + kBoardH * 0.52f);
+			kBoardX + kBoardW * 0.5f, kBoardY + kBoardH * 0.52f, 95);
 	}
 	if (sim.b2b() > app.chain_b2b && sim.b2b() >= 2) {
 		char link[24];
 		std::snprintf(link, sizeof link, "B2B %d", sim.b2b() - 1);
 		pop_number(app, link, IM_COL32(196, 122, 255, 255),
 			std::min(1.5f, 0.7f + sim.b2b() * 0.08f),
-			kBoardX + kBoardW * 0.5f, kBoardY + kBoardH * 0.18f);
+			kBoardX + kBoardW * 0.5f, kBoardY + kBoardH * 0.18f, 95);
 	}
 	// The heat the rim wears. It climbs with the longer of the two chains
 	// and is cleared outright by a break, because the break is the moment
@@ -4198,15 +4202,15 @@ void hit_stop (App& app, int frames) {
 // a double is a note, a quad is a shout, and the player never has to read
 // a meter to know which one just happened.
 void pop_number (App& app, const std::string& text, ImU32 ink, float size,
-		float x, float y) {
+		float x, float y, int life) {
 	App::Pop pop;
 	pop.text = text;
 	pop.ink = ink;
 	pop.size = size;
 	pop.x = x;
 	pop.y = y;
-	pop.life = 46;
-	pop.born = 46;
+	pop.life = life;
+	pop.born = life;
 	app.pops.push_back(pop);
 	if (app.pops.size() > 24) {
 		app.pops.erase(app.pops.begin());
@@ -4547,10 +4551,14 @@ void draw_banner (App& app) {
 		return;
 	}
 	const long age = app.session->sim().frame() - banner.frame;
-	if (age > 70) {
+	// Two and a half seconds rather than one and a half: what the banner
+	// names - a spin, a cascade - is the thing the placement was FOR, and
+	// it used to be gone before the player had finished watching the rows
+	// it cleared come down.
+	if (age > 125) {
 		return;
 	}
-	const float alpha = age < 50 ? 1.f : 1.f - (age - 50) / 20.f;
+	const float alpha = age < 100 ? 1.f : 1.f - (age - 100) / 25.f;
 	ImFont* font = app.fonts.head;
 	const float size = font->FontSize;
 	const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.f, banner.text.c_str());
@@ -7657,6 +7665,163 @@ void coin_stat (const char* icon, const ImVec4& ink, const char* text) {
 	ImGui::TextColored(ink, "%s", text);
 }
 
+bool card_button (App& app, const char* icon, const char* name,
+	const char* note, float width, float height, bool primary = false);
+
+// The door: how hot, and which climb. Its own screen.
+//
+// It used to be the top half of the map screen, and it was a wall of
+// prose: two lines of preamble, a heading, three radio buttons each
+// trailing a sentence about what that fire costs, then for every chapter a
+// heading, a blurb, a star tally and a button. Nine or ten lines of text
+// before the player could press anything, on the screen they see most.
+//
+// A choice is not made faster by being explained at greater length. The
+// fires are three cards side by side, each saying its three numbers -
+// lives, slag, foes - and nothing else; the climbs are cards with a name
+// and a tally. One button at the foot. The blurbs are gone: a chapter's
+// character is the chapter, not a sentence about it.
+void draw_setup (App& app) {
+	full_screen();
+	ImGui::Begin("Set out", nullptr, ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
+	forge_panel(app);
+	screen_head(app, "Set Out");
+	const float pad = open_column(ui(860), ui(14));
+	{
+		char coin[32];
+		std::snprintf(coin, sizeof coin, "SLAG %d", app.campaign.slag);
+		coin_stat("slag", ImVec4(1.f, 0.76f, 0.42f, 1.f), coin);
+	}
+
+	section(app, "THE FIRE");
+	struct Fire {
+		int level;
+		const char* name;
+		const char* lives;
+		const char* slag;
+		const char* foes;
+	};
+	static const Fire kFires[3] = {
+		{campaign::kMild, "Mild", "death re-offers", "slag x1",
+			"foes a rung down"},
+		{campaign::kForged, "Forged", "3 lives", "slag x1.5",
+			"foes as written"},
+		{campaign::kWhite, "White-hot", "1 death ends it", "slag x2",
+			"foes a rung up"},
+	};
+	{
+		const float have = ImGui::GetContentRegionAvail().x;
+		const float gap = ui(10);
+		const float wide = (have - gap * 2.f) / 3.f;
+		for (int i = 0; i < 3; ++i) {
+			if (i > 0) {
+				ImGui::SameLine(0.f, gap);
+			}
+			const Fire& fire = kFires[i];
+			const bool lit = app.pick_difficulty == fire.level;
+			const ImVec2 at = ImGui::GetCursorScreenPos();
+			const float tall = ui(112);
+			ImGui::PushID(i);
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.f, 0.f, 0.f, 0.f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+				ImVec4(0.f, 0.f, 0.f, 0.f));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+				ImVec4(0.f, 0.f, 0.f, 0.f));
+			if (ImGui::Button("##fire", ImVec2(wide, tall))) {
+				app.pick_difficulty = fire.level;
+			}
+			ImGui::PopStyleColor(3);
+			const bool hot = ImGui::IsItemHovered();
+			ImGui::PopID();
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			forge_plate(dl, at, ImVec2(at.x + wide, at.y + tall), ui(8),
+				lit ? IM_COL32(58, 32, 16, 245)
+				    : IM_COL32(28, 21, 16, 215),
+				lit ? IM_COL32(255, 176, 60, 235)
+				    : hot ? IM_COL32(150, 104, 62, 200)
+				          : IM_COL32(92, 68, 46, 150),
+				ui(lit ? 2.f : 1.5f));
+			ImFont* face = app.fonts.head;
+			dl->AddText(face, face->FontSize * 0.9f,
+				ImVec2(at.x + ui(14), at.y + ui(10)),
+				lit ? IM_COL32(255, 214, 94, 255)
+				    : IM_COL32(226, 212, 194, 255), fire.name);
+			const ImU32 ink = IM_COL32(176, 158, 136, 255);
+			const float line = ImGui::GetTextLineHeight() + ui(2);
+			float y = at.y + ui(40);
+			for (const char* row : {fire.lives, fire.slag, fire.foes}) {
+				dl->AddText(ImVec2(at.x + ui(14), y), ink, row);
+				y += line;
+			}
+		}
+	}
+
+	section(app, "THE CLIMB");
+	int flat = 0;
+	int chosen = -1;
+	for (size_t c = 0; c < campaign::chapters().size(); ++c) {
+		const campaign::Chapter& chapter = campaign::chapters()[c];
+		const bool open_chapter
+			= campaign::chapter_open(app.campaign, static_cast<int>(c));
+		int stars = 0;
+		for (int st = 0; st < chapter.stages; ++st) {
+			const auto found = app.campaign.stars.find(
+				campaign::stages()[static_cast<size_t>(flat + st)].id);
+			if (found != app.campaign.stars.end()) {
+				stars += found->second;
+			}
+		}
+		flat += chapter.stages;
+		char name[96];
+		std::snprintf(name, sizeof name, "Chapter %d - %s",
+			static_cast<int>(c) + 1, chapter.name);
+		char tally[32];
+		if (open_chapter) {
+			std::snprintf(tally, sizeof tally, "%d / %d stars", stars,
+				chapter.stages * 3);
+		} else {
+			std::snprintf(tally, sizeof tally, "locked");
+		}
+		ImGui::PushID(static_cast<int>(c));
+		ImGui::BeginDisabled(!open_chapter);
+		if (card_button(app, "em_map", name, tally,
+				ImGui::GetContentRegionAvail().x, ui(56))) {
+			chosen = static_cast<int>(c);
+		}
+		ImGui::EndDisabled();
+		ImGui::PopID();
+		ImGui::Dummy(ImVec2(0.f, ui(2)));
+	}
+	{
+		const bool open_climb = campaign::endless_open(app.campaign);
+		char tally[48];
+		if (!open_climb) {
+			std::snprintf(tally, sizeof tally, "locked");
+		} else if (app.campaign.endless_best > 0) {
+			std::snprintf(tally, sizeof tally,
+				"white heat, one death - best %d rows",
+				app.campaign.endless_best);
+		} else {
+			std::snprintf(tally, sizeof tally, "white heat, one death");
+		}
+		ImGui::BeginDisabled(!open_climb);
+		if (card_button(app, "em_free", "The Endless Climb", tally,
+				ImGui::GetContentRegionAvail().x, ui(56))) {
+			begin_run(app, 0, campaign::kWhite, app.seeds(), true);
+			app.screen = Screen::Career;
+		}
+		ImGui::EndDisabled();
+	}
+	close_column(pad);
+	if (chosen >= 0) {
+		begin_run(app, chosen, app.pick_difficulty, app.seeds());
+		app.screen = Screen::Career;
+	}
+	ImGui::End();
+}
+
 void draw_career (App& app) {
 	// The map takes the screen. It was a six-hundred-pixel panel in the
 	// middle of the display with a tree too wide for it, clipping on the
@@ -7669,12 +7834,13 @@ void draw_career (App& app) {
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
 	screen_head(app, "The Forge Map");
-	{
-		char coin[32];
-		std::snprintf(coin, sizeof coin, "SLAG %d", app.campaign.slag);
-		coin_stat("slag", ImVec4(1.f, 0.76f, 0.42f, 1.f), coin);
-	}
 	campaign::Run& run = app.campaign.run;
+	if (!run.active) {
+		// The door is its own screen now; nothing here has a map to draw.
+		app.screen = Screen::Setup;
+		ImGui::End();
+		return;
+	}
 	if (run.active && app.run_map.empty()) {
 		// Resumed from the file: the graph stands back up from its two
 		// numbers, exactly as it stood when the run was put down.
@@ -7687,101 +7853,6 @@ void draw_career (App& app) {
 		// is back on the table.
 		deal_reward(app);
 	}
-	if (!run.active) {
-		// --- The door: pick a chapter, pick how hot, set out. -----------
-		ImGui::TextDisabled("A chapter is one climb: pick a path up the");
-		ImGui::TextDisabled("map, and your spoils ride the whole run.");
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
-		ImGui::TextUnformatted("The fire");
-		struct Fire {
-			int level;
-			const char* name;
-			const char* note;
-		};
-		const Fire fires[3] = {
-			{campaign::kMild, "Mild",
-				"a death re-offers the node; foes fight a rung down"},
-			{campaign::kForged, "Forged",
-				"three lives, half again the slag; foes as written"},
-			{campaign::kWhite, "White-hot",
-				"one death ends it, double slag; foes a rung up"},
-		};
-		for (const Fire& fire : fires) {
-			if (ImGui::RadioButton(fire.name, &app.pick_difficulty,
-				fire.level)) {
-			}
-			ImGui::SameLine();
-			ImGui::TextDisabled("- %s", fire.note);
-		}
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
-		int flat = 0;
-		for (size_t c = 0; c < campaign::chapters().size(); ++c) {
-			const campaign::Chapter& chapter = campaign::chapters()[c];
-			const bool open_chapter
-				= campaign::chapter_open(app.campaign, static_cast<int>(c));
-			int stars = 0;
-			for (int s = 0; s < chapter.stages; ++s) {
-				const auto found = app.campaign.stars.find(
-					campaign::stages()[static_cast<size_t>(flat + s)].id);
-				if (found != app.campaign.stars.end()) {
-					stars += found->second;
-				}
-			}
-			ImGui::PushID(static_cast<int>(c));
-			ImGui::PushFont(app.fonts.head);
-			ImGui::TextColored(open_chapter
-				? ImVec4(0.93f, 0.87f, 0.8f, 1.f)
-				: ImVec4(0.45f, 0.42f, 0.4f, 1.f),
-				"Chapter %d - %s", static_cast<int>(c) + 1, chapter.name);
-			ImGui::PopFont();
-			if (open_chapter) {
-				ImGui::TextDisabled("%s", chapter.blurb);
-				{
-					char tally[32];
-					std::snprintf(tally, sizeof tally, "%d / %d", stars,
-						chapter.stages * 3);
-					coin_stat("star", ImVec4(1.f, 0.84f, 0.38f, 1.f), tally);
-				}
-				ImGui::SameLine();
-				if (ImGui::Button("Set out", ImVec2(ui(100), 0))) {
-					begin_run(app, static_cast<int>(c),
-						app.pick_difficulty, app.seeds());
-				}
-			} else {
-				ImGui::TextDisabled(
-					"Locked - beat the chapter before it.");
-			}
-			ImGui::Dummy(ImVec2(0.f, ui(4)));
-			ImGui::PopID();
-			flat += chapter.stages;
-		}
-		// --- The Endless Climb, past the chapters. ----------------------
-		{
-			const bool open_climb = campaign::endless_open(app.campaign);
-			ImGui::PushFont(app.fonts.head);
-			ImGui::TextColored(open_climb
-				? ImVec4(0.93f, 0.87f, 0.8f, 1.f)
-				: ImVec4(0.45f, 0.42f, 0.4f, 1.f), "The Endless Climb");
-			ImGui::PopFont();
-			if (open_climb) {
-				ImGui::TextDisabled(
-					"Rings without end, at white heat. One death.");
-				if (app.campaign.endless_best > 0) {
-					char best[32];
-					std::snprintf(best, sizeof best, "BEST %d rows",
-						app.campaign.endless_best);
-					coin_stat("star", ImVec4(1.f, 0.84f, 0.38f, 1.f), best);
-					ImGui::SameLine();
-				}
-				if (ImGui::Button("Set out##endless", ImVec2(ui(100), 0))) {
-					begin_run(app, 0, campaign::kWhite, app.seeds(), true);
-				}
-			} else {
-				ImGui::TextDisabled("Locked - fell the Forgemaster first.");
-			}
-			ImGui::Dummy(ImVec2(0.f, ui(4)));
-		}
-	} else {
 		// --- The climb: the map, entrance at the bottom, boss at the top.
 		if (run.endless) {
 			ImGui::Text("The Endless Climb - Ring %d", run.ring + 1);
@@ -7790,6 +7861,10 @@ void draw_career (App& app) {
 				= campaign::chapters()[static_cast<size_t>(run.chapter)];
 			ImGui::Text("Chapter %d - %s", run.chapter + 1, chapter.name);
 		}
+		// Everything the map has to say about the run stands on one row.
+		// It used to be five stacked lines of it, which took a quarter of
+		// the screen away from the tree the screen is for.
+		ImGui::SameLine();
 		{
 			char coin[32];
 			std::snprintf(coin, sizeof coin, "EMBERS %d", run.embers);
@@ -7808,18 +7883,22 @@ void draw_career (App& app) {
 			// they belong next to the row count and not inside a fight the
 			// player has already committed to.
 			{
+				// Two chips on the row the ring is on, not two sentences
+				// under it: the player reads these at a glance every time
+				// the map comes back, and a paragraph they have read forty
+				// times is furniture.
 				const SimConfig hand
 					= campaign::endless_toll(SimConfig{}, run.ring);
 				const int every = campaign::spoils_every(run.ring);
 				if (hand.attack_scale < 1.0) {
-					ImGui::TextColored(ImVec4(0.85f, 0.55f, 0.42f, 1.f),
-						"THE DEPTH TAKES: your blow lands at %d%%",
-						static_cast<int>(hand.attack_scale * 100. + 0.5));
 					ImGui::SameLine();
+					ImGui::TextColored(ImVec4(0.85f, 0.55f, 0.42f, 1.f),
+						"BLOW %d%%",
+						static_cast<int>(hand.attack_scale * 100. + 0.5));
 				}
 				if (every > 1) {
-					ImGui::TextDisabled(
-						"Spoils every %d rooms, and at every gate.", every);
+					ImGui::SameLine();
+					ImGui::TextDisabled("SPOILS 1/%d", every);
 				}
 			}
 			// What the ring just took. Said in the header rather than in a
@@ -7829,18 +7908,17 @@ void draw_career (App& app) {
 			if (!app.curse_shown.empty()) {
 				const temper::Temper* laid = temper::find(app.curse_shown);
 				if (laid != nullptr) {
+					// The name on the row, the sentence behind a hover: it
+					// is the same curse every time the map is opened, and
+					// after the first reading only the name is news.
+					ImGui::SameLine();
 					ImGui::TextColored(ImVec4(0.85f, 0.42f, 0.9f, 1.f),
-						"THE RING TAKES: %s - %s", laid->name, laid->text);
+						"CURSE %s", laid->name);
+					if (ImGui::IsItemHovered()) {
+						ImGui::SetTooltip("%s", laid->text);
+					}
 				}
 			}
-			if (temper::curses_by(run.ring)
-				>= static_cast<int>(temper::curses().size())) {
-				ImGui::TextDisabled(
-					"Every curse is down. From here the rooms tighten.");
-			}
-		} else {
-			ImGui::TextDisabled("%s fire", campaign::difficulty_name(
-				run.difficulty));
 		}
 		// Shown wherever a life would actually be spent, which is now any
 		// fire but the gentlest - a bought life on white heat that nothing
@@ -8279,7 +8357,6 @@ void draw_career (App& app) {
 			}
 			ImGui::EndPopup();
 		}
-	}
 	ImGui::Separator();
 	ImGui::PushFont(app.fonts.head);
 	ImGui::TextUnformatted("The Anvil");
@@ -8613,7 +8690,7 @@ void draw_career (App& app) {
 // made of now; without the art it degrades to a clean flat card, so a
 // bare checkout still has a working menu.
 bool card_button (App& app, const char* icon, const char* name,
-		const char* note, float width, float height, bool primary = false) {
+		const char* note, float width, float height, bool primary) {
 	const ImVec2 at = ImGui::GetCursorScreenPos();
 	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.f, 0.f, 0.f, 0.f));
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.f, 0.f, 0.f, 0.f));
@@ -9621,6 +9698,7 @@ std::string screen_shot_key (const App& app) {
 			// is its own picture.
 			return !app.offers.empty() ? "spoils"
 				: app.visiting >= 0 ? "visit" : "career";
+		case Screen::Setup: return "setup";
 		case Screen::Help: return "help";
 		case Screen::Analysis:
 			return app.studying.has_value() ? "analysis" : "analysis_empty";
@@ -9710,6 +9788,10 @@ void tour_screen (App& app, int stop) {
 			app.career = career::load(career::path(app.root));
 			app.campaign = campaign::load(campaign::path(app.root));
 			app.screen = Screen::Career;
+			break;
+		case 15:
+			// The door, which the map screen no longer holds.
+			app.screen = Screen::Setup;
 			break;
 		default:
 			app.screen = Screen::Menu;
@@ -10545,6 +10627,9 @@ int run (bool smoke, long smoke_frames) {
 		if (app.screen == Screen::Career) {
 			draw_career(app);
 		}
+		if (app.screen == Screen::Setup) {
+			draw_setup(app);
+		}
 		if (app.screen == Screen::Analysis) {
 			draw_analysis(app);
 		}
@@ -10655,7 +10740,8 @@ int run (bool smoke, long smoke_frames) {
 					app.run_ended = false;
 					app.node_done = false;
 					app.screen = Screen::Career;
-				} else if (app.screen == Screen::Career
+				} else if ((app.screen == Screen::Career
+						|| app.screen == Screen::Setup)
 					&& app.offers.empty() && !app.map_reward
 					&& frames % 8 == 0) {
 					// Acting only every so often leaves the map and the

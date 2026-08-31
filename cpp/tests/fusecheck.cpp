@@ -210,6 +210,37 @@ int main () {
 			digger.plain_rows > 0 && digger.plain_heavy == 1.0,
 			number(digger.plain_heavy));
 
+		// And the gain is capped by what the clear is worth on its own.
+		//
+		// A flat bonus was wrong in a way it took a build to notice: the
+		// table values a single at nothing, so the whole creed handed
+		// every single four free rows - and a combo is a column of
+		// singles, so a six-link chain fired six quads. Capped, a single
+		// is lifted by one and no more, while the double and triple the
+		// style is actually about keep most of the gain.
+		{
+			const auto plain_blow = [] (int total, int rows) {
+				return attack::attack_for(total, attack::NOT_SPIN, false, 0,
+					false)
+					+ std::min(rows, attack::attack_for(total,
+						attack::NOT_SPIN, false, 0, false) + 1);
+			};
+			const int all = 4;   // The whole style: two steps and a creed.
+			const int quad = attack::attack_for(4, attack::NOT_SPIN, false,
+				0, false);
+			check("a single never out-hits a quad, however deep the style",
+				plain_blow(1, all) < quad,
+				std::to_string(plain_blow(1, all)) + " vs "
+					+ std::to_string(quad));
+			check("but the double and triple the style is about still do",
+				plain_blow(2, all) >= quad - 1 && plain_blow(3, all) > quad,
+				std::to_string(plain_blow(2, all)) + ", "
+					+ std::to_string(plain_blow(3, all)));
+			check("and a deeper style never pays less than a shallower one",
+				plain_blow(2, 1) <= plain_blow(2, 2)
+					&& plain_blow(2, 2) <= plain_blow(2, all));
+		}
+
 		// The creed is where the bill is. Same style, same measurement,
 		// and now the quad is worth less.
 		SimConfig creed_plain = plain;
