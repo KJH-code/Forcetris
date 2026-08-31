@@ -301,6 +301,33 @@ player chose one of them; the volley flies at that board's rectangle
 rather than at a fixed corner of the screen, which is the only decision a
 raid asks for.
 
+**The chain climbs where it can be heard and seen.** A combo counter that
+lives as a number in the corner is the thing the player is building that
+the game never mentions: a third clear in a row sounded and looked exactly
+like a first.
+
+The clear note now walks up **a semitone a link**, capped at an octave -
+every game in the genre answers this the same way and every player already
+knows how to hear it. Past twelve steps the note stops sounding like the
+same instrument, and a chain that long has the rest of the screen shouting
+anyway. A back-to-back chain lifts the floor half a step on top, so a long
+spin chain sits above a long combo of doubles. This wanted real
+resampling: `Audio::play` takes a rate, `Voice` reads at a fractional
+position and interpolates between neighbouring samples, because
+nearest-neighbour off rate 1.0 is an aliasing whine. At rate 1.0 the
+fraction is always zero and the mixer is the old integer walk to the bit.
+
+The eye gets the same ladder. Each step throws its own readout off the
+well - **COMBO n** in gold low, **B2B n** in violet high, growing with the
+count - said once per step rather than held on screen, because a number
+that sits there is furniture and a number that arrives is an event. And
+the well wears the chain: four rings of light around the board that
+thicken and whiten as it climbs, breathing slowly so a held chain reads as
+alive. They go out the instant the chain breaks rather than fading, since
+the break is the moment worth feeling. Brighter and whiter than the
+board's own warm bevel on purpose - a first pass matched the bevel's tone
+and read as furniture somebody forgot to switch off.
+
 **A playstyle is assembled, not handed over.** Every card before these
 made a blow heavier however it was struck, so every build wanted the same
 things and a run was a pile rather than a plan. The Style family names a

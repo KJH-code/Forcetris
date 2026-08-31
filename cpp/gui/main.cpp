@@ -668,6 +668,13 @@ struct App {
 		ImU32 ink = 0;
 	};
 	std::vector<Pop> pops;
+	// The chain, as the screen carries it. A combo counter that only ever
+	// appeared as a number in the corner is a thing the player is building
+	// that the game never mentions - so the well itself gets hotter as the
+	// chain climbs, and cools when it breaks.
+	int chain_combo = 0;
+	int chain_b2b = 0;
+	float chain_heat = 0.f;
 	// The lock pulse: the piece that just landed flashes for a beat, so
 	// every placement has weight even when nothing clears.
 	Piece lock_piece{};
@@ -891,6 +898,9 @@ void reset_effects (App& app) {
 	app.pops.clear();
 	app.kick_mag = 0.f;
 	app.freeze = 0;
+	app.chain_combo = 0;
+	app.chain_b2b = 0;
+	app.chain_heat = 0.f;
 	app.audio.set_music_rate(1.f);
 }
 
@@ -3946,6 +3956,33 @@ void note_lock (App& app) {
 	// What the blow was worth, said where the blow happened. Every one of
 	// these numbers was already in a meter down the side of the screen and
 	// not one of them was ever looked at during a fight.
+	// The chain, climbing. Said once per step rather than held on screen:
+	// a number that sits there is furniture, a number that arrives is an
+	// event, and the chain IS the event.
+	const Sim& sim = app.session->sim();
+	if (sim.combo() > app.chain_combo && sim.combo() >= 1) {
+		char link[24];
+		std::snprintf(link, sizeof link, "COMBO %d", sim.combo() + 1);
+		pop_number(app, link, IM_COL32(255, 176, 60, 255),
+			std::min(1.5f, 0.7f + sim.combo() * 0.09f),
+			kBoardX + kBoardW * 0.5f, kBoardY + kBoardH * 0.52f);
+	}
+	if (sim.b2b() > app.chain_b2b && sim.b2b() >= 2) {
+		char link[24];
+		std::snprintf(link, sizeof link, "B2B %d", sim.b2b() - 1);
+		pop_number(app, link, IM_COL32(196, 122, 255, 255),
+			std::min(1.5f, 0.7f + sim.b2b() * 0.08f),
+			kBoardX + kBoardW * 0.5f, kBoardY + kBoardH * 0.18f);
+	}
+	// The heat the rim wears. It climbs with the longer of the two chains
+	// and is cleared outright by a break, because the break is the moment
+	// worth feeling - a fade would let the player miss it.
+	const float want = std::min(1.f,
+		std::max(sim.combo(), std::max(0, sim.b2b() - 1)) / 9.f);
+	app.chain_heat = want <= 0.f ? 0.f
+		: std::max(app.chain_heat, want);
+	app.chain_combo = sim.combo();
+	app.chain_b2b = sim.b2b();
 	if (lock.attack > 0) {
 		char worth[16];
 		std::snprintf(worth, sizeof worth, "%d", lock.attack);
@@ -4002,6 +4039,37 @@ void pop_number (App& app, const std::string& text, ImU32 ink, float size,
 	if (app.pops.size() > 24) {
 		app.pops.erase(app.pops.begin());
 	}
+}
+
+// A chain climbing, heard.
+//
+// The combo counter was a number in the corner and nothing else: a third
+// clear in a row sounded exactly like a first, so the one thing the player
+// was building was the one thing the game never mentioned. Every game in
+// the genre answers this the same way and every player already knows how
+// to hear it - the clear note walks up a step each link.
+//
+// A semitone a link, capped at an octave. Past twelve the note would stop
+// sounding like the same instrument, and a chain that long has the whole
+// screen shouting about it anyway.
+double cue_rate (const App& app, const std::string& cue) {
+	if (!app.session.has_value()) {
+		return 1.;
+	}
+	const Sim& sim = app.session->sim();
+	if (cue == "clear" || cue == "tetris" || cue == "tspin") {
+		// The sim's counters read one behind the HUD's: combo() is 0 on
+		// the first clear of a chain, which is exactly the step we want.
+		const int link = std::clamp(sim.combo(), 0, 12);
+		// And a back-to-back chain lifts the floor a little on top, so a
+		// long spin chain sits above a long combo of doubles.
+		const int chain = std::clamp(sim.b2b() - 1, 0, 6);
+		return std::pow(2., (link + chain * 0.5) / 12.);
+	}
+	if (cue == "crit") {
+		return 1.12;   // The dice land a shade brighter than a plain blow.
+	}
+	return 1.;
 }
 
 // The cues' visible half: what the ear hears, the eye sees.
@@ -4317,6 +4385,45 @@ void draw_banner (App& app) {
 	ImGui::GetForegroundDrawList()->AddText(font, size,
 		ImVec2(kBoardX + (kBoardW - extent.x) / 2, kBoardY - ui(38)),
 		IM_COL32(255, 214, 94, static_cast<int>(alpha * 255)), banner.text.c_str());
+}
+
+// The well's rim, hot with the chain.
+//
+// A ring of light that thickens and whitens as the chain climbs, drawn
+// around the board rather than inside it so it never argues with a piece.
+// It is the one thing on the screen that says "you are in the middle of
+// something" without a number, and it goes out the instant the chain does.
+void draw_chain_rim (App& app) {
+	if (app.chain_heat <= 0.01f) {
+		return;
+	}
+	const float heat = std::min(1.f, app.chain_heat);
+	// A slow breath under the brightness, so a held chain reads as alive
+	// rather than as a static border somebody forgot to turn off.
+	const float beat = 0.82f + 0.18f
+		* std::sin(app.backdrop_tick * 0.09f);
+	ImDrawList* dl = ImGui::GetBackgroundDrawList();
+	// Four rings rather than three, and brighter: the board already wears
+	// a warm bevel, so a rim that only matched it read as part of the
+	// furniture. What separates the two is that this one whitens.
+	const int rings = 4;
+	for (int ring = 0; ring < rings; ++ring) {
+		const float pad = ui(2) + ring * ui(5);
+		const int alpha = static_cast<int>(
+			(225 - ring * 52) * heat * beat);
+		if (alpha <= 2) {
+			continue;
+		}
+		// Ember at the bottom of the climb, white-gold at the top: the
+		// same ladder the blows themselves fly in.
+		const int green = static_cast<int>(180 + 75 * heat);
+		const int blue = static_cast<int>(50 + 195 * heat);
+		dl->AddRect(
+			ImVec2(kBoardX - pad, kBoardY - pad),
+			ImVec2(kBoardX + kBoardW + pad, kBoardY + kBoardH + pad),
+			IM_COL32(255, green, blue, alpha), ui(4), 0,
+			ui(2) + heat * ui(3));
+	}
 }
 
 // The blows, thrown off the well and fading as they rise.
@@ -9447,7 +9554,7 @@ int run (bool smoke, long smoke_frames) {
 			: std::min(1.f, static_cast<float>(behind / 0.02));
 		if (app.session.has_value()) {
 			for (const std::string& cue : app.session->take_cues()) {
-				app.audio.play(cue);
+				app.audio.play(cue, cue_rate(app, cue));
 				juice_cue(app, cue);
 			}
 		}
@@ -9813,6 +9920,7 @@ int run (bool smoke, long smoke_frames) {
 				// full board; the board and the fight are the screen.
 				draw_stat_panels(app);
 			}
+			draw_chain_rim(app);
 			draw_banner(app);
 			draw_pops(app);
 			if (app.versus.has_value()) {

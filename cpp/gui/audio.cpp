@@ -169,7 +169,7 @@ void Audio::open (const std::string& root, bool play) {
 	}
 }
 
-void Audio::play (const std::string& cue) {
+void Audio::play (const std::string& cue, double rate) {
 	if (device_ == 0 || sfx_volume_ <= 0.f) {
 		return;
 	}
@@ -189,7 +189,7 @@ void Audio::play (const std::string& cue) {
 		// The cues have tails now, and a pool that drops instead of steals
 		// would swallow a move tick under a ringing tetris - which reads as
 		// a missed keypress, not as a busy mixer.
-		const double done = static_cast<double>(voice.at)
+		const double done = voice.at
 			/ static_cast<double>(std::max<size_t>(1, voice.data->size()));
 		if (done > furthest) {
 			furthest = done;
@@ -198,7 +198,8 @@ void Audio::play (const std::string& cue) {
 	}
 	if (pick != nullptr) {
 		pick->data = &found->second;
-		pick->at = 0;
+		pick->at = 0.;
+		pick->rate = std::clamp(rate, 0.25, 4.0);
 	}
 	SDL_UnlockAudioDevice(device_);
 }
@@ -522,12 +523,23 @@ void Audio::mix (float* out, int samples) {
 			continue;
 		}
 		const std::vector<float>& data = *voice.data;
-		for (int i = 0; i < samples && voice.at < data.size(); ++i, ++voice.at) {
-			out[i] += data[voice.at] * sfx_volume_;
+		const double last = static_cast<double>(data.size()) - 1.;
+		for (int i = 0; i < samples && voice.at < last; ++i) {
+			// Linear interpolation between the two nearest samples. At
+			// rate 1.0 the fraction is always zero and this is the old
+			// integer walk to the bit; off it, the alternative is the
+			// aliasing whine of nearest-neighbour resampling.
+			const size_t base = static_cast<size_t>(voice.at);
+			const double frac = voice.at - static_cast<double>(base);
+			const float a = data[base];
+			const float b = data[base + 1];
+			out[i] += static_cast<float>(a + (b - a) * frac) * sfx_volume_;
+			voice.at += voice.rate;
 		}
-		if (voice.at >= data.size()) {
+		if (voice.at >= last) {
 			voice.data = nullptr;
-			voice.at = 0;
+			voice.at = 0.;
+			voice.rate = 1.;
 		}
 	}
 	// The room and a full pool of tails can add up; keep the sum inside the

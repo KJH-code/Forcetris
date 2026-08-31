@@ -54,7 +54,10 @@ public:
 
 	// Fire a cue by the name the sim uses. Unknown or unloaded names are
 	// ignored, the way the Python game shrugs off a missing file.
-	void play (const std::string& cue);
+	// `rate` resamples the cue: 1.0 is the note as baked, and a semitone
+	// up is 2^(1/12). Out of range rates are clamped to something a
+	// speaker can still make sense of.
+	void play (const std::string& cue, double rate = 1.);
 
 	void set_sfx_volume (float volume);
 	void set_music_volume (float volume);
@@ -96,7 +99,12 @@ private:
 
 	struct Voice {
 		const std::vector<float>* data = nullptr;
-		size_t at = 0;
+		// Fractional, because a voice can be played at a rate other than
+		// the one it was baked at: a combo climbs by pitching the clear
+		// note up a step at a time, which is the oldest readout in the
+		// genre and the one every player already knows how to hear.
+		double at = 0.;
+		double rate = 1.;
 	};
 
 	// Deterministic white noise: the same room every run, and the same
