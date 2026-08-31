@@ -741,6 +741,51 @@ SimConfig endless_press (SimConfig mine, int ring) {
 	return mine;
 }
 
+// The climb's toll on the player's own hand.
+//
+// The other dials all lean on what the climb SENDS - a better foe, a
+// heavier flood, a curse on the board. None of them touched the one thing
+// that actually ran away: the player's blow. A card a node, forever, and
+// by ring ten a build was hitting for numbers the ladder had no answer
+// to, so the tier written on the door decided nothing.
+//
+// So the climb taxes the hand itself, and it is a tax rather than a wall:
+// it starts a ring late so the early climb is untouched, it moves in
+// small steps, and it stops at half. Past that floor the climb has to
+// beat you with what it sends, not with what it takes away - a fight the
+// player cannot win at any speed is not a fight.
+SimConfig endless_toll (SimConfig mine, int ring) {
+	mine.attack_scale = std::max(0.5,
+		mine.attack_scale - 0.04 * std::max(0, ring - 1));
+	return mine;
+}
+
+// How many nodes the climb takes for one hand of spoils.
+//
+// A card a node was right for a road that ends. A climb does not end, so
+// by the fourth ring the purse had bought everything worth buying and
+// every further card was a card the player did not want - the draft had
+// stopped being a decision and become a formality, and the build had
+// stopped being a shape and become the whole pool.
+//
+// So the spoils thin out as the climb deepens: every node for the first
+// two rings, then every second, every third, until a ring yields one hand
+// and no more. The gatekeeper always pays, so no ring is ever silent -
+// this is the floor the thinning converges to, not a chance of nothing.
+int spoils_every (int ring) {
+	return std::min(kMapDepth, 1 + std::max(0, ring) / 2);
+}
+
+// Does the node just taken pay? Counted over the climb's whole height, so
+// the rhythm does not restart at every ring boundary.
+bool spoils_due (const Run& run) {
+	if (!run.endless) {
+		return true;
+	}
+	const int taken = std::max(1, endless_rows(run));
+	return taken % spoils_every(run.ring) == 0;
+}
+
 int solo_stars (bool won, double seconds, int par_seconds, int forced,
 		bool fused) {
 	if (!won) {

@@ -403,6 +403,29 @@ Cold Shoulder's dial on the other side of the room, turned by the ring
 instead of bought: the foe takes six per cent less per ring, down to a
 floor of 0.45. Its offence stays unbounded - only the hide is floored.
 
+**The climb's other two dials lean on the build instead of the room.**
+The hide made the foe survive longer; it did not answer why the build was
+so large in the first place. A card a node, forever, means that by about
+the fourth ring the purse has bought everything worth buying - the draft
+has stopped being a decision and become a formality, and the build has
+stopped being a shape and become the whole pool.
+
+So the spoils thin as the climb deepens (`spoils_every`): every node for
+the first two rings, then every second, every third, converging on one
+hand a ring. The gatekeeper pays regardless, so the thinning has a floor
+and is never a chance of nothing; the rhythm counts the climb's whole
+height rather than restarting at each ring, so the boundary is not a free
+extra hand. In practice a ring pays six hands, then three, then two, and
+from ring ten exactly one.
+
+And the hand itself is taxed (`endless_toll`): what the player sends is
+scaled down four per cent a ring, starting one ring late so the early
+climb is untouched, and stopping at half. Past that floor the climb has to
+beat you with what it sends rather than with what it takes away - a fight
+that cannot be won at any speed is not a fight. Both tolls are printed in
+the map header beside the ring, because the player did not agree to either
+one and should not have to infer them from a fight going badly.
+
 **And for two arcs the blow did not happen at all**, which is worth
 writing down because of how it hid. `begin_run` arms the strike and clears
 `map_seen`, and `draw_forge_strike` was supposed to wait for the map to

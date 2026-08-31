@@ -323,6 +323,20 @@ int endless_rank_owed (int rank, int ring);
 // ladder is exhausted.
 SimConfig endless_edge (SimConfig foe, int rank, int ring);
 
+// The climb's toll on the player's own blow: what the hand sends is
+// scaled down as the rings stack, starting a ring late and stopping at
+// half. The counterweight to a build that only ever grows.
+SimConfig endless_toll (SimConfig mine, int ring);
+
+// How many nodes of the climb one hand of spoils costs - one for the
+// first rings, then thinning out to a single hand a ring. The gatekeeper
+// pays regardless, so this is a floor and not a chance of nothing.
+int spoils_every (int ring);
+
+// Whether the node just taken pays, counted over the climb's whole
+// height. Always true off the climb: the road deals a hand a node.
+bool spoils_due (const Run& run);
+
 // The climb's foe takes less of what you send it, ring by ring, down to a
 // floor - a tier has to be worth surviving, not only worth fearing. Its
 // offence is unbounded; only this is floored.

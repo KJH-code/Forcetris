@@ -1446,6 +1446,9 @@ void start_stage (App& app, int index, int run_node = -1) {
 			// keeps climbing after the rest have bottomed out.
 			mine = campaign::endless_scaled(mine, app.campaign.run.ring);
 			mine = campaign::endless_press(mine, app.campaign.run.ring);
+			// And the toll on the hand itself, which is the only dial in
+			// the climb that leans on the BUILD rather than on the room.
+			mine = campaign::endless_toll(mine, app.campaign.run.ring);
 		}
 		// The oils spend themselves as the doors close: hot lands on this
 		// config, frost is held for the duel wiring, and both are struck
@@ -2139,13 +2142,19 @@ void end_game (App& app) {
 						}
 						app.run_map = campaign::build_endless_map(
 							run.ring, run.seed);
+						// The gatekeeper always pays, whatever the
+						// thinning says: no ring of the climb is silent.
 						app.map_reward = true;
 					} else {
 						end_run(app, true);
 						app.run_ended = true;
 					}
 				} else {
-					app.map_reward = true;
+					// A road deals a hand a node. A climb thins them out
+					// as it deepens - by the time a build has bought
+					// everything worth buying, a card a node was a
+					// formality rather than a decision.
+					app.map_reward = campaign::spoils_due(run);
 				}
 			} else if (run.difficulty == campaign::kWhite
 				|| (run.difficulty == campaign::kForged
@@ -6808,6 +6817,25 @@ void draw_career (App& app) {
 				campaign::endless_rows(run));
 			ImGui::SameLine();
 			ImGui::TextDisabled("BEST %d", app.campaign.endless_best);
+			// The climb's two standing tolls, said where the ring is said.
+			// Both of them lean on the BUILD rather than on the room, so
+			// they belong next to the row count and not inside a fight the
+			// player has already committed to.
+			{
+				const SimConfig hand
+					= campaign::endless_toll(SimConfig{}, run.ring);
+				const int every = campaign::spoils_every(run.ring);
+				if (hand.attack_scale < 1.0) {
+					ImGui::TextColored(ImVec4(0.85f, 0.55f, 0.42f, 1.f),
+						"THE DEPTH TAKES: your blow lands at %d%%",
+						static_cast<int>(hand.attack_scale * 100. + 0.5));
+					ImGui::SameLine();
+				}
+				if (every > 1) {
+					ImGui::TextDisabled(
+						"Spoils every %d rooms, and at every gate.", every);
+				}
+			}
 			// What the ring just took. Said in the header rather than in a
 			// panel that has to be dismissed: the player did not agree to
 			// this, so it should be readable without a click, and it stands

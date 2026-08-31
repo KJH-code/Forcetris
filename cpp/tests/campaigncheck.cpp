@@ -1255,6 +1255,80 @@ int main () {
 						>= 0.4);
 		}
 
+		// The two tolls the climb takes from the BUILD rather than from
+		// the room. Every other dial makes the climb send more; these two
+		// are the only ones that answer a build that only ever grows - one
+		// thins what the player is handed, the other thins what the hand
+		// sends.
+		{
+			SimConfig hand;
+			check("the climb leaves the first ring's blow alone",
+				campaign::endless_toll(hand, 0).attack_scale
+						== hand.attack_scale
+					&& campaign::endless_toll(hand, 1).attack_scale
+						== hand.attack_scale);
+			bool tolls = true;
+			double sends = campaign::endless_toll(hand, 1).attack_scale;
+			for (int ring = 2; ring <= 8; ++ring) {
+				const double now
+					= campaign::endless_toll(hand, ring).attack_scale;
+				tolls = tolls && now < sends;
+				sends = now;
+			}
+			check("and then takes a little of it every ring after", tolls,
+				std::to_string(campaign::endless_toll(hand, 8).attack_scale));
+			// A fight the player cannot win at any speed is not a fight.
+			check("but never takes more than half of it",
+				campaign::endless_toll(hand, 40).attack_scale
+						== campaign::endless_toll(hand, 400).attack_scale
+					&& campaign::endless_toll(hand, 400).attack_scale
+						>= 0.5);
+
+			bool thins = true;
+			int every = campaign::spoils_every(0);
+			check("the first rings deal a hand a room", every == 1);
+			for (int ring = 1; ring <= 12; ++ring) {
+				const int now = campaign::spoils_every(ring);
+				thins = thins && now >= every;
+				every = now;
+			}
+			check("and the spoils thin out as the climb deepens",
+				thins && campaign::spoils_every(12)
+					> campaign::spoils_every(1),
+				std::to_string(campaign::spoils_every(12)));
+			check("down to one hand a ring, and no thinner",
+				campaign::spoils_every(40) == campaign::kMapDepth
+					&& campaign::spoils_every(400)
+						== campaign::kMapDepth);
+
+			// The rhythm counts the climb's whole height, so it does not
+			// restart at every ring boundary - and a road is untouched.
+			campaign::Run road;
+			road.endless = false;
+			road.depth = 3;
+			check("a road still deals a hand a room",
+				campaign::spoils_due(road));
+			campaign::Run climb;
+			climb.endless = true;
+			climb.ring = 0;
+			bool early = true;
+			for (int depth = 0; depth < campaign::kMapDepth; ++depth) {
+				climb.depth = depth + 1;
+				early = early && campaign::spoils_due(climb);
+			}
+			check("and so does the climb's first ring", early);
+			climb.ring = 6;
+			int paid = 0;
+			for (int depth = 0; depth < campaign::kMapDepth; ++depth) {
+				climb.depth = depth + 1;
+				paid += campaign::spoils_due(climb) ? 1 : 0;
+			}
+			check("a deep ring pays less often than it has rooms",
+				paid > 0 && paid < campaign::kMapDepth,
+				std::to_string(paid) + "/"
+					+ std::to_string(campaign::kMapDepth));
+		}
+
 		// What a blow is worth, by the fire chosen at the door.
 		//
 		// The recipe writes the number; the fire decides what it buys. A
