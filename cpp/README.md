@@ -338,6 +338,24 @@ garbage never travels. **The Flare** is a striker, a catch, and the fire
 taking - the only one of the three that gets brighter as it goes - and the
 well fills with a column of light in the gauge's own gold.
 
+**A revive that does not work in the mode the player is in is not a
+revive.** Forged Lifeblood added a life to `Run::lives`, `Run::lives` was
+only ever spent on forged fire, and the Endless Climb is always white
+heat - so a player who bought the upgrade and then climbed had bought
+permanent metal that did nothing at all, with nothing on any screen to say
+so. The value was applied correctly the whole time; it simply had nowhere
+to be spent.
+
+The bought lives now ride on every fire. The base runs are untouched:
+white heat with nothing bought still breaks on the first death (it starts
+with zero of its own), and forged still starts at three. The metal is what
+buys the exception. One rule in one function, `spend_life`, because there
+are two doors into a death - a fight lost and a fight surrendered - and
+they used to spell the arithmetic out separately, which is exactly how
+white heat came to ignore a bought life in the first place. The LIVES
+readout follows the same rule, and the forge sells a life on any fire that
+would spend one.
+
 **The chain climbs where it can be heard and seen.** A combo counter that
 lives as a number in the corner is the thing the player is building that
 the game never mentions: a third clear in a row sounded and looked exactly

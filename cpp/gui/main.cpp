@@ -1805,7 +1805,21 @@ void begin_run (App& app, int chapter, int difficulty, unsigned seed,
 	// gets it too - and nothing about the run is gated on it.
 	app.forge_strike = kStrike;
 	app.map_seen = false;
-	run.lives += level("lifeblood");
+	// The lives a fire actually carries.
+	//
+	// Forged fire brings its own three; the other two fires bring none of
+	// their own - which meant a player who bought Forged Lifeblood and
+	// then set out on white heat (or up the climb, which is always white)
+	// had bought a permanent upgrade that did nothing at all, with nothing
+	// on any screen to say so. A revive that does not work in the mode the
+	// player is in is not a revive.
+	//
+	// So the bought lives ride on every fire. The base run is untouched -
+	// white heat with nothing bought still breaks on the first death, and
+	// forged still starts at three - and the metal is what buys the
+	// exception.
+	run.lives = (run.difficulty == campaign::kForged
+		? campaign::kForgedLives : 0) + level("lifeblood");
 	run.embers += 12 * level("warchest");
 	app.run_map = endless ? campaign::build_endless_map(0, seed)
 		: campaign::build_map(chapter, seed);
@@ -1978,6 +1992,26 @@ int force_stop (App& app) {
 // Every effect here is a GUI-only lever the graded engine never touches -
 // the same door impose_gravity and drain_flow already came through - so a
 // game that carries no tool is bit-for-bit the game it always was.
+// A death, weighed. Returns true when the run is over.
+//
+// One rule in one place, because there are two doors into it - a fight
+// lost and a fight surrendered - and they used to spell the arithmetic
+// out separately, which is how white heat came to ignore a bought life.
+//
+// Mild never asks: the node stays open and the retry costs the walk back.
+// Every other fire spends a life if there is one, and breaks when there
+// is not.
+bool spend_life (campaign::Run& run) {
+	if (run.difficulty == campaign::kMild) {
+		return false;
+	}
+	if (run.lives > 0) {
+		--run.lives;
+		return false;
+	}
+	return true;
+}
+
 void kick (App& app, float dx, float dy, float mag);
 void hit_stop (App& app, int frames);
 void spawn_beam (App& app, int left, int wide, int top, int tall,
@@ -2128,7 +2162,7 @@ void restart_stage (App& app) {
 		if (app.session.has_value()) {
 			run.seconds += static_cast<int>(app.session->sim().frame() / 50);
 		}
-		if (run.difficulty == campaign::kWhite || --run.lives <= 0) {
+		if (spend_life(run)) {
 			end_run(app, false);
 			app.run_ended = false;
 			app.campaign_stage = -1;
@@ -2444,12 +2478,9 @@ void end_game (App& app) {
 					// formality rather than a decision.
 					app.map_reward = campaign::spoils_due(run);
 				}
-			} else if (run.difficulty == campaign::kWhite
-				|| (run.difficulty == campaign::kForged
-					&& --run.lives <= 0)) {
-				// White heat breaks on any death; a forged run breaks when
-				// the lives run out. Either way the climb is over and the
-				// leftover embers render down - the prestige.
+			} else if (spend_life(run)) {
+				// Out of lives on a fire that spends them: the climb is
+				// over and the leftover embers render down - the prestige.
 				end_run(app, false);
 				app.run_ended = true;
 			}
@@ -7493,7 +7524,10 @@ void draw_career (App& app) {
 			ImGui::TextDisabled("%s fire", campaign::difficulty_name(
 				run.difficulty));
 		}
-		if (run.difficulty == campaign::kForged) {
+		// Shown wherever a life would actually be spent, which is now any
+		// fire but the gentlest - a bought life on white heat that nothing
+		// on screen mentions is the same bug wearing a different hat.
+		if (run.difficulty != campaign::kMild && run.lives > 0) {
 			ImGui::SameLine();
 			ImGui::TextColored(ImVec4(1.f, 0.6f, 0.4f, 1.f), "LIVES %d",
 				run.lives);
@@ -8202,7 +8236,7 @@ void draw_career (App& app) {
 					}
 				}
 			}
-			if (visited.difficulty == campaign::kForged) {
+			if (visited.difficulty != campaign::kMild) {
 				// A life bought back on forged fire - once a visit, and
 				// priced so it is a decision, not an errand.
 				ImGui::Spacing();

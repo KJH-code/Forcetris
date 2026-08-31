@@ -637,6 +637,20 @@ int main () {
 		check("a death renders the unspent embers down",
 			campaign::slag_award(first, true, false, 0, 50) == 10
 				&& campaign::slag_award(first, true, false, 0, 0) == 0);
+		// The revive, and where it is spendable. Forged fire brings its
+		// own three; white brings none of its own, so a bought life is the
+		// only thing standing between a climb and its first death - which
+		// is the whole reason to buy one.
+		{
+			const campaign::Upgrade* blood = campaign::upgrade("lifeblood");
+			check("the Anvil sells more than one life",
+				blood != nullptr && blood->levels >= 2);
+			check("and its face no longer promises only forged fire",
+				blood != nullptr
+					&& std::string(blood->text).find("forged")
+						== std::string::npos,
+				blood != nullptr ? blood->text : "(missing)");
+		}
 		const campaign::Upgrade* wick = campaign::upgrade("wick");
 		// The curve, not a multiplier: level n costs n(n+1)/2 bases, so a
 		// deep level is a decision against every other deep level rather

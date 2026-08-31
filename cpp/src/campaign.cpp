@@ -55,7 +55,7 @@ const std::vector<Upgrade>& anvil () {
 		// The V2.1d pair, read by begin_run: a life for the forged runs,
 		// and coin in the purse before the first fight.
 		{"lifeblood", "Forged Lifeblood",
-			"forged runs carry one more life", 2, 70},
+			"one more life, on any fire that spends them", 2, 70},
 		{"warchest", "War Chest",
 			"runs set out with embers in the purse", 4, 40},
 		// --- The tools. ----------------------------------------------

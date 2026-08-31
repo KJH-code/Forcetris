@@ -198,7 +198,11 @@ struct Run {
 	// Consumed - and saved consumed - the moment the battle launches.
 	std::vector<std::string> oils;
 	int embers = 0;
-	int lives = kForgedLives;          // Meaningful under kForged only.
+	// Deaths this run can still absorb. Forged fire brings three of its
+	// own; the other fires bring none, and only Forged Lifeblood puts any
+	// there - which is what makes that upgrade worth buying at the heat a
+	// player actually dies at. begin_run sets it; mild never spends it.
+	int lives = kForgedLives;
 	// What the run cost, for the grade it earns at the end. Seconds are
 	// battle seconds summed at each settlement, never wall clock: a run
 	// left open overnight is not a worse run, and a player reading a menu
