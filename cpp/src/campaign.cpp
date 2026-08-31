@@ -689,7 +689,11 @@ int endless_rank (int rank, int ring) {
 // is worth surviving and not only worth fearing. Its offence goes on
 // climbing with no ceiling in endless_edge; only the hide is floored.
 SimConfig endless_guard (SimConfig foe, int ring) {
-	foe.garbage_scale = std::max(0.45,
+	// The hide's floor moved down with the toll's, and for the same
+	// reason: it used to bottom out at ring nine and the climb spent every
+	// ring after that turning nothing. Deep rings are meant to be the part
+	// where the climb is still moving.
+	foe.garbage_scale = std::max(0.35,
 		foe.garbage_scale - 0.06 * std::max(0, ring));
 	return foe;
 }
@@ -751,12 +755,22 @@ SimConfig endless_press (SimConfig mine, int ring) {
 //
 // So the climb taxes the hand itself, and it is a tax rather than a wall:
 // it starts a ring late so the early climb is untouched, it moves in
-// small steps, and it stops at half. Past that floor the climb has to
-// beat you with what it sends, not with what it takes away - a fight the
-// player cannot win at any speed is not a fight.
+// small steps, and it stops well short of nothing. Past that floor the
+// climb has to beat you with what it sends, not with what it takes away -
+// a fight the player cannot win at any speed is not a fight.
+//
+// The first tuning was four per cent a ring with a floor at half, and it
+// was measured too gentle: bot against bot at a fixed hand, a ring-ten
+// blow still landed at sixty-four per cent and the climb only ran out
+// because the foe's rank had topped out. Six per cent, floored at two
+// fifths, puts ring ten at forty-six - the tax is the dial that answers a
+// build, so it is the dial that should bite. The floor then went to three
+// tenths, so the tax keeps working to ring twelve instead of stopping at
+// ten: a climb that has run out of ways to tighten has ended, whatever
+// the row counter says.
 SimConfig endless_toll (SimConfig mine, int ring) {
-	mine.attack_scale = std::max(0.5,
-		mine.attack_scale - 0.04 * std::max(0, ring - 1));
+	mine.attack_scale = std::max(0.3,
+		mine.attack_scale - 0.06 * std::max(0, ring - 1));
 	return mine;
 }
 

@@ -1252,7 +1252,15 @@ int main () {
 				campaign::endless_guard(hide, 40).garbage_scale
 						== campaign::endless_guard(hide, 400).garbage_scale
 					&& campaign::endless_guard(hide, 40).garbage_scale
-						>= 0.4);
+						>= 0.3);
+			// And neither floor is reached while the climb is still a
+			// climb: a ring that turns nothing is a ring that is over.
+			check("and neither floor is reached by the tenth ring",
+				campaign::endless_guard(hide, 10).garbage_scale
+						> campaign::endless_guard(hide, 40).garbage_scale
+					&& campaign::endless_toll(SimConfig{}, 10).attack_scale
+						> campaign::endless_toll(SimConfig{}, 40)
+							.attack_scale);
 		}
 
 		// The two tolls the climb takes from the BUILD rather than from
@@ -1278,11 +1286,21 @@ int main () {
 			check("and then takes a little of it every ring after", tolls,
 				std::to_string(campaign::endless_toll(hand, 8).attack_scale));
 			// A fight the player cannot win at any speed is not a fight.
-			check("but never takes more than half of it",
+			check("but never takes more than seven tenths of it",
 				campaign::endless_toll(hand, 40).attack_scale
 						== campaign::endless_toll(hand, 400).attack_scale
 					&& campaign::endless_toll(hand, 400).attack_scale
-						>= 0.5);
+						>= 0.3,
+				std::to_string(
+					campaign::endless_toll(hand, 400).attack_scale));
+			// And the tax bites by the tenth ring rather than merely
+			// leaning: the first tuning left a ring-ten blow at nearly two
+			// thirds, which a build outgrew without noticing.
+			check("and by the tenth ring it is under half",
+				campaign::endless_toll(hand, 10).attack_scale
+					< hand.attack_scale * 0.5,
+				std::to_string(
+					campaign::endless_toll(hand, 10).attack_scale));
 
 			bool thins = true;
 			int every = campaign::spoils_every(0);

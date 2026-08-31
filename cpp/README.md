@@ -401,7 +401,17 @@ a build that had been collecting a card a node put the ring-twelve foe
 down in the same two blows as the ring-one foe. `endless_guard` is the
 Cold Shoulder's dial on the other side of the room, turned by the ring
 instead of bought: the foe takes six per cent less per ring, down to a
-floor of 0.45. Its offence stays unbounded - only the hide is floored.
+floor of 0.35. Its offence stays unbounded - only the hide is floored.
+
+Both of those floors were raised once, after the climb was measured
+rather than argued about. The first tuning - four per cent a ring floored
+at half, a hide floored at 0.45 - left a ring-ten blow landing at
+sixty-four per cent and the hide bottomed out at ring nine, so every ring
+past that turned nothing at all and the climb ended only because the foe's
+rank had run out of rungs. A climb with nothing left to tighten has ended
+whatever the row counter says, so the tax bites harder and both floors sit
+further down: ring ten now lands at forty-six per cent against a hide of
+0.40, and neither floor is touched until ring twelve.
 
 **The climb's other two dials lean on the build instead of the room.**
 The hide made the foe survive longer; it did not answer why the build was
@@ -419,8 +429,8 @@ extra hand. In practice a ring pays six hands, then three, then two, and
 from ring ten exactly one.
 
 And the hand itself is taxed (`endless_toll`): what the player sends is
-scaled down four per cent a ring, starting one ring late so the early
-climb is untouched, and stopping at half. Past that floor the climb has to
+scaled down six per cent a ring, starting one ring late so the early climb
+is untouched, and stopping at three tenths. Past that floor the climb has to
 beat you with what it sends rather than with what it takes away - a fight
 that cannot be won at any speed is not a fight. Both tolls are printed in
 the map header beside the ring, because the player did not agree to either
