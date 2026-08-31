@@ -1978,6 +1978,16 @@ int force_stop (App& app) {
 // Every effect here is a GUI-only lever the graded engine never touches -
 // the same door impose_gravity and drain_flow already came through - so a
 // game that carries no tool is bit-for-bit the game it always was.
+void kick (App& app, float dx, float dy, float mag);
+void hit_stop (App& app, int frames);
+void spawn_beam (App& app, int left, int wide, int top, int tall,
+	SDL_Color color, int life);
+void spawn_ring (App& app, float x, float y, SDL_Color color, float span,
+	int life);
+void spawn_shards (App& app, float x, float y, SDL_Color color, int count,
+	float kick, float size);
+void spawn_sparks (App& app, SDL_Color color, int per_cell, float kick);
+
 bool spend_tool (App& app) {
 	if (app.tool_held.empty() || app.tool_spent || !app.session.has_value()
 		|| app.screen != Screen::Game || app.paused || app.countdown > 0
@@ -2005,9 +2015,55 @@ bool spend_tool (App& app) {
 	if (!worked) {
 		return false;
 	}
+	// Each tool is a different mechanism, drawn as one. Three charges the
+	// player has to tell apart with their eyes on the board, so a shared
+	// puff of sparks in three colours would not have done: what separates
+	// them is the SHAPE the well makes, and where.
+	if (app.tool_held == "tool_shear") {
+		// The blade: a bright bar drawn across the floor of the well, and
+		// the row it took thrown out sideways in pieces.
+		const int floor_y = kBoardY + kBoardH - kCell;
+		spawn_beam(app, kBoardX, kBoardW, floor_y, kCell,
+			{255, 250, 226, 255}, 14);
+		for (int x = 0; x < kWidth; ++x) {
+			spawn_shards(app, kBoardX + (x + 0.5f) * kCell,
+				static_cast<float>(floor_y) + kCell * 0.5f,
+				{255, 226, 170, 255}, 2, 3.2f,
+				static_cast<float>(kCell) * 0.28f);
+		}
+		kick(app, 0.f, 1.f, 8.f);
+		hit_stop(app, 4);
+	} else if (app.tool_held == "tool_cull") {
+		// The valve: what was coming is let go. A ring at the mouth of the
+		// well and rubble thrown UP out of it - the one direction garbage
+		// never travels, so the eye reads "that is not arriving" without
+		// being told.
+		const float mouth = static_cast<float>(kBoardY + kBoardH);
+		spawn_ring(app, kBoardX + kBoardW * 0.5f, mouth - kCell,
+			{236, 96, 72, 255}, static_cast<float>(kCell) * 5.f, 20);
+		for (int x = 0; x < kWidth; x += 2) {
+			spawn_shards(app, kBoardX + (x + 0.5f) * kCell, mouth - kCell,
+				{214, 138, 82, 255}, 3, 3.6f,
+				static_cast<float>(kCell) * 0.24f);
+		}
+		kick(app, 0.f, -1.f, 7.f);
+		hit_stop(app, 3);
+	} else if (app.tool_held == "tool_flare") {
+		// The striker: the fire takes. A column of light up the well and a
+		// ring off its middle, in the gauge's own gold, so it reads as the
+		// same thing the Flow bar is about to do.
+		spawn_beam(app, kBoardX, kBoardW, kBoardY, kBoardH,
+			{255, 214, 94, 255}, 16);
+		spawn_ring(app, kBoardX + kBoardW * 0.5f,
+			kBoardY + kBoardH * 0.5f, {255, 236, 170, 255},
+			static_cast<float>(kCell) * 6.f, 24);
+		spawn_sparks(app, {255, 214, 94, 255}, 4, 3.4f);
+		kick(app, 0.f, -1.f, 9.f);
+		hit_stop(app, 5);
+	}
 	app.tool_spent = true;
 	app.tool_flash = 40;
-	app.audio.play("crit");
+	app.audio.play(app.tool_held);
 	app.shake_until = app.session->sim().frame() + 8;
 	return true;
 }
@@ -6935,7 +6991,8 @@ void draw_streaks (App& app) {
 			// break something, not twinkle - and the volley's last slug
 			// leaves the mark and shoves the board it hit.
 			spawn_shards(app, streak.tx, streak.ty, ink,
-				3 + std::min(streak.rows, 6), 2.8f, false);
+				3 + std::min(streak.rows, 6), 2.8f,
+				static_cast<float>(kCell) * 0.26f);
 			if (streak.last) {
 				App::Impact mark;
 				mark.x = streak.tx;

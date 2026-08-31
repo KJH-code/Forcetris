@@ -230,6 +230,49 @@ def metal (freq, dur, vol=0.34, ratios=BELL, release=0.45, strike=0.35):
     return mix(*layers)
 
 
+# --- The mechanical family --------------------------------------------------
+#
+# What was missing was not richness - metal() has inharmonic partials and the
+# room has a real reverb. What was missing is that every cue began with a ten
+# millisecond ramp, which is a note being played rather than a thing being
+# struck. A mechanism has a hard edge at sample zero and is over before the
+# ear has finished deciding what it was.
+#
+# Three ingredients, and they are the whole difference:
+#
+#   snap()   - the transient. Two to four milliseconds of band-passed noise
+#              at full amplitude from the first sample. This is the click,
+#              and it is what makes a sound read as a machine rather than as
+#              an instrument.
+#   servo()  - a fast pitch sweep. A mechanism moving is a frequency falling
+#              (or rising) far and quickly; a steady pitch is a bell.
+#   detent() - the stop at the end of the travel. A short damped tone with
+#              no attack at all, the ratchet catching.
+
+
+def snap (vol=0.5, low=1400., high=7000., dur=0.004):
+    """The transient: noise with no attack whatsoever, band-passed so it is a
+    click rather than a hiss, and gone in a few milliseconds."""
+    count = max(1, int(RATE * dur))
+    raw = [rng.uniform(-1., 1.) * vol * ((1. - i / count) ** 2.)
+           for i in range(count)]
+    return highpass(lowpass(raw, high, 2), low)
+
+
+def servo (f0, f1, dur, vol=0.3, shape='saw', release=0.55):
+    """A mechanism travelling: pitch falling (or climbing) fast, and no ramp
+    on the front - the movement starts the instant the key is pressed."""
+    return lowpass(
+        tone(f0, dur, vol, shape, freq_end=f1, attack=0.0004, release=release),
+        5200., 2)
+
+
+def detent (freq, dur=0.05, vol=0.3, release=0.9):
+    """The catch at the end of the travel: a struck tone with no attack, damped
+    hard, so it stops rather than rings."""
+    return tone(freq, dur, vol, 'sine', attack=0.0004, release=release)
+
+
 def sub (freq, dur, vol=0.3, freq_end=None, release=0.5):
     """The weight under a hit. Sine, low, and filtered so it stays felt."""
     return lowpass(
@@ -307,15 +350,32 @@ SOUNDS.update({
     # the same lengths and volumes they have always had. All that changed is
     # that the square is filtered, so it reads as a tap on metal rather than
     # as a beep.
-    'move': lambda: lowpass(tone(180, 0.035, 0.22, 'square', release=0.6), 2100., 2),
-    'rotate': lambda: lowpass(
-        tone(300, 0.045, 0.24, 'square', freq_end=340, release=0.5), 2600., 2),
-    'hold': lambda: lowpass(
-        tone(260, 0.09, 0.26, 'square', freq_end=390, release=0.4), 2400., 2),
-    # Landing under gravity is a soft click with the smallest thump under it.
+    # A key press is a switch closing: the click first, the travel under it,
+    # and nothing left ringing. Shorter than what they replaced, and they
+    # start at full amplitude on sample zero - which is the whole
+    # difference between a mechanism and a beep.
+    'move': lambda: mix(
+        snap(0.42, 1800., 8000., 0.0035),
+        servo(340, 190, 0.030, 0.17, 'saw', release=0.8),
+    ),
+    'rotate': lambda: mix(
+        snap(0.40, 2200., 9000., 0.0035),
+        servo(520, 300, 0.038, 0.16, 'saw', release=0.75),
+        after(0.026, detent(620, 0.030, 0.13, release=1.1)),
+    ),
+    # The box: a longer travel, and a heavier catch at the end of it.
+    'hold': lambda: mix(
+        snap(0.44, 1200., 7000., 0.005),
+        servo(300, 520, 0.060, 0.18, 'saw', release=0.6),
+        after(0.052, detent(392, 0.055, 0.20, release=0.8)),
+        sub(84, 0.07, 0.12, release=0.7),
+    ),
+    # Landing under gravity: a click, a short fall, and the smallest thump.
     'lock': lambda: mix(
-        lowpass(tone(130, 0.07, 0.26, 'square', release=0.7), 1800., 2),
-        lowpass(tone(90, 0.05, 0.12, 'noise', release=0.9), 3000.),
+        snap(0.40, 900., 5200., 0.005),
+        servo(230, 120, 0.045, 0.20, 'saw', release=0.75),
+        lowpass(tone(90, 0.04, 0.09, 'noise', attack=0.0004, release=1.1),
+            3000.),
         sub(62, 0.06, 0.16, release=0.8),
     ),
     # A wasted press. Deliberately small and dry - a fault is information, not a
@@ -323,9 +383,11 @@ SOUNDS.update({
     # one. Two descending clicks, well under the clear cues so it never competes
     # with the placement that fired at the same moment.
     'finesse': lambda: lowpass(chain(
-        tone(370, 0.05, 0.2, 'square', release=0.35),
-        tone(247, 0.09, 0.2, 'square', release=0.45),
-    ), 2200., 2),
+        mix(snap(0.22, 1600., 6000., 0.003),
+            detent(370, 0.045, 0.16, release=0.9)),
+        mix(snap(0.20, 1400., 5200., 0.003),
+            detent(247, 0.075, 0.16, release=0.9)),
+    ), 2600., 2),
     # The fuse running short: an urgent double tick, quiet enough to fire on
     # most pieces without wearing the ear down. Metal, so it belongs to the
     # forge, but tiny.
@@ -334,6 +396,48 @@ SOUNDS.update({
         silence(0.035),
         metal(1175, 0.030, 0.15, ANVIL, release=1.1, strike=0.),
     ),
+
+    # --- the player's tools ---------------------------------------------
+    # Three charges, and they have to be told apart with the eyes on the
+    # board. So each is a different MECHANISM rather than a different note:
+    # a blade, a valve, a striker. All three open with the same hard
+    # transient the keys do, because they are all things the player pressed.
+    #
+    # The Shear: a blade drawn and closed. Metal sliding, then the cut.
+    'tool_shear': lambda: widen(trim(room(mix(
+        snap(0.55, 2400., 11000., 0.004),
+        highpass(tone(2600, 0.10, 0.16, 'noise', attack=0.0006,
+            release=0.8), 1800.),
+        servo(1800, 420, 0.085, 0.22, 'saw', release=0.6),
+        after(0.075, mix(
+            snap(0.6, 1200., 9000., 0.006),
+            metal(784., 0.16, 0.22, ANVIL, release=0.6, strike=0.5),
+            sub(70, 0.10, 0.20, release=0.6))),
+    ), size=0.8, decay=0.62, wet=0.20, tail=0.3)), ms=9., spread=0.45),
+    # The Cull: a vent thrown open and the pressure leaving. A hiss that
+    # falls away rather than a strike - nothing was hit, something was let
+    # go.
+    'tool_cull': lambda: widen(trim(room(mix(
+        snap(0.5, 700., 5200., 0.006),
+        servo(240, 96, 0.070, 0.24, 'square', release=0.7),
+        after(0.05, lowpass(tone(1400, 0.30, 0.20, 'noise', attack=0.004,
+            release=0.35), 3200., 2)),
+        after(0.05, highpass(tone(2600, 0.26, 0.09, 'noise', attack=0.01,
+            release=0.5), 2400.)),
+        sub(52, 0.20, 0.24, freq_end=38, release=0.5),
+    ), size=1.1, decay=0.7, wet=0.26, tail=0.45)), ms=13., spread=0.6),
+    # The Flare: a striker, a catch, and the fire taking. The one of the
+    # three that gets brighter as it goes instead of dying away.
+    'tool_flare': lambda: widen(trim(room(mix(
+        snap(0.5, 1800., 9000., 0.004),
+        after(0.02, snap(0.45, 1600., 8000., 0.004)),
+        after(0.04, mix(
+            servo(180, 900, 0.22, 0.22, 'saw', release=0.2),
+            lowpass(tone(600, 0.30, 0.22, 'noise', attack=0.18,
+                release=0.3), 4200.),
+            metal(659.25, 0.26, 0.20, ANVIL, release=0.5, strike=0.3),
+            sub(58, 0.24, 0.26, freq_end=88, release=0.35))),
+    ), size=1.3, decay=0.76, wet=0.30, tail=0.55)), ms=15., spread=0.7),
 
     # --- a boss winding up ---------------------------------------------------
     # The fuse's warning is deliberately tiny - it fires on most pieces and
@@ -381,12 +485,15 @@ SOUNDS.update({
     # A hard drop is a thud with body: the old click, a sub under it, and just
     # enough room that the floor sounds like it is made of something.
     'drop': lambda: trim(room(mix(
+        snap(0.55, 800., 6500., 0.006),
+        servo(700, 120, 0.055, 0.24, 'saw', release=0.7),
         tone(400, 0.13, 0.34, 'square', freq_end=90, release=0.5),
         lowpass(tone(120, 0.08, 0.18, 'noise', release=0.8), 3800.),
         sub(74, 0.17, 0.30, freq_end=52, release=0.55),
     ), size=0.7, decay=0.6, wet=0.18, tail=0.3)),
     # Garbage landing on your floor: blunt, gritty, and clearly not yours.
     'hit': lambda: widen(trim(room(mix(
+        snap(0.5, 500., 4200., 0.008),
         tone(80, 0.14, 0.34, 'square', freq_end=55, release=0.5),
         lowpass(tone(150, 0.12, 0.24, 'noise', release=0.7), 2600.),
         sub(46, 0.24, 0.34, freq_end=38, release=0.45),

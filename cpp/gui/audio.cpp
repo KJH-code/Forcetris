@@ -25,6 +25,8 @@ std::vector<std::string> cue_names () {
 		// The boss announcing itself, the bolt leaving its well, and the
 		// three shapes its blows take.
 		"skillwarn", "skillcast", "skillseal", "skilldark", "skillheavy",
+		// The player's three charges: a blade, a valve, a striker.
+		"tool_shear", "tool_cull", "tool_flare",
 	};
 	for (int step = 1; step <= 10; ++step) {
 		names.push_back("combo" + std::to_string(step));

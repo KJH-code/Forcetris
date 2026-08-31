@@ -301,6 +301,43 @@ player chose one of them; the volley flies at that board's rectangle
 rather than at a fixed corner of the screen, which is the only decision a
 raid asks for.
 
+**The cues were rich and they were not mechanical.** `metal()` already had
+Chowning's inharmonic bell ratios and the room already had a real reverb -
+richness was never the problem. The problem was that every cue opened with
+a ten-millisecond ramp, which is a note being *played* rather than a thing
+being *struck*, and then rang for half a second in a hall. That is a bell.
+A mechanism has a hard edge at sample zero and is finished before the ear
+has decided what it was.
+
+Three ingredients, and they are the whole difference:
+
+- `snap()` - the transient. Two to four milliseconds of band-passed noise
+  at full amplitude from the very first sample. This is the click, and it
+  is what makes a sound read as a machine.
+- `servo()` - a fast pitch sweep with essentially no attack. A mechanism
+  travelling is a frequency falling far and quickly; a steady pitch is a
+  bell.
+- `detent()` - the catch at the end of the travel: a struck tone, damped
+  hard, that stops rather than rings.
+
+Every cue the hands fire constantly was rebuilt on them - move, rotate,
+hold, lock, finesse - and the two weight cues got the transient in front
+(drop, hit). `move` is thirty milliseconds now. They start at full
+amplitude on sample zero, which is the whole distance between a mechanism
+and a beep.
+
+**And the three tools are three mechanisms rather than three notes.** A
+charge the player has to recognise with their eyes on the board cannot be
+told apart by pitch. So: **The Shear** is a blade drawn and closed - metal
+sliding, then the cut - and on the board it is a bright bar across the
+floor of the well with the row thrown out sideways in pieces. **The Cull**
+is a vent thrown open and pressure leaving, a hiss that falls away because
+nothing was struck and something was let go; on the board it is a ring at
+the mouth of the well and rubble thrown *up* out of it, the one direction
+garbage never travels. **The Flare** is a striker, a catch, and the fire
+taking - the only one of the three that gets brighter as it goes - and the
+well fills with a column of light in the gauge's own gold.
+
 **The chain climbs where it can be heard and seen.** A combo counter that
 lives as a number in the corner is the thing the player is building that
 the game never mentions: a third clear in a row sounded and looked exactly
