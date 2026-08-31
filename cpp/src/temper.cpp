@@ -91,6 +91,22 @@ const std::vector<Temper>& pool () {
 			"every clear stirs the hold", Family::Rule, 1},
 		{"linked_chain", "The Linked Chain",
 			"clears cascade, and the pieces stay whole", Family::Rule, 1},
+		// The four styles. Each names a way of playing, pays it, and
+		// charges every other way for the privilege - so a run can be a
+		// plan instead of a pile, and two of them together is a worse
+		// hand than one of them alone.
+		{"plonking", "The Plonker",
+			"struck while digging it lands harder; struck over a bare "
+			"floor it lands soft", Family::Rule, 2},
+		{"striding", "The Strider",
+			"every link past the first adds to the blow; the one that "
+			"breaks the chain lands soft", Family::Rule, 2},
+		{"opener", "The Opening",
+			"the first of a room hits far harder, and everything after "
+			"it is lighter", Family::Rule, 2},
+		{"downstacker", "The Downstacker",
+			"a plain clear hits like a rare one, and the rare ones hit "
+			"like plain", Family::Rule, 2},
 		// --- Ward: nothing here wins faster; everything here survives. ----
 		// The guard family. Half of it only matters in the rooms that
 		// threaten what it guards, which is the point: a ward is a bet on
@@ -235,6 +251,26 @@ void apply (SimConfig& rules, const std::string& id) {
 		// shatters a lock later - and the hand behind it hits far harder.
 		rules.cold_iron = true;
 		rules.attack_scale += 0.75;
+	} else if (id == "plonking") {
+		// Two rows a dug row is a lot on a four-row dig and nothing at
+		// all on a clean board, which is the shape wanted: the card is
+		// only worth its price to someone who lives in the rubble. The
+		// floors keep a second copy from erasing the other style whole.
+		rules.plonk_dig += 2;
+		rules.plonk_clean = std::max(0.4, rules.plonk_clean - 0.3);
+	} else if (id == "striding") {
+		rules.stride_chain += 1;
+		rules.stride_cold = std::max(0.35, rules.stride_cold - 0.4);
+	} else if (id == "opener") {
+		// Half a minute, and a second copy buys a LONGER opening rather
+		// than a louder one - a build that wants the whole room loud has
+		// to spend twice for it.
+		rules.opener_rows += 3;
+		rules.opener_ms += 30000;
+		rules.opener_late = std::max(0.5, rules.opener_late - 0.2);
+	} else if (id == "downstacker") {
+		rules.plain_rows += 2;
+		rules.plain_heavy = std::max(0.4, rules.plain_heavy - 0.35);
 	} else if (id == "turning_rack") {
 		rules.hold_churn = true;
 	} else if (id == "wild_spins") {

@@ -153,6 +153,109 @@ int main () {
 			at_ten > 3.0 && ships.fuse_min > 1.0, number(at_ten));
 	}
 
+	// --- The four playstyles. -----------------------------------------
+	//
+	// Every card before these made a blow bigger however it was struck,
+	// so every build wanted the same things and a run was a pile. Each of
+	// these pays for a WAY of playing and charges every other way, which
+	// is the whole design - so what is pinned here is always the PAIR:
+	// the style is worth more AND the rest is worth less. A card that
+	// only gave would not need a test, it would need a nerf.
+	{
+		// One quad off an all-I deck, with whatever tuning is handed in,
+		// and what it was worth on the way out.
+		const auto quad_worth = [] (SimConfig tuned, int garbage) {
+			tuned.clear_delay = false;
+			Sim sim(tuned, std::vector<int>(40, I));
+			wait_spawn(sim);
+			// The four rows the I fills, made of rubble when the case
+			// wants a dig. seed() replaces the whole board, so the
+			// garbage has to be IN the seed - handing it to
+			// receive_attack first only to overwrite it was the first
+			// try, and it quietly measured nothing.
+			Board start = welled(4);
+			for (int y = kHeight - garbage; y < kHeight; ++y) {
+				for (int x = 0; x < kWidth; ++x) {
+					if (x != kSpawnX + 1) {
+						start.set(x, y, GARBAGE);
+					}
+				}
+			}
+			sim.seed(start);
+			tap(sim, Key::Cw);
+			tap(sim, Key::Hard);
+			for (int settle = 0; settle < 40; ++settle) {
+				sim.step(std::nullopt);
+			}
+			return sim.locked().empty() ? -1 : sim.locked().back().attack;
+		};
+
+		const SimConfig plain = fused();
+		const int base = quad_worth(plain, 0);
+
+		// The Downstacker: a plain clear pays like a rare one, and the
+		// rare ones give it back. A quad is exactly the rare one, so the
+		// card must make this SMALLER.
+		SimConfig digger = plain;
+		temper::apply(digger, "downstacker");
+		const int quad_ds = quad_worth(digger, 0);
+		check("the downstacker's price lands on the quad",
+			quad_ds > 0 && quad_ds < base,
+			std::to_string(base) + " -> " + std::to_string(quad_ds));
+		check("and its gain lands on the plain clear",
+			digger.plain_rows > 0 && digger.plain_heavy < 1.0,
+			number(digger.plain_heavy));
+
+		// The Opening: loud early, quiet after. Both halves off one
+		// tuning, by moving only where the window sits.
+		SimConfig dawn = plain;
+		temper::apply(dawn, "opener");
+		SimConfig dusk = dawn;
+		dusk.opener_ms = 0;          // The window has closed...
+		dusk.opener_late = dawn.opener_late;
+		SimConfig shut = plain;
+		shut.opener_late = dawn.opener_late;
+		shut.opener_ms = 1;          // ...open, but already past.
+		shut.opener_rows = dawn.opener_rows;
+		const int loud = quad_worth(dawn, 0);
+		const int quiet = quad_worth(shut, 0);
+		check("the opening pays while it is open",
+			loud > base, std::to_string(base) + " -> " + std::to_string(loud));
+		check("and charges for every blow after it",
+			quiet < base,
+			std::to_string(base) + " -> " + std::to_string(quiet));
+
+		// The Plonker: worth it over rubble, worse over a bare floor.
+		SimConfig plonk = plain;
+		temper::apply(plonk, "plonking");
+		const int clean = quad_worth(plonk, 0);
+		const int dug = quad_worth(plonk, 4);
+		check("the plonker is worse on a bare floor",
+			clean > 0 && clean < base,
+			std::to_string(base) + " -> " + std::to_string(clean));
+		check("and pays by the row it dug",
+			dug > clean, std::to_string(clean) + " -> "
+				+ std::to_string(dug));
+
+		// The Strider: the chain pays, and the blow that breaks it is
+		// the one that hurts. The first quad of a game breaks nothing
+		// and starts nothing, so it takes the cold price.
+		SimConfig stride = plain;
+		temper::apply(stride, "striding");
+		const int cold = quad_worth(stride, 0);
+		check("the strider's first blow is cold",
+			cold > 0 && cold < base,
+			std::to_string(base) + " -> " + std::to_string(cold));
+		check("and the chain is what it pays for",
+			stride.stride_chain > 0 && stride.stride_cold < 1.0,
+			number(stride.stride_cold));
+
+		// And the point of all four: none of them is a free gain.
+		check("no style is a gain without a price",
+			digger.plain_heavy < 1.0 && dawn.opener_late < 1.0
+				&& plonk.plonk_clean < 1.0 && stride.stride_cold < 1.0);
+	}
+
 	// The ceiling on a blow, stated where it can be argued with.
 	//
 	// Measured against a real hand rather than reasoned about: two heavy

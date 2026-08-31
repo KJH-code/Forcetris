@@ -104,7 +104,16 @@ void Sim::retune (const SimConfig& rules) {
 	config_.overdrive_secs = rules.overdrive_secs;
 	config_.overdrive_mult = rules.overdrive_mult;
 	config_.flow_ignite = rules.flow_ignite;
-	config_.fuse_pressure = rules.fuse_pressure;
+	config_.attack_scale = rules.attack_scale;
+	config_.plonk_dig = rules.plonk_dig;
+	config_.plonk_clean = rules.plonk_clean;
+	config_.stride_chain = rules.stride_chain;
+	config_.stride_cold = rules.stride_cold;
+	config_.opener_rows = rules.opener_rows;
+	config_.opener_ms = rules.opener_ms;
+	config_.opener_late = rules.opener_late;
+	config_.plain_rows = rules.plain_rows;
+	config_.plain_heavy = rules.plain_heavy;
 	config_.flow_gain_dig = rules.flow_gain_dig;
 	config_.flow_gain_taken = rules.flow_gain_taken;
 	config_.flow_cap = rules.flow_cap;
@@ -685,6 +694,7 @@ void Sim::lock (bool forced, int posdif) {
 	line_list_.assign(1, 0);
 	clear_phase_ = 0;
 	clear_base_ = 0;
+	lock_dug_ = 0;   // What THIS lock digs, for the plonk to read.
 	locked_.push_back(std::move(entry));
 	clearing_ = true;
 	sprite_frames_ = 0;
@@ -837,6 +847,7 @@ void Sim::clearing_step () {
 			const int rows = board_.clear_pass(
 				config_.cleartype, base, dug, config_.cold_iron);
 			downstack_ += dug;
+			lock_dug_ += dug;
 			// Rubble dug out feeds the gauge, where a build asked for it.
 			// The road's own rooms are half digging, so this is the faucet
 			// that pays for the work the score never noticed.
@@ -970,7 +981,64 @@ void Sim::resolve_score () {
 	// which is true with or without a clock on the piece, so it charges
 	// wherever the rail is up. Refuel and Flow read the unboosted attack,
 	// or Overdrive would feed itself.
-	int boosted = sent;
+	// The four playstyles, before any multiplier touches the blow.
+	//
+	// These are not another multiplier - the ceiling below already holds
+	// those - they change what the TABLE was worth, so a build can be
+	// about how you play rather than about how much you stacked. Each is
+	// a trade: the style it names pays more and everything else pays
+	// less, which is what makes taking two that disagree a worse hand
+	// than committing to one.
+	//
+	// Every price is a fraction of the blow and every gain is rows on top
+	// of it, so a style card is felt on a small clear and does not run
+	// away on a big one.
+	int carried = sent;
+	if (total > 0 && sent > 0) {
+		const bool plain = last.spin == attack::NOT_SPIN && total < 4;
+		int rows = 0;
+		double keep = 1.0;
+		// Plonking: the blow struck while digging. Rubble under the clear
+		// pays by the row; a clear over bare floor is worth less, because
+		// a plonker who has stopped digging has stopped doing the thing.
+		if (config_.plonk_dig > 0) {
+			if (lock_dug_ > 0) {
+				rows += config_.plonk_dig * lock_dug_;
+			} else {
+				keep *= config_.plonk_clean;
+			}
+		}
+		// Striding: the chain is the whole build, so the chain pays and
+		// the blow that breaks it is the one that hurts.
+		if (config_.stride_chain > 0) {
+			if (b2b_ > 1) {
+				rows += config_.stride_chain * std::min(b2b_ - 1, 8);
+			} else {
+				keep *= config_.stride_cold;
+			}
+		}
+		// The opener: everything at once, early, and a long quiet after.
+		if (config_.opener_ms > 0) {
+			if (timer_ms_ <= config_.opener_ms) {
+				rows += config_.opener_rows;
+			} else {
+				keep *= config_.opener_late;
+			}
+		}
+		// The downstacker: the plain clear - no spin, no quad - is the
+		// build, and the flashy ones give back what it gains.
+		if (config_.plain_rows > 0) {
+			if (plain) {
+				rows += config_.plain_rows;
+			} else {
+				keep *= config_.plain_heavy;
+			}
+		}
+		if (rows != 0 || keep != 1.0) {
+			carried = std::max(1, py_round((sent + rows) * keep));
+		}
+	}
+	int boosted = carried;
 	// The blow's multipliers ADD rather than compose.
 	//
 	// They used to be three separate multiplications, each landing on the
@@ -1060,7 +1128,7 @@ void Sim::resolve_score () {
 		// clear.
 		lift = std::min(lift, kBlowCeiling);
 		if (lift != 1.0) {
-			boosted = std::max(1, py_round(sent * lift));
+			boosted = std::max(1, py_round(carried * lift));
 		}
 	}
 	// The turning rack: every clear stirs the hold. A real state change,

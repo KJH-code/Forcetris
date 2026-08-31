@@ -194,6 +194,37 @@ made ready. The **cooldown** puts it out again over half a second under
 the verdict - the board stays drawn underneath the whole time, because a
 loss screen over a well that vanished reads as a crash.
 
+**Four cards that are a way of playing, not a bigger number.** Every card
+before them made a blow heavier however it was struck, so every build
+wanted the same things and a run was a pile rather than a plan. These four
+each name a style, pay it, and charge every other style for the privilege
+- and the price is the design, not an apology for it. Taking two that
+disagree is allowed, and is meant to be a worse hand than committing to
+one.
+
+| card | what it pays | what it charges |
+|---|---|---|
+| The Plonker | rows by the row of rubble the clear ate | a clear over a bare floor |
+| The Strider | every back-to-back link past the first | the blow that breaks the chain |
+| The Opening | the first half-minute of a room | every blow after it |
+| The Downstacker | a plain clear - no spin, no quad | the quads and the spins |
+
+They land on the raw table value, before the multipliers and therefore
+before the ceiling: a style changes what the clear was worth, the ceiling
+bounds what the cards can multiply it by, and the two do not fight. Nine
+new SimConfig fields carry them, adds at zero and prices at one, so
+nothing that does not draft them notices - equivalence and trace do not
+move a step. The second copy of a card deepens the same bet rather than
+buying a different one (a second Opening buys a longer opening, not a
+louder one), and every price has a floor so two copies can never erase the
+other style entirely.
+
+fusecheck pins each of the four as a PAIR - the style is worth more AND
+the rest is worth less - because a card that only gave would not need a
+test, it would need a nerf. The plonk's dig case took two tries: handing
+garbage to `receive_attack` and then calling `seed()` overwrites the
+board, so the first version quietly measured nothing.
+
 **A blow has a ceiling now, and it was measured rather than argued.**
 Adding the multipliers instead of composing them stopped the runaway; it
 did not stop the total. Four cards into chapter two - two heavy hands, the

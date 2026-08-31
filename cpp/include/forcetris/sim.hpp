@@ -196,6 +196,27 @@ struct SimConfig {
 	// attack, not a private buff, and it stayed one when the duels put
 	// their clocks away.
 	double fuse_pressure = 1.45;
+
+	// --- The four playstyles. ------------------------------------------
+	//
+	// Every card until now made a blow bigger no matter how it was struck,
+	// so every build wanted the same thing and a run was a pile rather
+	// than a plan. These four pay for a WAY of playing, and every one of
+	// them is a trade: what the style is worth goes up, and what it is not
+	// goes down. Taking two that disagree is allowed and is meant to be a
+	// worse hand than committing to one.
+	//
+	// All nine are inert as they stand - the adds at zero, the prices at
+	// one - so nothing that does not draft them ever notices.
+	int plonk_dig = 0;        // Attack per rubble row this clear ate...
+	double plonk_clean = 1.;  // ...and what a clear over bare floor keeps.
+	int stride_chain = 0;     // Attack per back-to-back past the first...
+	double stride_cold = 1.;  // ...and what the blow that breaks it keeps.
+	int opener_rows = 0;      // Attack while the opening is still open...
+	int opener_ms = 0;        // ...how long that is, in milliseconds...
+	double opener_late = 1.;  // ...and what every blow after it keeps.
+	int plain_rows = 0;       // Attack on a clear with no spin and no quad...
+	double plain_heavy = 1.;  // ...and what the quads and spins keep.
 	// --- The gauge's supply. -------------------------------------------
 	// Extra faucets nobody else opens, a bigger tank, a tank that does not
 	// drain, and a fire that can be topped up while it burns. Every one is
@@ -487,6 +508,10 @@ private:
 	double fuse_bank_ = 0.;     // Refuel banked for the pieces to come.
 	double flow_ = 0.;          // The gauge, 0 to 100.
 	long overdrive_frames_ = 0; // Frames of Overdrive left, 0 outside it.
+	// Rubble rows this one lock dug out. downstack_ is the run's total and
+	// cannot answer "did THIS clear eat rubble", which is the whole
+	// question the plonk asks.
+	int lock_dug_ = 0;
 	bool fuse_warned_ = false;  // The warning cue fired for this piece.
 	bool pressured_ = false;    // The other board's Overdrive is burning.
 

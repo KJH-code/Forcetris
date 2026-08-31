@@ -120,6 +120,15 @@ std::vector<Reading> reading_of (const SimConfig& c) {
 		{"free_hold", c.free_hold ? 1. : 0.},
 		{"sweep_every", static_cast<double>(c.sweep_every)},
 		{"garbage_scale", c.garbage_scale},
+		{"plonk_dig", static_cast<double>(c.plonk_dig)},
+		{"plonk_clean", c.plonk_clean},
+		{"stride_chain", static_cast<double>(c.stride_chain)},
+		{"stride_cold", c.stride_cold},
+		{"opener_rows", static_cast<double>(c.opener_rows)},
+		{"opener_ms", static_cast<double>(c.opener_ms)},
+		{"opener_late", c.opener_late},
+		{"plain_rows", static_cast<double>(c.plain_rows)},
+		{"plain_heavy", c.plain_heavy},
 		{"flow_ignite", c.flow_ignite},
 		// The three the table forgot. A claimed name that is absent from
 		// this list can never fail the "moves what it claims" arm, so a
@@ -157,6 +166,14 @@ std::vector<std::string> claimed (const std::string& id) {
 	if (id == "loaded_dice") return {"crit_every"};
 	if (id == "cold_forge") return {"cold_iron", "attack_scale"};
 	if (id == "turning_rack") return {"hold_churn"};
+	// The four styles: each moves its own gain and its own price, and
+	// nothing else. That pairing IS the design, so the test states it.
+	if (id == "plonking") return {"plonk_dig", "plonk_clean"};
+	if (id == "striding") return {"stride_chain", "stride_cold"};
+	if (id == "opener") {
+		return {"opener_rows", "opener_ms", "opener_late"};
+	}
+	if (id == "downstacker") return {"plain_rows", "plain_heavy"};
 	if (id == "wild_spins") return {"wild_spins"};
 	if (id == "ring_walls") return {"wrap_walls", "fall_delay"};
 	// The two chaos cards that curse the hands do their damage in the GUI's
@@ -493,7 +510,7 @@ int main () {
 	}
 
 	// --- The pool's shape. --------------------------------------------------
-	// Five families, twenty-nine cards, and the counts written down here so
+	// Five families, thirty-three cards, and the counts written down here so
 	// that growing one family is a decision rather than an accident. Chaos
 	// is not among them any more: nobody drafts a curse, so the climb lays
 	// them instead and they live in curses(), pinned further down.
@@ -515,13 +532,13 @@ int main () {
 				}
 			}
 		}
-		check("the pool is twenty-nine cards in five families",
-			temper::pool().size() == 29 && counted.size() == 5,
+		check("the pool is thirty-three cards in five families",
+			temper::pool().size() == 33 && counted.size() == 5,
 			std::to_string(temper::pool().size()) + " cards, "
 				+ std::to_string(counted.size()) + " families");
-		check("and the families are five, seven, seven, four, six",
+		check("and the families are five, seven, seven, eight, six",
 			counted[0] == 5 && counted[1] == 7 && counted[2] == 7
-				&& counted[3] == 4 && counted[4] == 0 && counted[5] == 6,
+				&& counted[3] == 8 && counted[4] == 0 && counted[5] == 6,
 			std::to_string(counted[0]) + "/" + std::to_string(counted[1])
 				+ "/" + std::to_string(counted[2]) + "/"
 				+ std::to_string(counted[3]) + "/"
