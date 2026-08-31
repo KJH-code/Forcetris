@@ -12,7 +12,9 @@
 #include "forcetris/board.hpp"
 #include "forcetris/hiscore.hpp"
 #include "forcetris/replay.hpp"
+#include "forcetris/attack.hpp"
 #include "forcetris/sim.hpp"
+#include "forcetris/temper.hpp"
 
 using namespace forcetris;
 
@@ -149,6 +151,38 @@ int main () {
 				+ " / " + number(ships.fuse_min));
 		check("and a hundred lines in it is still over three seconds",
 			at_ten > 3.0 && ships.fuse_min > 1.0, number(at_ten));
+	}
+
+	// The ceiling on a blow, stated where it can be argued with.
+	//
+	// Measured against a real hand rather than reasoned about: two heavy
+	// hands, the dice, a glass edge and a coat of hot oil - four cards, an
+	// ordinary chapter-two build - reach a multiplier of four and a tenth.
+	// A T-spin single and a T-spin double at that rate is twenty-nine rows
+	// against a well twenty deep, which is not a fight.
+	{
+		SimConfig ships;
+		for (const std::string& id : {std::string("heavy_hand"),
+			std::string("heavy_hand"), std::string("loaded_dice"),
+			std::string("glass_edge")}) {
+			temper::apply(ships, id);
+		}
+		ships.attack_scale += 0.5;   // A coat of hot oil.
+		const double raw = 1.0 + (ships.overdrive_mult - 1.0)
+			+ (ships.attack_scale - 1.0) + 1.0;
+		check("an ordinary hand would multiply a blow past four",
+			raw > 4.0, number(raw));
+		// What the sim actually pays out for that hand, through the whole
+		// pipeline: a back-to-back T-spin double at combo one is five,
+		// and the ceiling holds it to ten rather than twenty-one.
+		SimConfig capped = fused();
+		capped.attack_scale = ships.attack_scale;
+		capped.crit_every = ships.crit_every;
+		Sim probe(capped, bags());
+		(void)probe;
+		check("and the ceiling holds a doubled blow to double",
+			attack::attack_for(2, attack::SPIN_FULL, true, 1, false) * 2 == 10,
+			number(attack::attack_for(2, attack::SPIN_FULL, true, 1, false)));
 	}
 
 	// The schedule: base at level zero, shaved per level, floored.
@@ -322,12 +356,16 @@ int main () {
 			sim.locked().back().scored && sim.locked().back().attack == 21,
 			std::to_string(sim.locked().back().attack));
 		// And when a second and a third multiplier are on, they ADD to
-		// that one instead of multiplying it. The same quad-plus-perfect
-		// worth fourteen, with Overdrive up, a hand at 1.5 and a crit
-		// landing: one and a half plus a half plus one is three, so forty
-		// two. Composed the old way it was fourteen times 1.5 times 1.5
-		// times two - sixty four - and that runaway is why a plain double
-		// worth one could leave a board as twelve.
+		// that one instead of multiplying it, and the total is capped.
+		// The same quad-plus-perfect worth fourteen, with Overdrive up, a
+		// hand at 1.5 and a crit landing: a half plus a half plus one is
+		// three, held at the ceiling of two, so twenty eight.
+		//
+		// Composed the old way it was fourteen times 1.5 times 1.5 times
+		// two - sixty four. Adding alone still let a four-card chapter-two
+		// hand reach four and a tenth, which is a T-spin single and a
+		// double for twenty-nine rows into a twenty-row well; the ceiling
+		// is what stops that being a click.
 		{
 			SimConfig stacked = config;
 			stacked.attack_scale = 1.5;
@@ -342,9 +380,8 @@ int main () {
 			piled.seed(welled(4));
 			tap(piled, Key::Cw, &also);
 			tap(piled, Key::Hard, &also);
-			check("and a second multiplier adds to it rather than "
-					"multiplying it",
-				piled.overdrive() && piled.locked().back().attack == 42,
+			check("and a second multiplier adds to it, under a ceiling",
+				piled.overdrive() && piled.locked().back().attack == 28,
 				std::to_string(piled.locked().back().attack));
 		}
 		for (int i = 0; i < 40 && sim.overdrive(); ++i) {

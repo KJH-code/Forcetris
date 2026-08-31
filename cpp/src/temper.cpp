@@ -490,7 +490,19 @@ int embers_of (int lines, int attack) {
 	// everything and still had change. One and one puts a good room at
 	// roughly one reroll and one pick, which is what the coin was for -
 	// choosing between the extra card and the life, not affording both.
-	return std::max(0, lines) + std::max(0, attack);
+	//
+	// Cut twice now, and the second cut is the honest one. The rates began
+	// at two and three, which paid a forty-line room two hundred and sixty
+	// against a shop whose whole stock cost sixty-five. One and one was
+	// meant to put a good room at about a reroll and a pick; it actually
+	// paid eighty, and a climb reached ring three holding eight hundred
+	// with the shop already at its three-times ceiling. Whatever the
+	// arithmetic said, the observed answer was that nothing was ever a
+	// decision.
+	//
+	// Half of that, floored: a good room pays about forty against a hand
+	// that costs thirty to reroll and pick from.
+	return (std::max(0, lines) + std::max(0, attack)) / 2;
 }
 
 } // namespace temper

@@ -194,6 +194,40 @@ made ready. The **cooldown** puts it out again over half a second under
 the verdict - the board stays drawn underneath the whole time, because a
 loss screen over a well that vanished reads as a crash.
 
+**A blow has a ceiling now, and it was measured rather than argued.**
+Adding the multipliers instead of composing them stopped the runaway; it
+did not stop the total. Four cards into chapter two - two heavy hands, the
+dice, a glass edge and a coat of hot oil - already reach four and a tenth,
+which turns a T-spin single and a T-spin double into twenty-nine rows
+against a well that is twenty deep. That is not a fight, it is a click,
+and it is what a grandmaster miniboss was dying to. A blow may be doubled
+and no more. The cards keep every other half of what they do; what a maxed
+hand buys is reaching the ceiling sooner and holding it through more of a
+room, not a bigger number on one clear. fusecheck states the ordinary hand
+that would have gone past four, so the ceiling is a decision with its own
+pin rather than a number someone can quietly raise.
+
+**And the coin is cut again.** The rate began at two per line and three
+per attack, which paid a forty-line, sixty-attack room 260 against a shop
+whose whole stock cost sixty-five. One and one was meant to put a good room
+at about a reroll and a pick; it paid a hundred, and a climb still reached
+ring three holding eight hundred embers with the shop already at its
+three-times ceiling. Half of that, floored - a strong room pays fifty, an
+ordinary one nine - and the four things worth buying cost ten, twenty,
+thirty and thirty-five. The choice the coin was for is a choice again.
+
+**What the run is carrying is emblems, not a sentence.** It used to be one
+line of prose - "Loaded Dice x2, The Floor Sweep x2, Heavy Hand x2,
+Coolant, The Sifter, Frostbrand..." - which by the middle of a climb
+wrapped to three lines of names. Names in a row are not a build: nothing
+in them says how many of a thing you hold, which family it belongs to, or
+which of them is the reason the last fight went the way it did; reading it
+meant already knowing every card in the game. Each distinct card is a
+plate now, cut to the same octagon as the map's nodes, filled with its
+family's colour, marked with two letters and stamped with `x2` when a run
+holds more than one. Colour groups them at a glance, and the full name and
+what it does are one hover away.
+
 **The board ships bare, and the wick ships long.** Two defaults, both
 chosen for someone opening this for the first time rather than for the
 person who wrote it.

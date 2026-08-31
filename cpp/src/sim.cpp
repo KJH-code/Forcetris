@@ -9,6 +9,10 @@
 
 namespace forcetris {
 
+// The most any one clear's multipliers may be worth together. See the
+// note at the ceiling itself in Sim::lock.
+constexpr double kBlowCeiling = 2.0;
+
 int py_round (double value) {
 	// Half to even, for the non-negative values the handling maths produces.
 	const double floor = std::floor(value);
@@ -1039,6 +1043,22 @@ void Sim::resolve_score () {
 			lift += 1.0;
 			cue("crit");
 		}
+		// And a ceiling on the whole of it.
+		//
+		// Adding rather than composing stopped the runaway; it did not
+		// stop the total. Four cards into chapter two - two heavy hands,
+		// the dice, a glass edge and a coat of hot oil - already reach
+		// four and a tenth, which turns a T-spin single and a double into
+		// twenty-nine rows against a well that is twenty deep. That is not
+		// a fight, it is a click, and it was measured against a real hand
+		// rather than argued about.
+		//
+		// So a blow may be doubled and no more. The cards keep every other
+		// half of what they do - the gravity, the gauge, the digging - and
+		// what a maxed hand buys is reaching the ceiling sooner and
+		// holding it through more of the room, not a bigger number on one
+		// clear.
+		lift = std::min(lift, kBlowCeiling);
 		if (lift != 1.0) {
 			boosted = std::max(1, py_round(sent * lift));
 		}

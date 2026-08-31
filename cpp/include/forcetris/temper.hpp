@@ -127,25 +127,25 @@ std::vector<std::string> blade_for (int rank_index);
 // It used to: two and three a room banked several times the till's entire
 // stock, and no purchase was ever a decision.
 int embers_of (int lines, int attack);
-constexpr int kRerollCost = 8;      // Deal this heat's three again.
-constexpr int kExtraPickCost = 22;
+constexpr int kRerollCost = 10;      // Deal this heat's three again.
+constexpr int kExtraPickCost = 30;
 // Melting a picked temper back down at a forge node on the map.
-constexpr int kRemoveCost = 14;  // Take a second card from the offer.
+constexpr int kRemoveCost = 20;  // Take a second card from the offer.
 // Burning a curse off instead of a card. Deliberately most of a good
 // room's whole earnings: a climb's curses are the difficulty that keeps
 // climbing after the ladder runs out, and one you could buy off with
 // pocket change would be no difficulty at all. It is still buyable,
 // because the choice between shedding the ring's work and building on is
 // a better decision than either one alone.
-constexpr int kCurseCost = 45;
+constexpr int kCurseCost = 60;
 // The rest of what the coin buys (V2.1e): a second copy of a held card
 // struck at the forge, a life bought back on forged fire, the two oils
 // painted on before a battle, and the small solace for walking past the
 // spoils untaken.
 constexpr int kDuplicateCost = 16;
-constexpr int kLifeCost = 25;
-constexpr int kHotOilCost = 10;
-constexpr int kFrostOilCost = 12;
+constexpr int kLifeCost = 35;
+constexpr int kHotOilCost = 14;
+constexpr int kFrostOilCost = 16;
 constexpr int kSkipSolace = 4;
 
 // The shape of a heat, and of the one mode that is a complete run of them:

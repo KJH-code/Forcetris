@@ -10,6 +10,9 @@
 // with scripted-random input and exits, which is how the build is tested on
 // machines with no display.
 #include <algorithm>
+#include <cctype>
+#include <set>
+#include <sstream>
 #include <cmath>
 #include <cstring>
 #include <cstdarg>
@@ -477,6 +480,9 @@ struct App {
 	// The bed's own clock, so the molten runs move whether or not a game
 	// is stepping behind them.
 	float map_clock = 0.f;
+	// The screen y the map's ground may start at: the badges and the coin
+	// row live above it, and the floor must not paint over them.
+	float map_top = 0.f;
 	// How much of the room each foe's board is holding, eased toward the
 	// aim so a switch is a movement and not a jump.
 	static constexpr int kSeats = 6;
@@ -1037,6 +1043,27 @@ void next_versus_round (App& app) {
 	deal_versus_round(app);
 }
 
+// The map's one shape: a plate with its corners cut.
+//
+// Every node on the Forge Map used to be a rounded rectangle, which is the
+// shape of a button - a form to fill in, not a thing that was made. An
+// octagon is cast: it is what a square becomes once it has been chamfered
+// on the anvil, and because every plate is the same octagon at the same
+// angles, a row of them reads as machined rather than arranged.
+void forge_plate (ImDrawList* dl, ImVec2 a, ImVec2 b, float cut,
+	ImU32 fill, ImU32 rim, float rim_w) {
+	cut = std::min(cut, std::min((b.x - a.x) * 0.4f, (b.y - a.y) * 0.4f));
+	const ImVec2 pts[8] = {
+		ImVec2(a.x + cut, a.y), ImVec2(b.x - cut, a.y),
+		ImVec2(b.x, a.y + cut), ImVec2(b.x, b.y - cut),
+		ImVec2(b.x - cut, b.y), ImVec2(a.x + cut, b.y),
+		ImVec2(a.x, b.y - cut), ImVec2(a.x, a.y + cut)};
+	dl->AddConvexPolyFilled(pts, 8, fill);
+	if (rim_w > 0.f) {
+		dl->AddPolyline(pts, 8, rim, ImDrawFlags_Closed, rim_w);
+	}
+}
+
 // What each family of temper is painted in: fuel the iron's own orange,
 // Flow the gold Overdrive already uses, risk the danger red the board's
 // edges close in with, and the two rule cards a pale hot white so they read
@@ -1170,6 +1197,152 @@ std::string temper_line (const std::vector<std::string>& taken) {
 		}
 	}
 	return line;
+}
+
+// A card's two-letter mark: the emblem's whole text.
+//
+// Initials of the words that carry the name, skipping the articles a title
+// picks up ("The Deep Bank" is DB, not TD). One word gives its first two
+// letters. It is not a word, it is a shape to recognise - which is the
+// point, because the thing being recognised is the badge as a whole: its
+// family colour, its mark and its count together.
+std::string temper_mark (const std::string& name) {
+	static const std::set<std::string> kSkip = {"the", "a", "an", "of"};
+	std::vector<std::string> words;
+	std::string word;
+	std::istringstream in(name);
+	while (in >> word) {
+		std::string low;
+		for (const char c : word) {
+			low += static_cast<char>(std::tolower(
+				static_cast<unsigned char>(c)));
+		}
+		if (kSkip.count(low) == 0 && !word.empty()) {
+			words.push_back(word);
+		}
+	}
+	if (words.empty()) {
+		return name.substr(0, 2);
+	}
+	std::string mark(1, static_cast<char>(std::toupper(
+		static_cast<unsigned char>(words[0][0]))));
+	if (words.size() > 1) {
+		mark += static_cast<char>(std::toupper(
+			static_cast<unsigned char>(words[1][0])));
+	} else if (words[0].size() > 1) {
+		mark += static_cast<char>(std::tolower(
+			static_cast<unsigned char>(words[0][1])));
+	}
+	return mark;
+}
+
+// What the run is carrying, as emblems rather than a sentence.
+//
+// It used to be one line of prose - "Loaded Dice x2, The Floor Sweep x2,
+// Heavy Hand x2, Coolant, The Sifter, Frostbrand, Hobnails, Quench x3..."
+// - which by the middle of a climb wrapped to three lines of names. Names
+// in a row are not a build: nothing in them says how many of a thing you
+// hold, which family it belongs to, or which of them is the reason the
+// last fight went the way it did. Reading it meant remembering every card
+// in the game.
+//
+// So each distinct card is a plate, cut to the same octagon as the map's
+// nodes, filled with its family's colour, marked with two letters and
+// stamped with its count when a run holds more than one. Colour groups
+// them at a glance - all the ember plates are the wick, all the slate ones
+// the guard - and the full name and what it does are one hover away.
+void temper_badges (App& app, const std::vector<std::string>& taken,
+	bool small = false) {
+	if (taken.empty()) {
+		ImGui::TextDisabled("No tempers yet.");
+		return;
+	}
+	// Counted in the order taken, so the row reads as the run's own
+	// history rather than as an alphabetised inventory.
+	std::vector<std::pair<std::string, int>> counted;
+	for (const std::string& id : taken) {
+		auto found = std::find_if(counted.begin(), counted.end(),
+			[&id] (const auto& entry) { return entry.first == id; });
+		if (found == counted.end()) {
+			counted.emplace_back(id, 1);
+		} else {
+			++found->second;
+		}
+	}
+	const float side = small ? ui(26) : ui(34);
+	const float gap = ui(5);
+	const float right = ImGui::GetCursorPosX()
+		+ ImGui::GetContentRegionAvail().x;
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	bool first = true;
+	for (const auto& [id, times] : counted) {
+		const temper::Temper* card = temper::find(id);
+		const std::string name = card != nullptr ? card->name : id;
+		if (!first) {
+			ImGui::SameLine(0.f, gap);
+			// Wrap by hand: SameLine does not know the row is full.
+			if (ImGui::GetCursorPosX() + side > right) {
+				ImGui::NewLine();
+			}
+		}
+		first = false;
+		const ImVec2 pen = ImGui::GetCursorScreenPos();
+		ImGui::PushID(id.c_str());
+		ImGui::InvisibleButton("##badge", ImVec2(side, side));
+		const bool hot = ImGui::IsItemHovered();
+		const ImVec2 low(pen.x + side, pen.y + side);
+		const ImU32 ink = card != nullptr ? family_ink(card->family)
+			: IM_COL32(150, 140, 130, 255);
+		const float cut = side * 0.28f;
+		forge_plate(dl, pen, low, cut, IM_COL32(8, 6, 4, 245), 0, 0.f);
+		// The family colour, dimmed to a plate rather than a light: the
+		// rim carries the hue, the face only enough of it to group.
+		const ImU32 face = (ink & 0x00FFFFFF)
+			| (static_cast<ImU32>(hot ? 90 : 58) << IM_COL32_A_SHIFT);
+		forge_plate(dl, ImVec2(pen.x + ui(2), pen.y + ui(2)),
+			ImVec2(low.x - ui(2), low.y - ui(2)), cut - ui(2), face,
+			(ink & 0x00FFFFFF)
+				| (static_cast<ImU32>(hot ? 255 : 190) << IM_COL32_A_SHIFT),
+			ui(1.6f));
+		// The mark, and under it the count when a run holds more than
+		// one. Stacked rather than cornered: the chamfer takes the corners
+		// away, and a digit sitting on a cut edge reads as damage.
+		const std::string mark = temper_mark(name);
+		const float size = ImGui::GetFontSize() * (small ? 0.72f : 0.86f);
+		const ImVec2 wide = app.fonts.head->CalcTextSizeA(size, FLT_MAX, 0.f,
+			mark.c_str());
+		const float lift = times > 1 ? side * 0.14f : 0.f;
+		dl->AddText(app.fonts.head, size,
+			ImVec2(pen.x + (side - wide.x) / 2,
+				pen.y + (side - wide.y) / 2 - lift),
+			IM_COL32(244, 237, 228, 255), mark.c_str());
+		if (times > 1) {
+			char tally[8];
+			std::snprintf(tally, sizeof tally, "x%d", times);
+			const float tiny = ImGui::GetFontSize() * (small ? 0.62f : 0.7f);
+			const ImVec2 tw = ImGui::GetFont()->CalcTextSizeA(tiny, FLT_MAX,
+				0.f, tally);
+			dl->AddText(ImGui::GetFont(), tiny,
+				ImVec2(pen.x + (side - tw.x) / 2,
+					low.y - tw.y - side * 0.06f),
+				IM_COL32(255, 214, 94, 255), tally);
+		}
+		if (hot) {
+			ImGui::BeginTooltip();
+			ImGui::PushFont(app.fonts.head);
+			ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(ink),
+				"%s%s", name.c_str(),
+				times > 1 ? (" x" + std::to_string(times)).c_str() : "");
+			ImGui::PopFont();
+			if (card != nullptr) {
+				ImGui::PushTextWrapPos(ui(300));
+				ImGui::TextDisabled("%s", card->text);
+				ImGui::PopTextWrapPos();
+			}
+			ImGui::EndTooltip();
+		}
+		ImGui::PopID();
+	}
 }
 
 // One stage of the Forge Road put on the table. The recipe decides
@@ -4316,7 +4489,7 @@ void draw_versus_panel (App& app) {
 			match.first_to, match.round);
 	}
 	if (kPortrait && !match.bot_tempers.empty()) {
-		ImGui::TextDisabled("%s", temper_line(match.bot_tempers).c_str());
+		temper_badges(app, match.bot_tempers, true);
 	}
 	const int surge = app.session->sim().surge_charge();
 	if (surge > 0) {
@@ -6332,27 +6505,6 @@ void nine_patch (ImDrawList* dl, SDL_Texture* tex, ImVec2 a, ImVec2 b,
 	}
 }
 
-// The map's one shape: a plate with its corners cut.
-//
-// Every node on the Forge Map used to be a rounded rectangle, which is the
-// shape of a button - a form to fill in, not a thing that was made. An
-// octagon is cast: it is what a square becomes once it has been chamfered
-// on the anvil, and because every plate is the same octagon at the same
-// angles, a row of them reads as machined rather than arranged.
-void forge_plate (ImDrawList* dl, ImVec2 a, ImVec2 b, float cut,
-	ImU32 fill, ImU32 rim, float rim_w) {
-	cut = std::min(cut, std::min((b.x - a.x) * 0.4f, (b.y - a.y) * 0.4f));
-	const ImVec2 pts[8] = {
-		ImVec2(a.x + cut, a.y), ImVec2(b.x - cut, a.y),
-		ImVec2(b.x, a.y + cut), ImVec2(b.x, b.y - cut),
-		ImVec2(b.x - cut, b.y), ImVec2(a.x + cut, b.y),
-		ImVec2(a.x, b.y - cut), ImVec2(a.x, a.y + cut)};
-	dl->AddConvexPolyFilled(pts, 8, fill);
-	if (rim_w > 0.f) {
-		dl->AddPolyline(pts, 8, rim, ImDrawFlags_Closed, rim_w);
-	}
-}
-
 // The route an edge takes between two plates.
 //
 // A straight line drawn corner to corner is a diagram. What the map wants
@@ -6453,7 +6605,10 @@ void draw_lava_bed (App& app, ImDrawList* bed) {
 	const float heat = app.forge_strike > 0
 		? 0.5f + 0.5f * (app.forge_strike / static_cast<float>(kStrike))
 		: 0.5f;
-	const float top = head - ui(24);
+	// A hand's breadth above the first row, but never above the header -
+	// the run's badges sit right there, and a floor that starts too high
+	// takes the bottom off them.
+	const float top = std::max(head - ui(24), app.map_top);
 	const float bed_y = foot + ui(46);
 	bed->AddRectFilled(ImVec2(lo, top), ImVec2(hi, bed_y),
 		IM_COL32(20, 16, 13, 242));
@@ -6700,10 +6855,11 @@ void draw_career (App& app) {
 		}
 		if (!run.tempers.empty()) {
 			ImGui::PushTextWrapPos(0.f);
-			ImGui::TextDisabled("%s", temper_line(run.tempers).c_str());
+			temper_badges(app, run.tempers);
 			ImGui::PopTextWrapPos();
 		}
-		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		ImGui::Dummy(ImVec2(0.f, ui(6)));
+		app.map_top = ImGui::GetCursorScreenPos().y;
 		// The rows, boss first so the climb reads bottom-to-top, with
 		// every node's rectangle remembered so the edges can be drawn in
 		// the gaps between rows afterwards.
@@ -7785,7 +7941,7 @@ void draw_menus (App& app) {
 		}
 		if (!app.tempers.empty()) {
 			ImGui::Separator();
-			ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
+			temper_badges(app, app.tempers, true);
 		}
 		ImGui::End();
 	} else if (app.screen == Screen::Game && app.paused) {
@@ -7794,7 +7950,7 @@ void draw_menus (App& app) {
 		forge_panel(app);
 		ImGui::TextUnformatted("Paused");
 		if (!app.tempers.empty()) {
-			ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
+			temper_badges(app, app.tempers, true);
 		}
 		ImGui::Spacing();
 		if (ImGui::Button("Resume", ImVec2(ui(240), 0))) {
@@ -7918,7 +8074,7 @@ void draw_menus (App& app) {
 			// What the run was carrying when it ended - two runs of the
 			// same score are not the same run.
 			ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui(300));
-			ImGui::TextDisabled("%s", temper_line(app.tempers).c_str());
+			temper_badges(app, app.tempers, true);
 			ImGui::PopTextWrapPos();
 		}
 		ImGui::Spacing();

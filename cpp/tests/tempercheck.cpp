@@ -1060,19 +1060,23 @@ int main () {
 	{
 		check("embers pay on lines and attack, and on nothing else",
 			temper::embers_of(0, 0) == 0
-				&& temper::embers_of(10, 0) == 10
-				&& temper::embers_of(0, 10) == 10
-				&& temper::embers_of(4, 6) == 10
+				&& temper::embers_of(10, 0) == 5
+				&& temper::embers_of(0, 10) == 5
+				&& temper::embers_of(4, 6) == 5
 				&& temper::embers_of(-3, -3) == 0);
-		// A good room pays for one decision, not for the whole shop. The
-		// forty-line, sixty-attack room that used to bank 260 against a
-		// sixty-five ember stock now banks 100, so the reroll and the
-		// extra pick and the life are three things you choose between.
-		check("a strong room no longer buys everything on the table",
-			temper::embers_of(40, 60)
-				< temper::kRerollCost + temper::kExtraPickCost
-					+ temper::kRemoveCost + temper::kDuplicateCost
-					+ temper::kLifeCost + temper::kExtraPickCost);
+		// A good room pays for ONE decision, which is what the coin was
+		// always for. The rate has been cut twice: two-and-three paid a
+		// forty-line, sixty-attack room 260 against a sixty-five ember
+		// stock; one-and-one paid it 100 and a climb still reached ring
+		// three holding eight hundred with the shop already at its
+		// three-times ceiling. Half of one-and-one pays it fifty, which
+		// is one card off the table and change - not the table.
+		check("a strong room pays for one thing, not the table",
+			temper::embers_of(40, 60) == 50
+				&& temper::embers_of(40, 60)
+					< temper::kExtraPickCost + temper::kLifeCost);
+		check("and an ordinary room does not even pay for a card",
+			temper::embers_of(10, 8) < temper::kExtraPickCost);
 		check("a reroll is cheaper than a second card",
 			temper::kRerollCost > 0
 				&& temper::kExtraPickCost > temper::kRerollCost);
