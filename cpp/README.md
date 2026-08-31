@@ -272,6 +272,35 @@ The small events stay small on purpose: an ordinary clear gets a three
 pixel nudge and no stop, because a field that halts every few seconds is a
 stutter rather than a reward.
 
+**And a blow you send now leaves.** The wire between the boards used to
+carry one five-pixel square with four ghosts behind it, arcing over twenty
+frames and landing in a handful of sparks - the same dot for a two-row
+blow and for a twenty-row one, and the board it landed on did not move. A
+blow you sent left no impression at either end of it.
+
+A blow is a **volley** now: a slug for every row it was worth, up to ten,
+launched a couple of frames apart so a big one visibly pours rather than
+blinks. Each carries its own arc height, its own scatter at the target so
+ten of them do not stack into one dot, and a trail sampled closely enough
+to read as a streak (0.022 apart put eleven pixels between the samples and
+the eye counted them). The colour carries the size - ember for a nudge,
+gold at four rows, white-gold at eight - so a blow is readable in the air
+before anyone has counted what it is about to lay. Red coming back the
+other way.
+
+Both ends of the wire do something now. The muzzle sparks at the well it
+left, and the well takes a sideways recoil scaled to the rows, opposite in
+direction to a blow taken, so sending and taking never feel the same in
+the hands. On arrival the slugs throw shards rather than twinkle - a blow
+landing should break something - and the volley's last slug leaves a mark:
+a cross of light that opens and fades, sized by the blow, so a twenty-row
+landing does not look like a two-row one.
+
+And it is aimed. In a raid there are three boards on the table and the
+player chose one of them; the volley flies at that board's rectangle
+rather than at a fixed corner of the screen, which is the only decision a
+raid asks for.
+
 **A playstyle is assembled, not handed over.** Every card before these
 made a blow heavier however it was struck, so every build wanted the same
 things and a run was a pile rather than a plan. The Style family names a

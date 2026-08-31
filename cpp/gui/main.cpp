@@ -682,13 +682,39 @@ struct App {
 	// The intensity layer: attack streaks in flight between the boards,
 	// the ignition flash and banner countdowns, and the last pending-
 	// garbage count so a fresh landing can hit back.
+	// A blow in flight.
+	//
+	// It used to be one five-pixel square with four ghosts behind it,
+	// arcing over twenty frames and landing in a handful of sparks - the
+	// same dot for a two-row blow and for a twenty-row one, and the board
+	// it landed on did not move. A blow you sent left no impression at
+	// either end of the wire.
+	//
+	// So a blow is a VOLLEY: a slug for every row it was worth, up to ten,
+	// launched a couple of frames apart so a big one visibly pours rather
+	// than blinks. Each carries its own arc height and its own trail, and
+	// the last one to land is the one that shakes the board it hits.
 	struct Streak {
 		float sx = 0.f, sy = 0.f, tx = 0.f, ty = 0.f;
 		float at = 0.f;         // 0 to 1 along the arc; <0 = free slot.
+		float lag = 0.f;        // Stagger within the volley, in `at`.
+		float lift = 1.f;       // This slug's share of the arc's height.
+		float speed = 0.05f;
 		int rows = 0;
+		bool last = false;      // The one that reports the arrival.
+		bool inbound = false;   // Coming at the player rather than going.
 	};
-	std::array<Streak, 16> streaks{};
+	std::array<Streak, 64> streaks{};
 	size_t streak_at = 0;
+	// Where a volley landed, and how long the mark has left.
+	struct Impact {
+		float x = 0.f, y = 0.f;
+		int life = 0;
+		int born = 0;
+		int rows = 0;
+		bool inbound = false;
+	};
+	std::vector<Impact> impacts;
 	int od_flash = 0;           // Frames of the ignition flash left.
 	int od_banner = 0;          // Frames of the OVERDRIVE banner left.
 	bool was_overdrive = false;
@@ -861,6 +887,10 @@ void reset_effects (App& app) {
 	for (App::Streak& streak : app.streaks) {
 		streak.at = -1.f;
 	}
+	app.impacts.clear();
+	app.pops.clear();
+	app.kick_mag = 0.f;
+	app.freeze = 0;
 	app.audio.set_music_rate(1.f);
 }
 
@@ -6766,41 +6796,144 @@ void draw_heat (App& app) {
 	}
 }
 
-// Attack in flight: ember streaks arcing between the boards, a burst
-// where they land.
+// The colour a blow flies in: an ember for a nudge, white-gold for one
+// worth being afraid of. A big blow should be readable in the air, before
+// anyone has counted the rows it is about to lay.
+SDL_Color blow_ink (int rows, bool inbound) {
+	if (inbound) {
+		return rows >= 8 ? SDL_Color{255, 150, 130, 255}
+			: SDL_Color{236, 96, 72, 255};
+	}
+	return rows >= 8 ? SDL_Color{255, 250, 226, 255}
+		: rows >= 4 ? SDL_Color{255, 214, 94, 255}
+		: SDL_Color{255, 176, 60, 255};
+}
+
+// Attack in flight: a volley of ember slugs arcing between the boards,
+// each with a tapering trail, and a mark where the last one lands.
 void draw_streaks (App& app) {
 	SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
 	for (App::Streak& streak : app.streaks) {
 		if (streak.at < 0.f) {
 			continue;
 		}
-		streak.at += 0.05f;
-		if (streak.at >= 1.f) {
-			spawn_sparks_at(app, streak.tx, streak.ty,
-				{255, 176, 60, 255}, 3 + std::min(streak.rows, 6), 2.6f);
+		streak.at += streak.speed;
+		const float head = streak.at - streak.lag;
+		if (head < 0.f) {
+			continue;   // Still in the barrel: its turn has not come.
+		}
+		const SDL_Color ink = blow_ink(streak.rows, streak.inbound);
+		if (head >= 1.f) {
+			// Landed. Shards rather than sparks - a blow arriving should
+			// break something, not twinkle - and the volley's last slug
+			// leaves the mark and shoves the board it hit.
+			spawn_shards(app, streak.tx, streak.ty, ink,
+				3 + std::min(streak.rows, 6), 2.8f, false);
+			if (streak.last) {
+				App::Impact mark;
+				mark.x = streak.tx;
+				mark.y = streak.ty;
+				mark.life = 22;
+				mark.born = 22;
+				mark.rows = streak.rows;
+				mark.inbound = streak.inbound;
+				app.impacts.push_back(mark);
+				if (app.impacts.size() > 8) {
+					app.impacts.erase(app.impacts.begin());
+				}
+				spawn_ring(app, streak.tx, streak.ty, ink,
+					static_cast<float>(kCell)
+						* (1.6f + std::min(streak.rows, 10) * 0.28f),
+					16);
+			}
 			streak.at = -1.f;
 			continue;
 		}
-		const float arc = -std::sin(streak.at * 3.14159f) * px(70);
-		for (int ghost = 0; ghost < 4; ++ghost) {
-			const float t = std::max(0.f, streak.at - ghost * 0.03f);
+		// The trail: eight samples behind the head, tapering and fading,
+		// so the eye reads a direction instead of a blinking dot.
+		const float lift = px(70) * streak.lift;
+		const float fat = px(5) + std::min(streak.rows, 10) * px(0.5f);
+		// The trail is sampled close enough to read as a streak rather
+		// than as a row of dots - at this arc length 0.022 apart put
+		// eleven pixels between them and the eye counted them.
+		for (int ghost = 0; ghost < 12; ++ghost) {
+			const float t = head - ghost * 0.009f;
+			if (t < 0.f) {
+				break;
+			}
 			const float x = streak.sx + (streak.tx - streak.sx) * t;
 			const float y = streak.sy + (streak.ty - streak.sy) * t
-				- std::sin(t * 3.14159f) * px(70);
-			fill(app.renderer, static_cast<int>(x), static_cast<int>(y),
-				px(5) - ghost, px(5) - ghost,
-				{255, static_cast<Uint8>(170 - 26 * ghost), 60,
-					static_cast<Uint8>(230 - 52 * ghost)});
+				- std::sin(t * 3.14159f) * lift;
+			const float wide = std::max(1.f, fat * (1.f - ghost * 0.075f));
+			fill(app.renderer, static_cast<int>(x - wide * 0.5f),
+				static_cast<int>(y - wide * 0.5f),
+				static_cast<int>(wide), static_cast<int>(wide),
+				{ink.r, ink.g, ink.b,
+					static_cast<Uint8>(245 - 19 * ghost)});
 		}
-		(void) arc;
+	}
+	// The marks: a ring of light where a volley landed, opening and
+	// fading. Drawn here rather than as particles so the size can carry
+	// the blow - a twenty-row landing must not look like a two-row one.
+	for (size_t at = 0; at < app.impacts.size();) {
+		App::Impact& mark = app.impacts[at];
+		const float life = static_cast<float>(mark.life)
+			/ std::max(1, mark.born);
+		const SDL_Color ink = blow_ink(mark.rows, mark.inbound);
+		const float span = static_cast<float>(kCell)
+			* (1.f + std::min(mark.rows, 12) * 0.34f) * (1.4f - life);
+		const Uint8 alpha = static_cast<Uint8>(200.f * life);
+		for (int ring = 0; ring < 2; ++ring) {
+			const float r = span - ring * px(3);
+			if (r <= 1.f) {
+				continue;
+			}
+			fill(app.renderer, static_cast<int>(mark.x - r),
+				static_cast<int>(mark.y - r * 0.16f),
+				static_cast<int>(r * 2.f), std::max(1, px(2)),
+				{ink.r, ink.g, ink.b, alpha});
+			fill(app.renderer, static_cast<int>(mark.x - r * 0.16f),
+				static_cast<int>(mark.y - r),
+				std::max(1, px(2)), static_cast<int>(r * 2.f),
+				{ink.r, ink.g, ink.b, alpha});
+		}
+		if (--mark.life <= 0) {
+			app.impacts.erase(app.impacts.begin() + static_cast<long>(at));
+		} else {
+			++at;
+		}
 	}
 }
 
+// A blow put on the wire: one slug a row, up to ten, staggered so the
+// volley pours. The muzzle is marked at the well it left, because half of
+// "I hit them" is seeing it leave.
 void launch_streak (App& app, float sx, float sy, float tx, float ty,
-		int rows) {
-	App::Streak& streak = app.streaks[app.streak_at];
-	app.streak_at = (app.streak_at + 1) % app.streaks.size();
-	streak = {sx, sy, tx, ty, 0.f, rows};
+		int rows, bool inbound = false) {
+	const int slugs = std::clamp(rows, 1, 10);
+	const SDL_Color ink = blow_ink(rows, inbound);
+	spawn_sparks_at(app, sx, sy, ink, 2 + slugs, 3.0f);
+	for (int i = 0; i < slugs; ++i) {
+		App::Streak& streak = app.streaks[app.streak_at];
+		app.streak_at = (app.streak_at + 1) % app.streaks.size();
+		streak = App::Streak{};
+		streak.sx = sx;
+		streak.sy = sy;
+		// A little scatter at the target so ten slugs do not stack into
+		// one dot - a volley should look like a volley when it lands.
+		const float spread = static_cast<float>(kCell) * 0.9f;
+		streak.tx = tx + (static_cast<float>(app.seeds() % 200) / 100.f - 1.f)
+			* spread;
+		streak.ty = ty + (static_cast<float>(app.seeds() % 200) / 100.f - 1.f)
+			* spread * 0.6f;
+		streak.at = 0.f;
+		streak.lag = i * 0.055f;
+		streak.lift = 0.7f + static_cast<float>(app.seeds() % 100) / 140.f;
+		streak.speed = 0.055f;
+		streak.rows = rows;
+		streak.last = i == slugs - 1;
+		streak.inbound = inbound;
+	}
 }
 
 // The date the daily runs under, local time, the way the profile stamps.
@@ -9510,21 +9643,39 @@ int run (bool smoke, long smoke_frames) {
 				}
 				// The wire's traffic becomes streaks between the boards.
 				if (app.versus.has_value()) {
+					// Where the blow is aimed. In a raid there are three
+					// boards on the table and the player chose one of
+					// them; firing at a fixed corner of the screen would
+					// undo the only decision a raid asks for.
+					float mark_x = kMiniX + kWidth * kMiniCell * 0.5f;
+					float mark_y = kMiniY + kHeight * kMiniCell * 0.4f;
+					const int aimed = app.versus->target;
+					if (aimed >= 0
+						&& aimed < static_cast<int>(app.foe_rects.size())) {
+						const SDL_Rect& box = app.foe_rects[
+							static_cast<size_t>(aimed)];
+						mark_x = box.x + box.w * 0.5f;
+						mark_y = box.y + box.h * 0.42f;
+					}
 					if (app.versus->wire_to_bot > 0) {
 						launch_streak(app,
 							kBoardX + kBoardW * 0.5f,
 							kBoardY + kBoardH * 0.35f,
-							kMiniX + kWidth * kMiniCell * 0.5f,
-							kMiniY + kHeight * kMiniCell * 0.4f,
+							mark_x, mark_y,
 							app.versus->wire_to_bot);
+						// The recoil: a blow leaving shoves the well the
+						// way a blow landing shoves it, in the opposite
+						// direction, so sending and taking never feel the
+						// same in the hands.
+						kick(app, mark_x < kBoardX ? 1.f : -1.f, 0.35f,
+							std::min(9.f,
+								2.f + app.versus->wire_to_bot * 0.7f));
 					}
 					if (app.versus->wire_to_player > 0) {
-						launch_streak(app,
-							kMiniX + kWidth * kMiniCell * 0.5f,
-							kMiniY + kHeight * kMiniCell * 0.4f,
+						launch_streak(app, mark_x, mark_y,
 							kBoardX + kBoardW * 0.5f,
 							kBoardY + kBoardH * 0.5f,
-							app.versus->wire_to_player);
+							app.versus->wire_to_player, true);
 					}
 					app.versus->wire_to_bot = 0;
 					app.versus->wire_to_player = 0;
