@@ -2,18 +2,42 @@
 
 *Every piece burns.*
 
-A Tetris variant built around one rule: every piece carries a fuse, and when it burns
-out the piece is hard dropped wherever it stands. Clears refuel the pieces to come —
-spins, quads and perfect clears refuel hardest — quick locks charge a Flow gauge, and
-a full gauge ignites Overdrive: the fuse frozen, everything you send multiplied. The
-fuse tightens as the levels climb, so the game is a negotiation between the stack you
-want and the time you are given.
+**V1.0 — finished.** Windows and Android builds ship from `cpp/`, and nothing
+lands there without the whole matrix passing: thirty ctest checks and twelve
+Python suites, three of which run both engines over the same inputs and compare
+them frame by frame. What V1 contains is listed below; what comes after it is in
+[DESIGN.md](DESIGN.md).
 
-Six modes burn it: Ignition (endless), Blaze (three minutes), Inferno (rising floor),
-Meltdown and Bunker (the cheese, raced or outlasted), and Duel — a bot with a real
-rank ladder, D through X, fighting under the same fuse you do. Career chains the
-ladder into a conquest with stars, and The Daily deals everyone who shares a date the
-same seed, once.
+A roguelite Tetris built in a forge. **The Forge Map** is the game: a branching
+climb of six rows, fought a room at a time, where every battle won deals you
+cards that change how the rest of the run scores. Three chapters of it — The
+Outer Yard, The Deep Forge, The White Heart, seventeen, eighteen and sixteen
+rooms — and then **the Endless Climb**, the same six rows stacked without end
+at white heat, where one death is the end and the record is how far up you got.
+
+The fire is the metaphor and the mechanics follow it. Clearing lines charges a
+**Flow** gauge — quality charges it, not haste, so spins, quads, back-to-backs
+and perfect clears are what fill it — and a full gauge ignites **Overdrive**,
+where everything you send is multiplied. Garbage arrives as burnt-out coal.
+Bosses telegraph a named blow two seconds out: the gate seals a column, the
+lamps go out, the hammer doubles your gravity.
+
+**Forty cards in six families** build the run. Fuel feeds the gauge, Flow
+multiplies, Risk trades, Rule rewrites, Ward defends, and Style — twelve cards,
+three apiece — commits you to a way of playing: digging, chaining, opening, or
+the plain clear. Each style splits into two steps that only give and one creed
+that gives most while billing every other style, so the build is something you
+choose rather than something a card hands you. Six curses are dealt by the
+climb itself, not drafted.
+
+Between runs there is **the Anvil**: slag earned on the map buys seven permanent
+upgrades on a triangular price curve, and three tools — the Shear, the Cull, the
+Flare — one carried at a time, one use a room, fired by hand.
+
+**Quick Play** is the map taken away: Ignition (endless), Blaze (three minutes),
+Inferno (rising floor), Meltdown and Bunker (the cheese, raced or outlasted),
+and Duel against a bot on a real TETR.IO rank ladder, D through X, that finds
+tucks and spins through the game's own kick tables and plays all-spin at the top.
 
 It began as a trainer — a hard ceiling on deliberation, the forced hard drop as a
 practice tool — and the trainer is still inside: switch the fuse off under Settings,
@@ -23,8 +47,8 @@ closest thing, and it isn't adjustable. The C++ game in `cpp/` is the product; t
 Python game below is the original engine, kept as the graded reference the whole
 port is tested against.
 
-Where the game is headed — who it is for, what failure means, the branching-map
-campaign it is growing into — is written down in [DESIGN.md](DESIGN.md).
+Why it is shaped this way — who it is for, what failure is supposed to mean, and
+where it goes after V1 — is written down in [DESIGN.md](DESIGN.md).
 
 ## Install
 
@@ -525,11 +549,16 @@ disturb your own settings.
 
 ## The C++ game
 
-A rewrite is under way, one piece at a time, in `cpp/`: the board, the rotation
-system with its kick tables, the finesse search, spin detection, the attack
-table — and the game loop itself, frame-stepped: gravity, DAS/ARR/DCD/SDF, ARE,
-hold, the forced drop timer, locking, line clears, the finesse retry, and the
-scoring: spins, back to back, combos and attack.
+**This is the product, and it is finished.** `cpp/` holds the whole game: the
+board, the rotation system with its kick tables, the finesse search, spin
+detection, the attack table — and the game loop itself, frame-stepped: gravity,
+DAS/ARR/DCD/SDF, ARE, hold, the forced drop timer, locking, line clears, the
+finesse retry, and the scoring: spins, back to back, combos and attack.
+
+It is graded against the Python engine below rather than tested against a
+fixture: `equivalence` and `trace` run the same inputs through both and compare
+them frame by frame, so a sim rule changed on one side and not the other fails
+the build. That is the whole reason the Python game is still here.
 
 With SDL2 installed, the same build now produces `forcetris`, a playable game
 on that core: a clean dark board, real typefaces on a DPI-aware window,
