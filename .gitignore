@@ -16,3 +16,11 @@ build/
 dist/
 cpp/build*/
 reference.txt
+
+# What the test run leaves behind. ctest writes Testing/ wherever it is
+# invoked from, and fusecheck writes its own replay shelf and score table
+# next to it - all three are output, not fixtures, and all three were
+# committed by accident. The tests create what they need.
+Testing/
+fusecheck-replays/
+fusecheck-scores/
