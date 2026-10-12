@@ -195,14 +195,10 @@ cpp/README.md  (1676줄)   엔진/GUI 상세 설명 (영어)
 
 ### A. 확실히 남은 것
 
-1. **Profile 화면 구성** — 아직 손 안 댐. 드롭다운 + ImGui 탭 + 같은 크기
-   텍스트 나열. **`big_stat()`이 만들어져 있는데 아직 아무도 안 쓴다.**
-   "Estimated TR 1717 (C-)"가 그 화면에서 제일 중요한 수치인데 나머지와
-   같은 크기다. → `tab_strip` + `big_stat` + `section`으로 재구성.
-   (`draw_profile()`)
-2. **Analysis 화면** — 같은 이유로 아직 ImGui 탭 + 2열 표.
-3. **How to Play** — 문단이 길다. V4.0에서 다른 곳은 줄였는데 여긴 안 줄임.
-4. **배포 마감** (`DESIGN.md` §9 V2.2): 첫 실행 온보딩, 저장 안정성 감사,
+1. ~~**Profile·Analysis·How to Play 화면 마감**~~ — V2.1에서 끝냈다. 세
+   화면 전부 `stat_row` 거터 + `tab_strip` + `section`을 받았고,
+   `big_stat`은 Profile 상단 셋(판수·시간·최고 레이팅)으로 처음 쓰인다.
+2. **배포 마감** (`DESIGN.md` §9 V2.2): 첫 실행 온보딩, 저장 안정성 감사,
    itch/APK 패키징. 한국어 로컬라이즈는 V2.3으로 떼어냈다.
 
 ### B. 유저가 말했지만 아직 안 끝난 것

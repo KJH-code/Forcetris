@@ -5943,6 +5943,27 @@ bool tab_strip (App& app, const char* id, const char* const* names,
 	return moved;
 }
 
+// A read-only row: name in the left gutter, figure beside it.
+//
+// The analysis and profile screens were built out of ImGui tables, which
+// put the two columns wherever the widest cell in each happened to land -
+// on the analysis screen that was a three-hundred-pixel gap between a
+// label and the number it belongs to, and the eye had to cross it on every
+// line. The same gutter the settings fields use puts the figure a fixed
+// short distance from its name, so a column of them reads down one edge.
+//
+// The label is warm. It used to be drawn in the palette's steel, which is
+// the one cold hue in the set and was the only cold thing on either
+// screen.
+void stat_row (const char* name, const char* figure) {
+	const float gutter = field_gutter();
+	ImGui::PushStyleColor(ImGuiCol_Text, ink::vec(ink::kMuted));
+	ImGui::TextUnformatted(name);
+	ImGui::PopStyleColor();
+	ImGui::SameLine(gutter);
+	ImGui::TextUnformatted(figure);
+}
+
 // A number worth reading from across the room: the figure in the title
 // face on its own plate, its name under it in small print. Used for the
 // handful of numbers a screen is actually about - everything else stays a
@@ -6196,22 +6217,25 @@ void draw_settings (App& app) {
 // What the run was made of, as the Python analysis screen lists it. The rows
 // come out of the core, where the cross test grades them against that
 // screen's own text, so the two games cannot drift apart.
-void draw_analysis_rows (const replay::Replay& game) {
-	if (ImGui::BeginTable("analysis", 2)) {
-		for (const auto& [label, value] : replay::analysis_rows(game)) {
-			ImGui::TableNextRow();
-			if (label.empty()) {
-				// The spacers the Python screen leaves between the groups.
-				ImGui::TableSetColumnIndex(0);
-				ImGui::TextUnformatted(" ");
-				continue;
+void draw_analysis_rows (App& app, const replay::Replay& game) {
+	// The core hands back three groups separated by blank pairs. It does
+	// not name them - the names are presentation, and the cross test
+	// grades the rows rather than the screen - so the screen names them
+	// here. A blank line between groups said "these belong together" and
+	// nothing about what they were.
+	static const char* kGroups[] = {"THE RUN", "FINESSE", "ATTACK"};
+	constexpr int kGroupCount
+		= static_cast<int>(sizeof kGroups / sizeof kGroups[0]);
+	int group = 0;
+	section(app, kGroups[0]);
+	for (const auto& [label, value] : replay::analysis_rows(game)) {
+		if (label.empty()) {
+			if (++group < kGroupCount) {
+				section(app, kGroups[group]);
 			}
-			ImGui::TableSetColumnIndex(0);
-			ImGui::TextColored(ImVec4(0.59f, 0.65f, 0.73f, 1.f), "%s", label.c_str());
-			ImGui::TableSetColumnIndex(1);
-			ImGui::TextUnformatted(value.c_str());
+			continue;
 		}
-		ImGui::EndTable();
+		stat_row(label.c_str(), value.c_str());
 	}
 }
 
@@ -6220,11 +6244,7 @@ void draw_analysis_rows (const replay::Replay& game) {
 // them.
 // One label-value line in an analysis table.
 void detail_row (const char* label, const std::string& value) {
-	ImGui::TableNextRow();
-	ImGui::TableSetColumnIndex(0);
-	ImGui::TextColored(ImVec4(0.59f, 0.65f, 0.73f, 1.f), "%s", label);
-	ImGui::TableSetColumnIndex(1);
-	ImGui::TextUnformatted(value.c_str());
+	stat_row(label, value.c_str());
 }
 
 std::string detail_text (const char* spec, ...) {
@@ -6243,20 +6263,17 @@ void draw_analysis_attack (const replay::Replay& game) {
 	const double pieces = std::max(1, s.placements);
 	const double seconds = std::max(1e-9, s.seconds);
 	const int ds = game.meta.downstack;
-	if (ImGui::BeginTable("attack", 2)) {
-		detail_row("Attack", detail_text("%d", s.attack));
-		detail_row("APM", detail_text("%.1f", s.apm));
-		detail_row("APP (attack/piece)", detail_text("%.2f", s.attack / pieces));
-		detail_row("APL (attack/line)", detail_text("%.2f",
-			s.lines > 0 ? s.attack / static_cast<double>(s.lines) : 0.));
-		detail_row("Downstack", detail_text("%d", ds));
-		detail_row("DS/piece", detail_text("%.2f", ds / pieces));
-		detail_row("DS/second", detail_text("%.2f", ds / seconds));
-		detail_row("VS", detail_text("%.1f", s.vs));
-		detail_row("VS/APM", detail_text("%.2f",
-			s.apm > 0. ? s.vs / s.apm : 0.));
-		ImGui::EndTable();
-	}
+	detail_row("Attack", detail_text("%d", s.attack));
+	detail_row("APM", detail_text("%.1f", s.apm));
+	detail_row("APP (attack/piece)", detail_text("%.2f", s.attack / pieces));
+	detail_row("APL (attack/line)", detail_text("%.2f",
+		s.lines > 0 ? s.attack / static_cast<double>(s.lines) : 0.));
+	detail_row("Downstack", detail_text("%d", ds));
+	detail_row("DS/piece", detail_text("%.2f", ds / pieces));
+	detail_row("DS/second", detail_text("%.2f", ds / seconds));
+	detail_row("VS", detail_text("%.1f", s.vs));
+	detail_row("VS/APM", detail_text("%.2f",
+		s.apm > 0. ? s.vs / s.apm : 0.));
 }
 
 // The speed tab: pace, its peak and its halves, and what the hands did.
@@ -6288,19 +6305,16 @@ void draw_analysis_speed (const replay::Replay& game) {
 		holds += place.held ? 1 : 0;
 		forced += place.forced ? 1 : 0;
 	}
-	if (ImGui::BeginTable("speed", 2)) {
-		detail_row("PPS", detail_text("%.2f", s.pps));
-		detail_row("Peak PPS (10 pieces)", detail_text("%.2f", peak));
-		detail_row("First half", detail_text("%.2f PPS", first));
-		detail_row("Second half", detail_text("%.2f PPS", second));
-		detail_row("Key presses", detail_text("%d", s.presses));
-		detail_row("KPP (keys/piece)", detail_text("%.2f", s.ppp));
-		detail_row("KPS (keys/second)", detail_text("%.2f",
-			s.seconds > 0. ? s.presses / s.seconds : 0.));
-		detail_row("Holds", detail_text("%d", holds));
-		detail_row("Forced drops", detail_text("%d", forced));
-		ImGui::EndTable();
-	}
+	detail_row("PPS", detail_text("%.2f", s.pps));
+	detail_row("Peak PPS (10 pieces)", detail_text("%.2f", peak));
+	detail_row("First half", detail_text("%.2f PPS", first));
+	detail_row("Second half", detail_text("%.2f PPS", second));
+	detail_row("Key presses", detail_text("%d", s.presses));
+	detail_row("KPP (keys/piece)", detail_text("%.2f", s.ppp));
+	detail_row("KPS (keys/second)", detail_text("%.2f",
+		s.seconds > 0. ? s.presses / s.seconds : 0.));
+	detail_row("Holds", detail_text("%d", holds));
+	detail_row("Forced drops", detail_text("%d", forced));
 }
 
 // The pieces tab: what was dealt, what it cleared, and how it spun.
@@ -6326,24 +6340,21 @@ void draw_analysis_pieces (const replay::Replay& game) {
 		max_combo = std::max(max_combo, place.combo);
 		max_b2b = std::max(max_b2b, place.b2b);
 	}
-	if (ImGui::BeginTable("pieces", 2)) {
-		static const char* names[] = {"I", "O", "T", "S", "Z", "J", "L"};
-		for (int form = 0; form < 7; ++form) {
-			detail_row(names[form], detail_text("%d  (%.0f%%)",
-				forms[form], forms[form] * 100. / count));
-		}
-		static const char* sizes[] = {"Singles", "Doubles", "Triples", "Quads"};
-		for (int size = 1; size <= 4; ++size) {
-			const auto found = s.clears.find(size);
-			detail_row(sizes[size - 1], detail_text("%d",
-				found == s.clears.end() ? 0 : found->second));
-		}
-		detail_row("Spins", detail_text("%d  (%d mini)", spins, minis));
-		detail_row("Perfect clears", detail_text("%d", s.perfects));
-		detail_row("Best combo", detail_text("%d", max_combo));
-		detail_row("Best B2B", detail_text("%d", max_b2b));
-		ImGui::EndTable();
+	static const char* names[] = {"I", "O", "T", "S", "Z", "J", "L"};
+	for (int form = 0; form < 7; ++form) {
+		detail_row(names[form], detail_text("%d  (%.0f%%)",
+			forms[form], forms[form] * 100. / count));
 	}
+	static const char* sizes[] = {"Singles", "Doubles", "Triples", "Quads"};
+	for (int size = 1; size <= 4; ++size) {
+		const auto found = s.clears.find(size);
+		detail_row(sizes[size - 1], detail_text("%d",
+			found == s.clears.end() ? 0 : found->second));
+	}
+	detail_row("Spins", detail_text("%d  (%d mini)", spins, minis));
+	detail_row("Perfect clears", detail_text("%d", s.perfects));
+	detail_row("Best combo", detail_text("%d", max_combo));
+	detail_row("Best B2B", detail_text("%d", max_b2b));
 }
 
 // The rating tab: where the run's figures sit against the public shape of
@@ -6364,14 +6375,11 @@ void draw_analysis_rating (App& app, const replay::Replay& game) {
 	ImGui::Text("  %.0f TR", guess.tr);
 	ImGui::PopFont();
 	ImGui::Spacing();
-	if (ImGui::BeginTable("rating", 2)) {
-		detail_row("Estimated Glicko", detail_text("%.0f", guess.glicko));
-		detail_row("Estimated TR", detail_text("%.0f / 25000", guess.tr));
-		detail_row("From APM", detail_text("%.1f", s.apm));
-		detail_row("From PPS", detail_text("%.2f", s.pps));
-		detail_row("From VS", detail_text("%.1f", s.vs));
-		ImGui::EndTable();
-	}
+	detail_row("Estimated Glicko", detail_text("%.0f", guess.glicko));
+	detail_row("Estimated TR", detail_text("%.0f / 25000", guess.tr));
+	detail_row("From APM", detail_text("%.1f", s.apm));
+	detail_row("From PPS", detail_text("%.2f", s.pps));
+	detail_row("From VS", detail_text("%.1f", s.vs));
 	ImGui::Spacing();
 	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ui(430));
 	ImGui::TextDisabled(
@@ -6384,7 +6392,7 @@ void draw_analysis_rating (App& app, const replay::Replay& game) {
 // screen: the graded overview first, the deeper cuts on their own tabs.
 // The munch tab: minomuncher's statistics for this one game, grouped the
 // way that tool groups them, with its two style verdicts spelled out.
-void draw_analysis_munch (const replay::Replay& game) {
+void draw_analysis_munch (App& app, const replay::Replay& game) {
 	const munch::Stats stats = munch::crunch(game);
 	if (stats.groups.empty()) {
 		ImGui::TextDisabled("Nothing to chew on.");
@@ -6407,23 +6415,12 @@ void draw_analysis_munch (const replay::Replay& game) {
 	ImGui::TextDisabled(
 		"Cheesiness is scored over raw attack - a trainer has no wire.");
 	for (const munch::Group& group : stats.groups) {
-		ImGui::Separator();
-		ImGui::TextDisabled("%s", group.name);
-		if (ImGui::BeginTable(group.name, 2,
-			ImGuiTableFlags_SizingStretchProp)) {
-			for (const munch::Stat& stat : group.stats) {
-				ImGui::TableNextRow();
-				ImGui::TableSetColumnIndex(0);
-				ImGui::TextUnformatted(stat.label);
-				ImGui::TableSetColumnIndex(1);
-				if (stat.value == std::floor(stat.value)
-					&& std::fabs(stat.value) < 1e6) {
-					ImGui::Text("%.0f", stat.value);
-				} else {
-					ImGui::Text("%.2f", stat.value);
-				}
-			}
-			ImGui::EndTable();
+		section(app, group.name);
+		for (const munch::Stat& stat : group.stats) {
+			stat_row(stat.label, (stat.value == std::floor(stat.value)
+				&& std::fabs(stat.value) < 1e6
+					? detail_text("%.0f", stat.value)
+					: detail_text("%.2f", stat.value)).c_str());
 		}
 	}
 }
@@ -6438,44 +6435,32 @@ void draw_analysis (App& app) {
 		| ImGuiWindowFlags_NoSavedSettings);
 	forge_panel(app);
 	screen_head(app, "Analysis");
-	const float pad = open_column(ui(720), ui(88));
+	const float pad = open_column(ui(720), ui(56));
 	if (app.studying.has_value()) {
 		ImGui::TextDisabled("%s", app.studying->title().c_str());
-		if (ImGui::BeginTabBar("analysis_tabs")) {
-			if (ImGui::BeginTabItem("Overview")) {
-				draw_analysis_rows(*app.studying);
-				ImGui::EndTabItem();
-			}
-			if (ImGui::BeginTabItem("Attack")) {
-				draw_analysis_attack(*app.studying);
-				ImGui::EndTabItem();
-			}
-			if (ImGui::BeginTabItem("Speed")) {
-				draw_analysis_speed(*app.studying);
-				ImGui::EndTabItem();
-			}
-			if (ImGui::BeginTabItem("Pieces")) {
-				draw_analysis_pieces(*app.studying);
-				ImGui::EndTabItem();
-			}
-			if (ImGui::BeginTabItem("Rating")) {
-				draw_analysis_rating(app, *app.studying);
-				ImGui::EndTabItem();
-			}
-			if (ImGui::BeginTabItem("Munch")) {
-				draw_analysis_munch(*app.studying);
-				ImGui::EndTabItem();
-			}
-			ImGui::EndTabBar();
-		}
-		ImGui::Separator();
-		if (ImGui::Button("Watch replay", ImVec2(ui(240), 0))) {
-			watch(app, *app.studying, Screen::Analysis);
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		static const char* const kTabs[] = {"Overview", "Attack", "Speed",
+			"Pieces", "Rating", "Munch"};
+		static int tab = 0;
+		tab_strip(app, "analysis", kTabs, 6, &tab);
+		switch (tab) {
+			case 1: draw_analysis_attack(*app.studying); break;
+			case 2: draw_analysis_speed(*app.studying); break;
+			case 3: draw_analysis_pieces(*app.studying); break;
+			case 4: draw_analysis_rating(app, *app.studying); break;
+			case 5: draw_analysis_munch(app, *app.studying); break;
+			default: draw_analysis_rows(app, *app.studying); break;
 		}
 	} else {
 		ImGui::TextDisabled("That run was too short to record.");
 	}
 	close_column(pad);
+	if (app.studying.has_value()
+		&& ImGui::Button("Watch replay",
+			ImVec2(std::min(ui(720), ImGui::GetContentRegionAvail().x),
+				ui(38)))) {
+		watch(app, *app.studying, Screen::Analysis);
+	}
 	ImGui::End();
 	ImGui::PopStyleVar(2);
 }
@@ -6492,75 +6477,67 @@ void draw_help (App& app) {
 	forge_panel(app);
 	screen_head(app, "How to Play");
 	const float pad = open_column(ui(760), ui(52));
-	if (ImGui::BeginTable("keys", 2)) {
-		for (const ActionDef& action : all_actions()) {
-			// Every key bound to the action, or the word for none - the same
-			// line controls.describe() builds.
-			std::string bound;
-			const auto found = app.config.keys.find(action.id);
-			if (found != app.config.keys.end()) {
-				for (const int code : found->second) {
-					const char* name =
-						SDL_GetScancodeName(static_cast<SDL_Scancode>(code));
-					bound += (bound.empty() ? "" : ", ")
-						+ std::string(name != nullptr && *name != '\0' ? name : "?");
-				}
+
+	// The keys, in the same two columns every other screen uses. They were
+	// a table, which put the action nearly four hundred pixels from the
+	// key it belongs to - the widest cell decided the gap, and the eye had
+	// to cross it on every line.
+	const auto key_row = [&app] (const char* bound, const char* does) {
+		ImGui::PushStyleColor(ImGuiCol_Text, ink::vec(ink::kGold));
+		ImGui::TextUnformatted(bound);
+		ImGui::PopStyleColor();
+		ImGui::SameLine(field_gutter());
+		ImGui::TextUnformatted(does);
+		(void) app;
+	};
+	section(app, "KEYS");
+	for (const ActionDef& action : all_actions()) {
+		// Every key bound to the action, or the word for none - the same
+		// line controls.describe() builds.
+		std::string bound;
+		const auto found = app.config.keys.find(action.id);
+		if (found != app.config.keys.end()) {
+			for (const int code : found->second) {
+				const char* name =
+					SDL_GetScancodeName(static_cast<SDL_Scancode>(code));
+				bound += (bound.empty() ? "" : ", ")
+					+ std::string(name != nullptr && *name != '\0' ? name : "?");
 			}
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(0);
-			ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "%s",
-				bound.empty() ? "Unbound" : bound.c_str());
-			ImGui::TableSetColumnIndex(1);
-			ImGui::TextUnformatted(action.label);
 		}
-		ImGui::TableNextRow();
-		ImGui::TableSetColumnIndex(0);
-		ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "Escape");
-		ImGui::TableSetColumnIndex(1);
-		ImGui::TextUnformatted("Pause");
-		ImGui::TableNextRow();
-		ImGui::TableSetColumnIndex(0);
-		ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "R");
-		ImGui::TableSetColumnIndex(1);
-		ImGui::TextUnformatted("Restart the run");
-		if (!kMobile) {
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(0);
-			ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "F11");
-			ImGui::TableSetColumnIndex(1);
-			ImGui::TextUnformatted("Fullscreen (less latency on Windows)");
-			ImGui::TableNextRow();
-			ImGui::TableSetColumnIndex(0);
-			ImGui::TextColored(ImVec4(1.f, 0.88f, 0.5f, 1.f), "F3");
-			ImGui::TableSetColumnIndex(1);
-			ImGui::TextUnformatted("Frame diagnostics overlay");
-		}
-		ImGui::EndTable();
+		key_row(bound.empty() ? "Unbound" : bound.c_str(), action.label);
 	}
-	ImGui::Separator();
-	ImGui::TextUnformatted("The Fuse");
-	// Wrapped to the column, not hard-wrapped at the width one panel
-	// happened to be: the newlines that used to be written into these
-	// strings were sized for a six-hundred-pixel window and ran off the
-	// right of a phone.
+	key_row("Escape", "Pause");
+	key_row("R", "Restart the run");
+	if (!kMobile) {
+		key_row("F11", "Fullscreen (less latency on Windows)");
+		key_row("F3", "Frame diagnostics overlay");
+	}
+
+	// The rules worth a paragraph, and only those.
+	//
+	// Both of these used to run five or six lines. A help screen is read
+	// once, by someone who wants to start playing, and the sentence they
+	// needed was buried in the middle of the ones they did not. What is
+	// left is the rule, then the one consequence that is not obvious from
+	// it.
 	ImGui::PushTextWrapPos(0.f);
+	section(app, "THE FUSE");
 	ImGui::TextUnformatted(
-		"The board plays pure - no clock on your pieces. Three rooms of "
-		"the Forge burn, and only those three: in a burn room each piece "
-		"carries a fuse, and when it runs out the piece is slammed down "
-		"where it stands. Clears refuel the pieces to come; spins, quads "
-		"and perfect clears refuel hardest. A duel never burns - what "
-		"presses you there is the foe.");
-	ImGui::PopTextWrapPos();
-	ImGui::TextUnformatted("");
-	ImGui::TextUnformatted("Flow and Overdrive");
-	ImGui::PushTextWrapPos(0.f);
+		"Your pieces have no clock. Three rooms of the Forge burn: in "
+		"those, a piece that sits too long is slammed down where it "
+		"stands. Clearing lines refuels the pieces after it - spins, "
+		"quads and perfect clears refuel hardest.");
+	section(app, "FLOW AND OVERDRIVE");
 	ImGui::TextUnformatted(
-		"In a burning room the Flow rail climbs on quality: spins, quads, "
-		"back-to-backs, combos and perfect clears fill it. A full rail "
-		"ignites Overdrive: the fuse freezes, everything you send is "
-		"multiplied, and every clear also burns a garbage row off your "
-		"own floor - until it gutters out.");
+		"Clearing well fills the Flow rail: spins, quads, back-to-backs, "
+		"combos and perfect clears. A full rail ignites Overdrive, where "
+		"everything you send is multiplied and every clear also burns a "
+		"garbage row off your own floor.");
+	section(app, "THE CLIMB");
+	ImGui::TextUnformatted(
+		"The Forge Map deals you a card after every room won. Cards stack "
+		"for the whole run and the run ends when you do, so what you take "
+		"early decides what the rest of it is worth taking.");
 	ImGui::PopTextWrapPos();
 	close_column(pad);
 	ImGui::End();
@@ -6963,8 +6940,11 @@ void draw_profile (App& app) {
 	static const char* kNew[] = {"", "ignition", "blaze", "inferno",
 		"meltdown", "bunker", "duel", "temper"};
 	static int filter = 0;
-	ImGui::SetNextItemWidth(ui(160));
-	ImGui::Combo("Mode", &filter, kFilters,
+	open_field("Mode");
+	// A picker for eight short words does not want the column's whole
+	// width; open_field offers it and this takes what it needs.
+	ImGui::SetNextItemWidth(ui(200));
+	ImGui::Combo("##modefilter", &filter, kFilters,
 		static_cast<int>(sizeof kFilters / sizeof kFilters[0]));
 	std::vector<const profile::GameRecord*> games;
 	for (const profile::GameRecord& record : app.history) {
@@ -6973,25 +6953,28 @@ void draw_profile (App& app) {
 			games.push_back(&record);
 		}
 	}
-	ImGui::SameLine();
-	ImGui::TextDisabled("%d game%s", static_cast<int>(games.size()),
-		games.size() == 1 ? "" : "s");
-	ImGui::Separator();
 
 	if (games.empty()) {
+		ImGui::Dummy(ImVec2(0.f, ui(10)));
 		ImGui::TextUnformatted(
 			"No games on record yet. Finish one and come back.");
-	} else if (ImGui::BeginTabBar("profile", ImGuiTabBarFlags_None)) {
+	} else {
 		// FORCETRIS_PROFILE_TAB picks the tab once - how the gallery
 		// screenshots the charts without a mouse.
+		// FORCETRIS_PROFILE_TAB picks the tab once, on the first frame -
+		// how the gallery screenshots the charts without a mouse.
 		static int force = [] {
 			const char* forced = std::getenv("FORCETRIS_PROFILE_TAB");
 			return forced != nullptr ? std::atoi(forced) : -1;
 		}();
-		const auto tab_flags = [&] (int index) {
-			return force == index
-				? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
-		};
+		static const char* const kTabs[] = {"Overview", "Growth", "Style"};
+		static int tab = 0;
+		if (force >= 0) {
+			tab = std::clamp(force, 0, 2);
+			force = -1;
+		}
+		ImGui::Dummy(ImVec2(0.f, ui(4)));
+		tab_strip(app, "profile", kTabs, 3, &tab);
 		const auto series = [&] (auto pick) {
 			std::vector<double> values;
 			for (const profile::GameRecord* game : games) {
@@ -7002,7 +6985,7 @@ void draw_profile (App& app) {
 			}
 			return values;
 		};
-		if (ImGui::BeginTabItem("Overview", nullptr, tab_flags(0))) {
+		if (tab == 0) {
 			double seconds = 0.;
 			long long pieces = 0;
 			long long lines = 0;
@@ -7023,26 +7006,50 @@ void draw_profile (App& app) {
 				best.score = std::max(best.score, game->score);
 				best.tr = std::max(best.tr, game->tr);
 			}
-			ImGui::PushFont(app.fonts.head);
-			ImGui::Text("%d games,  %.1f hours,  %lld pieces",
-				static_cast<int>(games.size()), seconds / 3600.,
-				pieces);
-			ImGui::PopFont();
-			ImGui::Text("%lld lines cleared,  %lld attack sent",
-				lines, attack);
+			// The three a player opens this screen for, said at a size
+			// that says so. Everything under them was the same weight as
+			// the rating, which is the one figure the screen is about.
+			{
+				const float have = ImGui::GetContentRegionAvail().x;
+				const float gap = ui(10);
+				const float wide = (have - gap * 2.f) / 3.f;
+				char played[32];
+				std::snprintf(played, sizeof played, "%d",
+					static_cast<int>(games.size()));
+				big_stat(app, played,
+					games.size() == 1 ? "GAME" : "GAMES", wide);
+				ImGui::SameLine(0.f, gap);
+				char hours[32];
+				std::snprintf(hours, sizeof hours, "%.1f", seconds / 3600.);
+				big_stat(app, hours, "HOURS", wide);
+				ImGui::SameLine(0.f, gap);
+				if (best.tr >= 0.) {
+					char tr[32];
+					std::snprintf(tr, sizeof tr, "%.0f", best.tr);
+					char rank[32];
+					std::snprintf(rank, sizeof rank, "BEST RATING - %s",
+						rating::rank_for(best.tr));
+					big_stat(app, tr, rank, wide);
+				} else {
+					big_stat(app, "-", "BEST RATING", wide);
+				}
+			}
+
+			section(app, "TOTALS");
+			stat_row("Pieces", detail_text("%lld", pieces).c_str());
+			stat_row("Lines cleared", detail_text("%lld", lines).c_str());
+			stat_row("Attack sent", detail_text("%lld", attack).c_str());
 			if (wins + losses > 0) {
-				ImGui::Text("Versus record %d - %d  (%.0f%%)", wins, losses,
-					100. * wins / (wins + losses));
+				stat_row("Versus record",
+					detail_text("%d - %d  (%.0f%%)", wins, losses,
+						100. * wins / (wins + losses)).c_str());
 			}
-			ImGui::Separator();
-			ImGui::TextDisabled("Bests");
-			ImGui::Text("PPS %.2f    APM %.1f    VS %.1f", best.pps,
-				best.apm, best.vs);
-			ImGui::Text("Score %lld", best.score);
-			if (best.tr >= 0.) {
-				ImGui::Text("Estimated TR %.0f  (%s)", best.tr,
-					rating::rank_for(best.tr));
-			}
+
+			section(app, "BESTS");
+			stat_row("PPS", detail_text("%.2f", best.pps).c_str());
+			stat_row("APM", detail_text("%.1f", best.apm).c_str());
+			stat_row("VS", detail_text("%.1f", best.vs).c_str());
+			stat_row("Score", detail_text("%lld", best.score).c_str());
 			// The last ten against everything before them: the short answer
 			// to "am I getting better".
 			if (games.size() >= 20) {
@@ -7059,14 +7066,14 @@ void draw_profile (App& app) {
 				old_apm /= cut;
 				new_pps /= 10.;
 				new_apm /= 10.;
-				ImGui::Separator();
-				ImGui::TextDisabled("Last ten games, against the rest");
-				ImGui::Text("PPS %+.2f    APM %+.1f",
-					new_pps - old_pps, new_apm - old_apm);
+				section(app, "LAST TEN, AGAINST THE REST");
+				stat_row("PPS",
+					detail_text("%+.2f", new_pps - old_pps).c_str());
+				stat_row("APM",
+					detail_text("%+.1f", new_apm - old_apm).c_str());
 			}
-			ImGui::EndTabItem();
 		}
-		if (ImGui::BeginTabItem("Growth", nullptr, tab_flags(1))) {
+		if (tab == 1) {
 			draw_chart("PPS", series([] (const profile::GameRecord& g) {
 				return g.pps; }), ui(96));
 			draw_chart("APM", series([] (const profile::GameRecord& g) {
@@ -7078,9 +7085,8 @@ void draw_profile (App& app) {
 			draw_chart("Finesse %", series(
 				[] (const profile::GameRecord& g) { return g.finesse; }),
 				ui(96));
-			ImGui::EndTabItem();
 		}
-		if (ImGui::BeginTabItem("Style", nullptr, tab_flags(2))) {
+		if (tab == 2) {
 			// The munch numbers, averaged over the filtered games - the
 			// per-game versions live on the analysis screen's Munch tab.
 			std::map<std::string, std::pair<double, int>> sums;
@@ -7094,25 +7100,19 @@ void draw_profile (App& app) {
 				ImGui::TextUnformatted(
 					"No munch numbers yet - they are written from the next "
 					"finished game on.");
-			} else if (ImGui::BeginTable("style", 2)) {
+			} else {
+				section(app, "AVERAGED OVER THESE GAMES");
 				for (const char* id : munch::order()) {
 					const auto found = sums.find(id);
 					if (found == sums.end()) {
 						continue;
 					}
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(0);
-					ImGui::TextUnformatted(munch::label(id));
-					ImGui::TableSetColumnIndex(1);
-					ImGui::Text("%.2f",
-						found->second.first / found->second.second);
+					stat_row(munch::label(id), detail_text("%.2f",
+						found->second.first
+							/ found->second.second).c_str());
 				}
-				ImGui::EndTable();
 			}
-			ImGui::EndTabItem();
 		}
-		force = -1;
-		ImGui::EndTabBar();
 	}
 	close_column(pad);
 	ImGui::End();
