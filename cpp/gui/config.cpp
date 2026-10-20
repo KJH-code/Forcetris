@@ -74,6 +74,13 @@ std::string config_path () {
 	if (const char* forced = std::getenv("FORCETRIS_GUI_CONFIG")) {
 		return forced;
 	}
+#ifdef __EMSCRIPTEN__
+	// The browser has no preference directory. What it has is the one
+	// folder the page mounts a database under, and the settings belong in
+	// it beside the saves - SDL_GetPrefPath here would answer with a path
+	// in memory that is gone the moment the tab is.
+	return "/game/data/gui.cfg";
+#else
 	char* pref = SDL_GetPrefPath("forcetris", "forcetris");
 	if (pref == nullptr) {
 		return "forcetris-gui.cfg";
@@ -81,6 +88,7 @@ std::string config_path () {
 	std::string path = std::string(pref) + "gui.cfg";
 	SDL_free(pref);
 	return path;
+#endif
 }
 
 std::string game_root () {
@@ -88,6 +96,12 @@ std::string game_root () {
 	if (const char* forced = std::getenv("FORCETRIS_ROOT")) {
 		return forced;
 	}
+#ifdef __EMSCRIPTEN__
+	// Where the page put the assets. There is nothing to probe for: the
+	// build packs them at a path it chose, and the saves are mounted under
+	// it, so the search below has no question to answer.
+	return "/game";
+#endif
 	std::vector<fs::path> starts;
 	if (char* base = SDL_GetBasePath()) {
 		starts.emplace_back(base);

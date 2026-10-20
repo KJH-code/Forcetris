@@ -14,7 +14,7 @@
 | | 무엇 | 역할 |
 |---|---|---|
 | `engine/` | Python + pygame | **레퍼런스 구현.** 채점 기준 |
-| `cpp/` | C++17 + SDL2 + Dear ImGui | 실제로 출시하는 것 (Windows exe / Android APK) |
+| `cpp/` | C++17 + SDL2 + Dear ImGui | 실제로 출시하는 것 (Windows exe / Android APK / 웹) |
 
 두 엔진은 `equivalence`·`trace` 테스트로 **프레임 단위 대조**된다. 심(sim)
 쪽 규칙을 한쪽에서만 고치면 빌드가 깨진다 — 그게 설계 의도다.
@@ -46,7 +46,19 @@ cd cpp/android && \
   ANDROID_NDK=/root/android/rootfs/opt/android-sdk-linux/ndk/28.0.13004108 \
   SDL2_SRC=/root/android/SDL2-2.30.11 \
   R8_JAR=/root/android/r8.jar ./build.sh
+
+# 웹 (emsdk 필요). SDL2는 패키지가 아니라 포트라 find_package를 건너뛴다
+emcmake cmake -S cpp -B cpp/build-web
+cmake --build cpp/build-web --target forcetris -j4
+python3 -m http.server -d cpp/build-web   # :8000/forcetris.html — file://은 안 된다
 ```
+
+웹 빌드의 네 조각은 `cpp/web/`과 `cpp/README.md`의 "In a browser"에 있다.
+요지: 루프는 callable + `emscripten_set_main_loop_arg`, 세이브는
+`/game/data`에 IndexedDB 마운트(`web/persist.js`), 캔버스 크기는 CSS로
+(`web/shell.html`), 폰 판정은 너비가 아니라 포인터. **ImGui는 렌더러의
+픽셀 격자 위에 둔다** — 창 포인트로 두면 고밀도 화면에서 메뉴가 1/4에
+몰리고 클릭이 밀도만큼 빗나간다.
 
 ### 테스트 — **전체 매트릭스가 통과해야 커밋**
 
@@ -198,8 +210,9 @@ cpp/README.md  (1676줄)   엔진/GUI 상세 설명 (영어)
 1. ~~**Profile·Analysis·How to Play 화면 마감**~~ — V2.1에서 끝냈다. 세
    화면 전부 `stat_row` 거터 + `tab_strip` + `section`을 받았고,
    `big_stat`은 Profile 상단 셋(판수·시간·최고 레이팅)으로 처음 쓰인다.
-2. **배포 마감** (`DESIGN.md` §9 V2.2): 첫 실행 온보딩, 저장 안정성 감사,
-   itch/APK 패키징. 한국어 로컬라이즈는 V2.3으로 떼어냈다.
+2. **배포 마감** (`DESIGN.md` §9 V2.3): 첫 실행 온보딩, 저장 안정성 감사,
+   itch/APK 패키징. 웹은 V2.2에서 끝났다 — `cpp/build-web`을 그대로 올리면
+   된다. 한국어 로컬라이즈는 V2.4로 떼어냈다.
 
 ### B. 유저가 말했지만 아직 안 끝난 것
 

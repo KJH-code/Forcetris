@@ -221,6 +221,43 @@ if (SDL2_FOUND)
 		target_link_libraries(forcetris PRIVATE SDL2::SDL2main)
 	endif()
 
+	# The web build. Everything the desktop game gets from the machine it
+	# runs on has to be handed to it by the page instead: the assets, which
+	# are packed into the download and laid out at /game; a writable folder
+	# that outlives the tab, which is an IndexedDB database mounted at
+	# /game/data; and a heap it is allowed to grow into, because the fonts,
+	# the sounds and the decoded music are all read after the start.
+	#
+	# The stack is raised because ImGui builds a frame on it and main holds
+	# the whole game's state as locals - the browser's 64KB default is a
+	# desktop thread's worth short of that.
+	if (EMSCRIPTEN)
+		get_filename_component(FORCETRIS_WEB_ASSETS
+			${CMAKE_CURRENT_SOURCE_DIR}/.. REALPATH)
+		set_target_properties(forcetris PROPERTIES SUFFIX ".html")
+		# SHELL: keeps each flag with the value it belongs to. Without it
+		# CMake sees three --preload-file options, decides the repeats are
+		# duplicates, and drops all but the first - leaving the link
+		# looking for a file called "sound@/game/sound".
+		target_link_options(forcetris PRIVATE
+			"SHELL:--preload-file ${FORCETRIS_WEB_ASSETS}/gfx@/game/gfx"
+			"SHELL:--preload-file ${FORCETRIS_WEB_ASSETS}/sound@/game/sound"
+			"SHELL:--preload-file ${FORCETRIS_WEB_ASSETS}/music@/game/music"
+			"SHELL:--shell-file ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
+			"SHELL:--pre-js ${CMAKE_CURRENT_SOURCE_DIR}/web/persist.js"
+			-lidbfs.js
+			-sALLOW_MEMORY_GROWTH=1
+			-sINITIAL_MEMORY=64MB
+			-sSTACK_SIZE=4MB
+			# FS, so a save that goes wrong can be looked at from the
+			# browser's own console rather than guessed at.
+			-sEXPORTED_RUNTIME_METHODS=FS
+		)
+		set_property(TARGET forcetris APPEND PROPERTY LINK_DEPENDS
+			${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html
+			${CMAKE_CURRENT_SOURCE_DIR}/web/persist.js)
+	endif()
+
 	# The mixer on its own, so the generated room and score can be rendered
 	# and measured without a window. Links the same audio.cpp the game does.
 	add_executable(audiocheck tests/audiocheck.cpp gui/audio.cpp)

@@ -1,0 +1,188 @@
+<!doctype html>
+<!--
+	The page Forcetris runs in.
+
+	Emscripten pastes the loader script in where {{{ SCRIPT }}} is and
+	leaves the rest of this file alone, so everything the game needs from
+	a browser is here and nowhere else:
+
+	  - a canvas sized in CSS, which is how SDL is told how big the window
+	    is. Set the canvas size in JavaScript instead and SDL decides the
+	    window is fixed and stops reporting resizes;
+	  - a flush of /game/data, which web/persist.js has mounted on a
+	    database, because a tab's memory is not a save and a tab can
+	    vanish without telling anyone;
+	  - one click before the first frame, which is the only way a browser
+	    will let a sound play.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Forcetris</title>
+<style>
+	html, body {
+		margin: 0;
+		padding: 0;
+		height: 100%;
+		overflow: hidden;
+		background: #100a07;
+		color: #d8c6b4;
+		font-family: Georgia, "Times New Roman", serif;
+	}
+	/* The canvas is the window. SDL reads this size at startup and
+	   follows it on every browser resize, so the game lays itself out
+	   for the tab the player actually has. */
+	#canvas {
+		display: block;
+		width: 100vw;
+		height: 100vh;
+		background: #100a07;
+		outline: none;
+		border: 0;
+	}
+	#gate {
+		position: fixed;
+		inset: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 1.1rem;
+		background: radial-gradient(circle at 50% 42%,
+			#2a1710 0%, #140d09 55%, #0b0705 100%);
+		text-align: center;
+		transition: opacity .45s ease;
+		z-index: 10;
+	}
+	#gate.gone { opacity: 0; pointer-events: none; }
+	#gate h1 {
+		margin: 0;
+		font-size: clamp(2.4rem, 9vw, 5rem);
+		font-weight: normal;
+		letter-spacing: .32em;
+		text-indent: .32em;
+		color: #e6a35a;
+		text-shadow: 0 0 28px rgba(214, 128, 62, .45);
+	}
+	#gate p {
+		margin: 0;
+		max-width: 26rem;
+		padding: 0 1rem;
+		font-size: 1rem;
+		line-height: 1.5;
+		color: #9d8674;
+	}
+	#start {
+		margin-top: .6rem;
+		padding: .7rem 2.2rem;
+		font: inherit;
+		font-size: 1.05rem;
+		letter-spacing: .18em;
+		color: #140d09;
+		background: linear-gradient(#f0b36a, #c87a2e);
+		border: 0;
+		border-radius: 2px;
+		cursor: pointer;
+	}
+	#start:disabled {
+		background: #2c1f16;
+		color: #6b5745;
+		cursor: default;
+	}
+	#bar {
+		width: min(20rem, 70vw);
+		height: 3px;
+		background: #2c1f16;
+		overflow: hidden;
+	}
+	#bar div {
+		height: 100%;
+		width: 0;
+		background: #d6803e;
+		transition: width .2s ease;
+	}
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+
+<div id="gate">
+	<h1>FORCETRIS</h1>
+	<p id="word">Heating the forge&hellip;</p>
+	<div id="bar"><div id="fill"></div></div>
+	<button id="start" disabled>STOKE THE FIRE</button>
+</div>
+
+<script>
+(function () {
+	'use strict';
+
+	var gate  = document.getElementById('gate');
+	var word  = document.getElementById('word');
+	var fill  = document.getElementById('fill');
+	var start = document.getElementById('start');
+	var canvas = document.getElementById('canvas');
+
+	// web/persist.js mounts /game/data on the browser's own storage and
+	// hands back this one call: push what the game has written since the
+	// last time out to the database.
+	function flush () {
+		if (Module.forcetrisFlush) { Module.forcetrisFlush(); }
+	}
+
+	var Module = {
+		canvas: canvas,
+		// Nothing the game logs belongs in the player's face; the console
+		// is where a bug report comes from.
+		print: function (text) { console.log(text); },
+		printErr: function (text) { console.warn(text); },
+		setStatus: function (text) {
+			// Emscripten reports the download as "(n/total)". Anything
+			// else it has to say is a stage, not a number.
+			var at = /([0-9]+)\s*\/\s*([0-9]+)/.exec(text);
+			if (at) {
+				fill.style.width
+					= (100 * parseInt(at[1], 10) / parseInt(at[2], 10)) + '%';
+			} else if (text) {
+				word.textContent = text;
+			}
+		},
+		onRuntimeInitialized: function () {
+			fill.style.width = '100%';
+			word.textContent
+				= 'Ready. One click lets the browser play sound.';
+			start.disabled = false;
+			start.focus();
+			// A save every couple of seconds, which is cheap - the sync
+			// only writes what changed - and covers the one thing a tab
+			// does that a desktop does not: vanish without warning.
+			setInterval(flush, 2000);
+			window.addEventListener('pagehide', flush);
+			document.addEventListener('visibilitychange', function () {
+				if (document.hidden) { flush(); }
+			});
+		},
+		// The game has put itself down. There is no window to close in a
+		// tab, so the page says so over the last frame it drew.
+		forcetrisDone: function () {
+			flush();
+			word.textContent = 'The forge is cold. Reload to light it again.';
+			start.textContent = 'LIGHT IT AGAIN';
+			start.disabled = false;
+			start.onclick = function () { location.reload(); };
+			gate.classList.remove('gone');
+		}
+	};
+	window.Module = Module;
+
+	start.addEventListener('click', function () {
+		gate.classList.add('gone');
+		canvas.focus();
+	});
+})();
+</script>
+
+{{{ SCRIPT }}}
+</body>
+</html>

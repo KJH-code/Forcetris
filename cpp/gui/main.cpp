@@ -53,6 +53,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <emscripten/html5.h>
 #endif
 #include "session.hpp"
 #include "stats.hpp"
@@ -82,6 +83,15 @@ float ui (float units) {
 int px (float units) {
 	return static_cast<int>(std::lround(units * kScale));
 }
+
+// The web build: a browser tab rather than a window. It changes three
+// things and no more - who paces the loop, where the density comes from,
+// and what quitting means.
+#ifdef __EMSCRIPTEN__
+constexpr bool kWeb = true;
+#else
+constexpr bool kWeb = false;
+#endif
 
 // The phone build: true on Android (or under FORCETRIS_MOBILE=1, which is
 // how the layouts are exercised on a desk). Off, nothing below changes a
@@ -227,15 +237,23 @@ Fonts load_fonts (const std::string& root) {
 	const auto [regular, bold] = find_font_files();
 	// The bundled display faces (OFL, in gfx/fonts): Marcellus carries the
 	// headings, Cinzel Decorative the wordmark and the big verdicts. The
-	// body stays a system sans - reading is its whole job - and a checkout
-	// without gfx/ falls back to the system bold for everything.
+	// body stays a system sans - reading is its whole job.
 	const std::string display = first_file(
 		{root + "/gfx/fonts/Marcellus-Regular.ttf"});
 	const std::string mark = first_file(
 		{root + "/gfx/fonts/CinzelDecorative-Bold.ttf"});
-	if (!regular.empty()) {
-		fonts.body = io.Fonts->AddFontFromFileTTF(regular.c_str(), ui(19.f));
-		const std::string& heavy = bold.empty() ? regular : bold;
+	// Either half can be missing, and each covers for the other. A
+	// checkout without gfx/ has no display faces and reads the headings in
+	// the system bold; a machine with no font directory at all - and a
+	// browser tab is exactly that, a world containing nothing but what the
+	// download packed into it - has the bundled faces and nothing else, so
+	// the body is set in Marcellus rather than in no font at all. Only
+	// both missing leaves the bitmap font below with work to do.
+	const std::string text = regular.empty() ? display : regular;
+	const std::string heavy
+		= !bold.empty() ? bold : (!regular.empty() ? regular : display);
+	if (!text.empty()) {
+		fonts.body = io.Fonts->AddFontFromFileTTF(text.c_str(), ui(19.f));
 		fonts.head = io.Fonts->AddFontFromFileTTF(
 			(display.empty() ? heavy : display).c_str(), ui(26.f));
 		fonts.title = io.Fonts->AddFontFromFileTTF(
@@ -2612,8 +2630,56 @@ void release_all_keys (App& app) {
 	}
 }
 
+// How many renderer pixels one window point is worth.
+//
+// A window and the picture inside it are not always measured the same
+// way. Ask SDL for a high-density drawable and it answers with a window
+// in layout points and a canvas in real pixels, and on a phone browser
+// those differ by nearly three. Everything this game lays out - the
+// board, the panels, the touch pads, the screenshots - is in the
+// renderer's own pixels, so that is the grid everything else has to be
+// on too. On a desk, and on the Android build, the two already agree and
+// this is one.
+float window_to_pixels (const App& app) {
+	if (app.window == nullptr || app.renderer == nullptr) {
+		return 1.f;
+	}
+	int window_w = 0;
+	int window_h = 0;
+	int pixels_w = 0;
+	int pixels_h = 0;
+	SDL_GetWindowSize(app.window, &window_w, &window_h);
+	SDL_GetRendererOutputSize(app.renderer, &pixels_w, &pixels_h);
+	if (window_w <= 0 || pixels_w <= 0) {
+		return 1.f;
+	}
+	return static_cast<float>(pixels_w) / static_cast<float>(window_w);
+}
+
 void handle_event (App& app, const SDL_Event& event) {
-	ImGui_ImplSDL2_ProcessEvent(&event);
+	// SDL reports the pointer in window points. ImGui is held on the
+	// renderer's pixel grid - see the frame below - so a press has to be
+	// converted on the way in or it lands a density away from what the
+	// player aimed at. Fingers need none of this: SDL gives those as a
+	// fraction of the screen, and the game already multiplies them out
+	// by the renderer's size.
+	const float dense = window_to_pixels(app);
+	if (dense != 1.f
+		&& (event.type == SDL_MOUSEMOTION
+			|| event.type == SDL_MOUSEBUTTONDOWN
+			|| event.type == SDL_MOUSEBUTTONUP)) {
+		SDL_Event moved = event;
+		if (event.type == SDL_MOUSEMOTION) {
+			moved.motion.x = static_cast<Sint32>(event.motion.x * dense);
+			moved.motion.y = static_cast<Sint32>(event.motion.y * dense);
+		} else {
+			moved.button.x = static_cast<Sint32>(event.button.x * dense);
+			moved.button.y = static_cast<Sint32>(event.button.y * dense);
+		}
+		ImGui_ImplSDL2_ProcessEvent(&moved);
+	} else {
+		ImGui_ImplSDL2_ProcessEvent(&event);
+	}
 	if (event.type == SDL_QUIT) {
 		app.quit = true;
 		return;
@@ -9921,10 +9987,20 @@ int run (bool smoke, long smoke_frames) {
 		app.audio.set_ambience(app.config.ambience);
 	}
 	float scale = 1.f;
+#ifdef __EMSCRIPTEN__
+	// The canvas is laid out in CSS pixels and drawn in device pixels, so a
+	// dense screen hands the renderer twice the pixels for the same window
+	// and every design number would land at half the size it means. SDL's
+	// DPI probe answers nothing in a tab; the ratio the page reports is the
+	// same fact in a form the browser will admit to.
+	scale = std::clamp(
+		static_cast<float>(emscripten_get_device_pixel_ratio()), 1.f, 3.f);
+#else
 	float dpi = 0.f;
 	if (SDL_GetDisplayDPI(0, &dpi, nullptr, nullptr) == 0 && dpi > 0.f) {
 		scale = std::clamp(dpi / 96.f, 1.f, 3.f);
 	}
+#endif
 	// The escape hatch for displays that misreport their density - WSLg says
 	// 96dpi while Windows stretches the result - and for anyone who simply
 	// wants the whole game bigger.
@@ -9965,7 +10041,7 @@ int run (bool smoke, long smoke_frames) {
 	// ms of arriving rather than waiting out a display refresh. Phones
 	// keep vsync: their compositors enforce it anyway, and the nap-loop
 	// would only heat the battery.
-	const bool vsynced = kMobile || !app.config.lowlatency;
+	const bool vsynced = kMobile || kWeb || !app.config.lowlatency;
 	app.renderer = SDL_CreateRenderer(app.window, -1,
 		smoke ? SDL_RENDERER_SOFTWARE
 		      : (SDL_RENDERER_ACCELERATED
@@ -10318,6 +10394,20 @@ int run (bool smoke, long smoke_frames) {
 		}
 		ImGui_ImplSDLRenderer2_NewFrame();
 		ImGui_ImplSDL2_NewFrame();
+		{
+			// The backend hands ImGui the window's size and leaves its
+			// renderer to blow the result up to the canvas. That is one
+			// coordinate system too many: every number this game places a
+			// panel at is a renderer pixel, so a panel meant for the
+			// right edge of a dense screen would be laid out past the
+			// right edge of a window two thirds the size and shoved back
+			// on. Give ImGui the pixels and take the blow-up away.
+			ImGuiIO& io = ImGui::GetIO();
+			io.DisplaySize = ImVec2(
+				io.DisplaySize.x * io.DisplayFramebufferScale.x,
+				io.DisplaySize.y * io.DisplayFramebufferScale.y);
+			io.DisplayFramebufferScale = ImVec2(1.f, 1.f);
+		}
 		ImGui::NewFrame();
 
 		SDL_SetRenderDrawColor(app.renderer, 14, 11, 9, 255);
@@ -10735,7 +10825,7 @@ int run (bool smoke, long smoke_frames) {
 			}
 		}
 		SDL_RenderPresent(app.renderer);
-		if (!smoke && !kMobile && app.config.lowlatency) {
+		if (!smoke && !kMobile && !kWeb && app.config.lowlatency) {
 			SDL_Delay(1);   // Vsync is off; don't spin the whole core.
 		}
 
@@ -10904,11 +10994,24 @@ int run (bool smoke, long smoke_frames) {
 	// own cadence rather than a number we picked - and the 1 says this call
 	// never comes back, so nothing below it runs on the web. The teardown
 	// after it is the desktop's.
+	//
+	// Quitting is the one thing a tab cannot do: there is no window to
+	// close and no process to end. What it can do is stop asking for
+	// frames, put the settings down, and hand the page the news so it can
+	// say so over the last picture the game drew.
+	const std::function<void ()> web_frame = [&] () {
+		one_frame();
+		if (app.quit) {
+			save_config(app.config, app.config_file);
+			emscripten_cancel_main_loop();
+			EM_ASM({ if (Module.forcetrisDone) { Module.forcetrisDone(); } });
+		}
+	};
 	emscripten_set_main_loop_arg(
 		[] (void* frame) {
 			(*static_cast<const std::function<void ()>*>(frame))();
 		},
-		new std::function<void ()>(one_frame), 0, 1);
+		new std::function<void ()>(web_frame), 0, 1);
 #endif
 	while (!app.quit) {
 		one_frame();

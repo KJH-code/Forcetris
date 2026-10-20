@@ -592,6 +592,26 @@ cmake -S cpp -B cpp/build && cmake --build cpp/build -j
 ./cpp/build/forcetris
 ```
 
+### It also runs in a browser
+
+The same sources build to WebAssembly, and that build is the whole game —
+the map, the cards, the Anvil, the bot, the replays — not a cut-down one.
+It needs the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html):
+
+```bash
+emcmake cmake -S cpp -B cpp/build-web
+cmake --build cpp/build-web --target forcetris -j
+python3 -m http.server -d cpp/build-web     # then open :8000/forcetris.html
+```
+
+That writes four files, about 11MB in all, which any static host will serve.
+Unlike the pygbag build further up, **the saves survive the tab**: the map,
+the career, the profile, the scores, the replays and the settings all live
+in a database the browser keeps, written out as you play and read back when
+you return. Sound waits for the first click, which browsers require and the
+title card asks for. On a phone the page says so, and the game comes up in
+its portrait layout with the touch pads.
+
 The Python game remains the reference implementation, and the C++ core exists
 to be graded against it rather than trusted. Instead of a second set of
 assertions the C++ is held to the answers the tested Python engine actually

@@ -1548,6 +1548,58 @@ file: the reference is regenerated every run, so the check is against the engine
 as it stands rather than as it once was. Python and pygame have to be installed
 for that reason.
 
+### In a browser
+
+The same sources build to WebAssembly. SDL2 is a port rather than a package
+there, so `find_package` is skipped and `-sUSE_SDL=2` is handed to the
+compiler and the linker instead; everything else about the build is the
+desktop's.
+
+```bash
+emcmake cmake -S cpp -B cpp/build-web
+cmake --build cpp/build-web --target forcetris -j
+python3 -m http.server -d cpp/build-web     # a tab cannot open file://
+```
+
+The result is `forcetris.html` and the three files beside it: the wasm, the
+loader, and an 8MB pack holding `gfx/`, `sound/` and `music/`, laid out at
+`/game` so `game_root()` has nothing to probe for.
+
+A tab is missing four things a window has, and `cpp/web/` supplies them.
+
+- **A loop.** `main` cannot own one: a browser frame has to come back out
+  to the page. The body is a callable, and `emscripten_set_main_loop_arg`
+  asks for it at the display's own cadence. The call never returns, which
+  is why the stack it captured by reference stays standing.
+- **Somewhere to save.** `web/persist.js` mounts an IndexedDB database over
+  `/game/data` — the folder every save already goes in — reads it back
+  before `main` starts, and pushes it out again every couple of seconds and
+  whenever the tab is hidden. Naming `IDBFS` in that file is also what
+  keeps the filesystem in the build: emscripten drops the one nobody
+  mentions.
+- **A canvas, and a size for it.** `web/shell.html` sizes it in CSS, which
+  is how SDL is told how big the window is; set the canvas size in
+  JavaScript instead and SDL decides the window is fixed and stops
+  reporting resizes. It also holds the first click, because that is the
+  only way a browser will let a sound play.
+- **A phone, when it is one.** The mobile layouts hang off `FORCETRIS_MOBILE`,
+  which a browser has no way to set - so the page sets it, on the pointer
+  rather than the width: a narrow window on a desk is still a mouse.
+
+### Two pixel grids, made one
+
+A window and the picture inside it are not always measured the same way. Ask
+for a high-density drawable and SDL answers with a window in layout points
+and a canvas in real pixels, and on a phone browser those differ by nearly
+three. Everything here is laid out in the renderer's own pixels, and ImGui's
+backend was working in window points and leaving its renderer to blow the
+result up — which put the whole menu in a quarter of the screen and every
+click a density away from what it hit.
+
+So ImGui is given the pixels, the blow-up is switched off, and the pointer
+is converted on the way in. Where the two grids already agree — every desk,
+and the Android build — the ratio is one and none of it does anything.
+
 ### A fall disarms the spin
 
 The spin rule is that the last thing done to the piece was a turn. Sliding
