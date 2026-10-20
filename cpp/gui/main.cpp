@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <map>
 #include <optional>
@@ -49,6 +50,10 @@
 #include "forcetris/replay.hpp"
 #include "forcetris/temper.hpp"
 #include "palette.hpp"
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include "session.hpp"
 #include "stats.hpp"
 #include "versus.hpp"
@@ -10067,7 +10072,21 @@ int run (bool smoke, long smoke_frames) {
 	bool game_ended = false;
 	long run_battles = 0;   // Map battles the smoke run settled.
 	long run_stops = 0;     // Rooms that never fight, entered and left.
-	while (!app.quit) {
+	// One frame, as a thing that can be called rather than a thing the
+	// program is inside.
+	//
+	// A desktop game owns its loop: it spins until the player quits. A
+	// browser owns ITS loop, and a page that spins inside one callback
+	// never yields - no input, no paint, a tab the browser offers to kill.
+	// So the body below became a callable, and who calls it is the only
+	// difference between the two builds.
+	//
+	// It captures by reference because every local above belongs to the
+	// frame as much as the loop did, and under emscripten_set_main_loop
+	// with simulate_infinite_loop set those locals stay alive: that call
+	// does not return, it unwinds to the browser while leaving the stack
+	// standing, which is the whole reason the pattern works.
+	const auto one_frame = [&] () {
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
 			handle_event(app, event);
@@ -10821,7 +10840,10 @@ int run (bool smoke, long smoke_frames) {
 								// the run down; the next tick sets out on
 								// a fresh map with stops still standing.
 								end_run(app, false);
-								continue;
+								// The frame is a callable now, so what
+								// used to skip the rest of the loop body
+								// skips the rest of the call.
+								return;
 							}
 						}
 						if (forced >= 0) {
@@ -10875,7 +10897,23 @@ int run (bool smoke, long smoke_frames) {
 				app.quit = true;
 			}
 		}
+	};
+
+#ifdef __EMSCRIPTEN__
+	// The browser drives. 0 asks for requestAnimationFrame - the display's
+	// own cadence rather than a number we picked - and the 1 says this call
+	// never comes back, so nothing below it runs on the web. The teardown
+	// after it is the desktop's.
+	emscripten_set_main_loop_arg(
+		[] (void* frame) {
+			(*static_cast<const std::function<void ()>*>(frame))();
+		},
+		new std::function<void ()>(one_frame), 0, 1);
+#endif
+	while (!app.quit) {
+		one_frame();
 	}
+
 
 	save_config(app.config, app.config_file);
 	ImGui_ImplSDLRenderer2_Shutdown();

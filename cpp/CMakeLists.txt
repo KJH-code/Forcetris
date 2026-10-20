@@ -173,7 +173,19 @@ target_compile_options(campaigncheck PRIVATE ${FORCETRIS_WARNINGS})
 
 # The game window needs SDL2; everything else builds without it, so a machine
 # that only wants the graded core (or has no SDL2 yet) still gets the tests.
-find_package(SDL2 QUIET)
+#
+# Emscripten ships its own SDL2, as a port rather than a package: there is
+# nothing on disk for find_package to find, and the headers and the library
+# both arrive from -sUSE_SDL=2 at compile and link time. So the web build
+# declares SDL2 found and hands the flag to everything that would have
+# linked the real one.
+if (EMSCRIPTEN)
+	set(SDL2_FOUND TRUE)
+	add_compile_options(-sUSE_SDL=2)
+	add_link_options(-sUSE_SDL=2)
+else()
+	find_package(SDL2 QUIET)
+endif()
 if (SDL2_FOUND)
 	add_library(imgui STATIC
 		third_party/imgui/imgui.cpp
