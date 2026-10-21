@@ -234,7 +234,11 @@ if (SDL2_FOUND)
 	if (EMSCRIPTEN)
 		get_filename_component(FORCETRIS_WEB_ASSETS
 			${CMAKE_CURRENT_SOURCE_DIR}/.. REALPATH)
-		set_target_properties(forcetris PROPERTIES SUFFIX ".html")
+		# index.html, not forcetris.html: a page served at the root of a
+		# site is what a link to the game should be, and a folder served
+		# off a laptop opens the same way.
+		set_target_properties(forcetris PROPERTIES
+			OUTPUT_NAME "index" SUFFIX ".html")
 		# SHELL: keeps each flag with the value it belongs to. Without it
 		# CMake sees three --preload-file options, decides the repeats are
 		# duplicates, and drops all but the first - leaving the link

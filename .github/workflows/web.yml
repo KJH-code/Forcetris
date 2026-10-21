@@ -1,0 +1,84 @@
+# The web build, published.
+#
+# Every push to main rebuilds the page and puts it on GitHub Pages. The
+# build is the one in cpp/README.md - emcmake, then the forcetris target -
+# and nothing is committed: the result is handed straight to Pages, so the
+# repository never carries a binary of itself.
+#
+# One switch is not in this file. Settings -> Pages -> Source has to say
+# "GitHub Actions", or the deploy below has nowhere to put what it built.
+name: web
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages wants proof of who is deploying. Nothing here writes to the
+# repository itself.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. A newer push waits rather than cancelling a
+# running one, because a half-written site is worse than an old one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned, not "latest": the page that goes up should be the one that
+      # was tested, and a toolchain that moves under us is a build that
+      # breaks on a day nobody touched the code.
+      - name: Install Emscripten
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install 6.0.13
+          ~/emsdk/emsdk activate 6.0.13
+
+      # SDL2 is a port, built from source the first time it is asked for.
+      # That is most of a cold build's minutes and it never changes.
+      - name: Cache the built ports
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk/upstream/emscripten/cache
+          key: emscripten-ports-6.0.13-${{ runner.os }}
+
+      - name: Build
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          emcmake cmake -S cpp -B cpp/build-web -DCMAKE_BUILD_TYPE=Release
+          cmake --build cpp/build-web --target forcetris -j4
+
+      # Four files out of a build tree full of object code. The rest of
+      # cpp/build-web is how the four were made and has no business on a
+      # web server.
+      - name: Collect the page
+        run: |
+          mkdir -p site
+          cp cpp/build-web/index.html \
+             cpp/build-web/index.js \
+             cpp/build-web/index.wasm \
+             cpp/build-web/index.data \
+             site/
+          ls -la site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -592,16 +592,20 @@ cmake -S cpp -B cpp/build && cmake --build cpp/build -j
 ./cpp/build/forcetris
 ```
 
-### It also runs in a browser
+### Play it in a browser
+
+**<https://kjh-code.github.io/Forcetris/>**
 
 The same sources build to WebAssembly, and that build is the whole game —
 the map, the cards, the Anvil, the bot, the replays — not a cut-down one.
-It needs the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html):
+Every push to main rebuilds the page and publishes it; the workflow is
+`.github/workflows/web.yml`. To build it yourself you need the
+[Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html):
 
 ```bash
 emcmake cmake -S cpp -B cpp/build-web
 cmake --build cpp/build-web --target forcetris -j
-python3 -m http.server -d cpp/build-web     # then open :8000/forcetris.html
+python3 -m http.server -d cpp/build-web     # then open :8000
 ```
 
 That writes four files, about 11MB in all, which any static host will serve.

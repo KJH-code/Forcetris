@@ -50,8 +50,12 @@ cd cpp/android && \
 # 웹 (emsdk 필요). SDL2는 패키지가 아니라 포트라 find_package를 건너뛴다
 emcmake cmake -S cpp -B cpp/build-web
 cmake --build cpp/build-web --target forcetris -j4
-python3 -m http.server -d cpp/build-web   # :8000/forcetris.html — file://은 안 된다
+python3 -m http.server -d cpp/build-web   # :8000 — file://은 안 된다
 ```
+
+main에 푸시하면 `.github/workflows/web.yml`이 같은 빌드를 돌려
+GitHub Pages로 올린다 (<https://kjh-code.github.io/Forcetris/>). 저장소에
+빌드 결과를 커밋하지 않는다 — 워크플로가 네 파일만 추려서 넘긴다.
 
 웹 빌드의 네 조각은 `cpp/web/`과 `cpp/README.md`의 "In a browser"에 있다.
 요지: 루프는 callable + `emscripten_set_main_loop_arg`, 세이브는

@@ -1561,9 +1561,12 @@ cmake --build cpp/build-web --target forcetris -j
 python3 -m http.server -d cpp/build-web     # a tab cannot open file://
 ```
 
-The result is `forcetris.html` and the three files beside it: the wasm, the
+The result is `index.html` and the three files beside it: the wasm, the
 loader, and an 8MB pack holding `gfx/`, `sound/` and `music/`, laid out at
-`/game` so `game_root()` has nothing to probe for.
+`/game` so `game_root()` has nothing to probe for. Four files, about 11MB,
+and the page is named for the root of a site because that is where it goes:
+`.github/workflows/web.yml` runs this same build on every push to main and
+hands those four to GitHub Pages.
 
 A tab is missing four things a window has, and `cpp/web/` supplies them.
 
